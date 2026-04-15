@@ -1,0 +1,2 @@
+﻿# Model registry and non-secret defaults. Secrets stay in .env only.
+models: []

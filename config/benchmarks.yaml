@@ -1,0 +1,2 @@
+﻿# Benchmark suite definitions (Tier 1 / Tier 2). Pin canonical task lists (e.g. CyBench subset).
+suites: {}
