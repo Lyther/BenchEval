@@ -16,6 +16,7 @@ from bencheval.models import (
     SummaryRow,
 )
 from bencheval.sink import JsonlSummarySink
+from bencheval.summary import StrictSummaryBuilder
 
 __all__ = [
     "BenchEvalError",
@@ -28,6 +29,7 @@ __all__ = [
     "ManifestError",
     "ModelFamily",
     "RunStamp",
+    "StrictSummaryBuilder",
     "SummaryRow",
     "SummaryValidationError",
 ]
