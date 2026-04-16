@@ -15,6 +15,7 @@ from bencheval.models import (
     RunStamp,
     SummaryRow,
 )
+from bencheval.pricing import ModelPrice, PricingSheet, load_pricing
 from bencheval.sink import JsonlSummarySink
 from bencheval.summary import StrictSummaryBuilder
 
@@ -28,8 +29,11 @@ __all__ = [
     "ManifestDigest",
     "ManifestError",
     "ModelFamily",
+    "ModelPrice",
+    "PricingSheet",
     "RunStamp",
     "StrictSummaryBuilder",
     "SummaryRow",
     "SummaryValidationError",
+    "load_pricing",
 ]
