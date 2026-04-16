@@ -1,0 +1,18 @@
+﻿# Pin: edits require a new dated filename. Rates are planning anchors; null = provisional.
+version: "2026-04-15"
+providers:
+  anthropic:
+    models:
+      - id: claude-sonnet-4-5
+        input_usd_per_mtok: 3.0
+        output_usd_per_mtok: 15.0
+  openai:
+    models:
+      - id: gpt-4o
+        input_usd_per_mtok: 2.5
+        output_usd_per_mtok: 10.0
+  moonshot:
+    models:
+      - id: kimi-k2-0711-preview
+        input_usd_per_mtok: null # provisional: confirm Moonshot list price Phase 3
+        output_usd_per_mtok: null

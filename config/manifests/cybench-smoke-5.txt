@@ -1,0 +1,7 @@
+# CyBench smoke subset (5 tasks). Placeholder ids for offline plumbing; replace via
+# inspect-evals manifest extraction spike (canonical cybench-39.txt).
+CVE-2021-44228
+CVE-2022-22965
+CVE-2023-34362
+CVE-2024-21413
+CVE-2020-0601
