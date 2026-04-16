@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import cast
 
@@ -79,7 +79,7 @@ def _parse_decimal(value: JsonValue) -> Decimal | None:
     if isinstance(value, (str, int, float)):
         try:
             return Decimal(str(value))
-        except Exception as e:
+        except InvalidOperation as e:
             raise SummaryValidationError(f"invalid decimal value: {value!r}") from e
     raise SummaryValidationError(
         f"decimal fields must be str, int, float, or null, got {type(value).__name__}",

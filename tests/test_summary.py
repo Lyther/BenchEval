@@ -154,6 +154,15 @@ def test_float_actual_cost_serializes_as_decimal_string_in_json() -> None:
     assert Decimal(payload["actual_cost_usd"]) == Decimal("1.25")
 
 
+def test_invalid_decimal_cost_string_raises() -> None:
+    row = make_summary_row()
+    manifest, stamp = _digest_and_stamp(row)
+    header = _header_from_row(row)
+    header["actual_cost_usd"] = "not-a-decimal"
+    with pytest.raises(SummaryValidationError, match="invalid decimal"):
+        StrictSummaryBuilder().build(Path("/tmp/x.eval"), stamp, manifest, header)
+
+
 def test_inspect_swe_without_version_wraps_validation_error() -> None:
     row = make_summary_row()
     manifest, stamp = _digest_and_stamp(row)
