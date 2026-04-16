@@ -1,5 +1,6 @@
 """BenchEval: LLM benchmark evaluation tracker."""
 
+from bencheval.compare import GuardedComparisonReporter
 from bencheval.exceptions import (
     BenchEvalError,
     ComparisonError,
@@ -25,6 +26,7 @@ __all__ = [
     "ComparisonReport",
     "DeltaRow",
     "EvalLogError",
+    "GuardedComparisonReporter",
     "JsonlSummarySink",
     "ManifestDigest",
     "ManifestError",
