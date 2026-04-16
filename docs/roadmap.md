@@ -11,7 +11,7 @@
 - [ ] **Spike (Cursor CLI)**: Verify `cursor-agent -p --output-format stream-json` runs headless inside a Harbor **installed-agent** container (a separate path from `inspect-swe`) using Cursor platform auth (`-a/--api-key` or browser flow). Record CLI version, the **supported-model catalog** visible to `-m`, and any `--print` hang / workspace-trust issues. **Experimental lane only — no summary rows written.** (concept-zero OQ 7–8.)
 - [ ] Install deps: `uv sync --extra eval`.
 - [ ] **Pin exact versions** in `pyproject.toml` after smoke passes; commit `uv.lock`. Architecture doc claims pinning — this task makes it true.
-- [ ] **Deconflict stale OAuth paths**: remove `ANTHROPIC_OAUTH_TOKEN` from `.env.example`, remove `auth_refresh.sh` from `scripts/README.md`. VETO in architecture.md §10 demands it.
+- [x] **Deconflict stale OAuth paths**: remove `ANTHROPIC_OAUTH_TOKEN` from `.env.example`, remove `auth_refresh.sh` from `scripts/README.md`. VETO in architecture.md §10 demands it.
 - [ ] Commit manifests: `cybench-39.txt`, `swebench-verified-500.txt`, `swebench-verified-smoke-10.txt`, `cybench-smoke-5.txt`, `swe-bench-pro-public-r2.txt`.
 - [ ] Write `src/bencheval/manifest.py`: load manifest file, compute sha256, return list.
 - [ ] Write `scripts/verify_auth.sh`: probe every baseline provider credential present in the environment (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `MOONSHOT_API_KEY` via `MOONSHOT_BASE_URL` — OpenAI-compatible) before long runs. **Blocker for Phase 3 Kimi runs**: if Moonshot support is not implemented here, the Phase 3 Kimi K2.5 baseline must not launch.

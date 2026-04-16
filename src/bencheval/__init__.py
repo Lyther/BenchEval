@@ -15,6 +15,7 @@ from bencheval.models import (
     RunStamp,
     SummaryRow,
 )
+from bencheval.sink import JsonlSummarySink
 
 __all__ = [
     "BenchEvalError",
@@ -22,6 +23,7 @@ __all__ = [
     "ComparisonReport",
     "DeltaRow",
     "EvalLogError",
+    "JsonlSummarySink",
     "ManifestDigest",
     "ManifestError",
     "ModelFamily",
