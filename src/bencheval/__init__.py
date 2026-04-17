@@ -8,6 +8,7 @@ from bencheval.exceptions import (
     ManifestError,
     SummaryValidationError,
 )
+from bencheval.loader import read_summary_jsonl
 from bencheval.models import (
     ComparisonReport,
     DeltaRow,
@@ -38,4 +39,5 @@ __all__ = [
     "SummaryRow",
     "SummaryValidationError",
     "load_pricing",
+    "read_summary_jsonl",
 ]
