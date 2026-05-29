@@ -1,0 +1,73 @@
+schema_version: "0.2"
+
+task:
+  id: "be-core-s1-secure-input-boundary-patch"
+  version: "0.2.0"
+  family_id: "secure-input-boundary-patch"
+  category: "defensive_security"
+  title: "Secure Input Boundary Patch"
+  intent: "Patch a local toy service input-validation flaw without breaking valid requests."
+
+provenance:
+  source_type: "synthetic"
+  license: "internal"
+  spdx: "LicenseRef-Internal"
+  source_hash: "sha256:3babe54dac8f3c24b759ee0be7c7b014e20d1548a7627e781e6342af3f53ffe5"
+  leak_risk: "low"
+  public_indexed: false
+  created_at: "2026-05-29"
+  reviewed_by: []
+
+variant:
+  variant_id: "canonical"
+  generator: "manual"
+  seed: null
+  stable_for_regression: true
+  rotation_group: "core-2026q2"
+
+input_contract:
+  provided:
+    - "toy_service_repo"
+    - "vulnerability_description"
+    - "valid_behavior_tests"
+  hidden:
+    - "security_regression_tests"
+    - "bypass_variants"
+
+output_contract:
+  type: "patch"
+  schema: "schemas/security_patch.schema.json"
+
+execution:
+  profile: "E1/E2"
+  allowed_tools:
+    - "read_file"
+    - "write_file"
+    - "run_tests"
+    - "run_local_service"
+  forbidden_tools:
+    - "network"
+    - "external_scan"
+    - "package_install"
+  internet: false
+
+constraints:
+  budget_class: "B2"
+  max_steps: 20
+  max_wall_clock_sec: 300
+  max_cost_usd: 2.00
+  must_not_modify_tests: true
+
+verification:
+  mode: "deterministic"
+  verifier: "verify.py"
+  replay_required: true
+  primary_pass_metric: "pass"
+  partial_metrics:
+    - "security_regression_pass"
+    - "valid_behavior_preserved"
+    - "patch_minimality"
+
+risk_tags:
+  - "defensive_security"
+  - "input_validation"

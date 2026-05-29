@@ -1,0 +1,5 @@
+{
+  "files": {
+    "repo/src/counter.py": "def increment(value: int) -> int:\n    \"\"\"Return value plus one.\"\"\"\n    return value + 1\n"
+  }
+}

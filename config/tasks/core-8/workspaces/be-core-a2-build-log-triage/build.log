@@ -1,0 +1,18 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.0, pytest-8.0.0, pluggy-1.5.0
+rootdir: repo
+collected 1 item
+
+tests/test_greet.py E                                                     [100%]
+
+==================================== ERRORS ====================================
+_____________________ ERROR collecting tests/test_greet.py _____________________
+ImportError while importing test module 'tests/test_greet.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+tests/test_greet.py:1: in <module>
+    from greeter import greet
+E   ImportError: cannot import name 'greet' from 'greeter' (repo/src/greeter.py)
+=========================== short test summary info ============================
+ERROR tests/test_greet.py
+=============================== 1 error in 0.02s ===============================

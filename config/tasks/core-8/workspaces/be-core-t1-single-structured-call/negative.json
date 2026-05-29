@@ -1,0 +1,6 @@
+{
+  "tool": "mock_lookup",
+  "arguments": {
+    "query": "ada@example.com"
+  }
+}

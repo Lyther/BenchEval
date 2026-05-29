@@ -1,0 +1,8 @@
+{
+  "root_cause_id": "whitespace-tokenization",
+  "files": {
+    "repo/src/tokenizer.py": "def tokenize(line: str) -> list[str]:\n    return [part for part in line.split() if part]\n",
+    "repo/src/evaluator.py": "from tokenizer import tokenize\n\n\ndef sum_tokens(line: str) -> int:\n    tokens = tokenize(line)\n    return sum(int(token) for token in tokens)\n"
+  },
+  "claims": []
+}

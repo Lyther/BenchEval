@@ -1,0 +1,5 @@
+{
+  "files": {
+    "repo/src/mathops.py": "def divide(a: int, b: int) -> float:\n    \"\"\"Return floating-point division.\"\"\"\n    return a / b\n"
+  }
+}

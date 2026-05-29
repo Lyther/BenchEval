@@ -1,0 +1,3 @@
+{
+  "user_request": "Look up product SKU 'widget-42', fetch inventory, and return a joined summary with sku, name, and quantity."
+}

@@ -1,0 +1,5 @@
+{
+  "issue": "sum_tokens returns wrong totals when input contains repeated whitespace between numbers.",
+  "visible_symptom": "Simple single-space inputs appear fine in visible tests.",
+  "repo": "repo/"
+}

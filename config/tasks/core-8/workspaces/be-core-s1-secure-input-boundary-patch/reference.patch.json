@@ -1,0 +1,5 @@
+{
+  "files": {
+    "repo/src/notes.py": "from pathlib import Path\n\n_NOTES_DIR = Path(__file__).resolve().parent.parent / \"notes\"\n\n\ndef _resolve_note_path(note_id: str) -> Path:\n    if not note_id or note_id.strip() != note_id:\n        raise ValueError(\"invalid note id\")\n    if \"/\" in note_id or \"\\\\\" in note_id or \"..\" in note_id:\n        raise ValueError(\"invalid note id\")\n    if len(note_id) > 64:\n        raise ValueError(\"invalid note id\")\n    notes_root = _NOTES_DIR.resolve()\n    path = (notes_root / note_id).resolve()\n    if not path.is_relative_to(notes_root):\n        raise ValueError(\"invalid note id\")\n    return path\n\n\ndef read_note(note_id: str) -> str:\n    return _resolve_note_path(note_id).read_text(encoding=\"utf-8\")\n"
+  }
+}
