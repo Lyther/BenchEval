@@ -8,9 +8,10 @@ version = "0.1.0"
 description = "LLM benchmark evaluation tracker"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = [
-    "pydantic>=2.7",
-]
+dependencies = ["pydantic>=2.7", "pyyaml>=6.0.3"]
+
+[project.scripts]
+bencheval = "bencheval.cli:main"
 
 [project.optional-dependencies]
 eval = [
@@ -19,6 +20,7 @@ eval = [
     "inspect-harbor>=0.4.5",
     "inspect-swe",
 ]
+analytics = ["duckdb>=1.2.0", "pyarrow>=18.0.0"]
 
 [dependency-groups]
 dev = ["pytest>=9.0.3", "ruff>=0.15.10"]
