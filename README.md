@@ -121,7 +121,7 @@ Public exports (`from bencheval import …`) match `bencheval.__all__` — legac
 ## Development
 
 ```bash
-uv run pytest -q                    # 283 tests (2026-05-29)
+uv run pytest -q
 uv run ruff check src tests scripts/
 uv run ruff format --check src tests scripts/
 shellcheck scripts/*.sh && bash -n scripts/*.sh

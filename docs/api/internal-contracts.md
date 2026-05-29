@@ -16,7 +16,7 @@ BenchEval has **no public HTTP surface**. Boundaries are **Python protocols** (c
 ## Coupling rules
 
 - **Callers** depend on protocols + DTOs only — not on Inspect/Harbor SDK classes.
-- **Adapters** implement protocols (e.g. `EvalLogSource` backed by Inspect’s on-disk format; `InspectRunner`, `HarborRunner` for vNext execution).
+- **Adapters** implement protocols (e.g. `EvalLogSource` backed by Inspect’s on-disk format; `InspectInvoker`, `HarborRunner` in vNext adapters).
 - **Shell scripts** (`scripts/*.sh`) orchestrate process boundaries; legacy `.eval` parsing stays in Python entrypoints. `run_provider_smoke.sh` delegates to `bencheval doctor` and `bencheval run`.
 - **`SummaryBuilder.build`** takes a `ManifestDigest` so implementers can verify `stamp.task_manifest_hash`, align `n_samples` with `len(manifest.task_ids)`, and refuse inconsistent rows before writing JSONL.
 
@@ -27,9 +27,9 @@ BenchEval has **no public HTTP surface**. Boundaries are **Python protocols** (c
 
 ## Versioning
 
-- Breaking changes to `SummaryRow` require a **new JSONL file stem** or a documented migration in `docs/architecture.md` §6 — treat the schema as a public contract for longitudinal analysis.
+- Breaking changes to `SummaryRow` require a **new JSONL file stem** or a documented migration in `docs/architecture.md` §8 — treat the schema as a public contract for longitudinal analysis.
 
 ## Related
 
-- Canonical field definitions: [`docs/architecture.md`](../architecture.md) §6–§7
+- Canonical field definitions: [`docs/architecture.md`](../architecture.md) §5 and §7
 - Diagrams: [`docs/diagrams/`](../diagrams/)
