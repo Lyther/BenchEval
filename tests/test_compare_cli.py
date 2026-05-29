@@ -15,6 +15,7 @@ SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "compare.py"
 def _run(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(SCRIPT), *args],
+        check=False,
         capture_output=True,
         text=True,
     )

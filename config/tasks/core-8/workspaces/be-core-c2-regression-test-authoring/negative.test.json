@@ -1,0 +1,5 @@
+{
+  "files": {
+    "repo/tests/test_regression_divide.py": "from mathops import divide\n\n\ndef test_divide_regression_trivial() -> None:\n    assert divide(4, 2) == 2\n"
+  }
+}

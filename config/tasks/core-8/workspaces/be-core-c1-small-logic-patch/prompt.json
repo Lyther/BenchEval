@@ -1,0 +1,5 @@
+{
+  "bug_description": "The increment helper in repo/src/counter.py returns the input unchanged instead of adding one.",
+  "source_module": "repo/src/counter.py",
+  "visible_tests": "repo/tests/test_counter.py"
+}

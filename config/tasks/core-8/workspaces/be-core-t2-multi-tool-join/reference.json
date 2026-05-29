@@ -1,0 +1,21 @@
+{
+  "tool_sequence": [
+    {
+      "tool": "mock_lookup",
+      "arguments": {
+        "sku": "widget-42"
+      }
+    },
+    {
+      "tool": "mock_inventory",
+      "arguments": {
+        "sku": "widget-42"
+      }
+    }
+  ],
+  "result": {
+    "sku": "widget-42",
+    "name": "Widget 42",
+    "quantity": 7
+  }
+}

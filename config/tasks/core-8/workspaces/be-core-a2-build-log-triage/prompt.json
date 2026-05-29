@@ -1,0 +1,4 @@
+{
+  "issue_summary": "CI pytest fails because tests import greet from greeter, but repo/src/greeter.py only defines greeting.",
+  "build_command": "python -m pytest -q"
+}

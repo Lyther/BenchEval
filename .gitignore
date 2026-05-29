@@ -25,6 +25,7 @@ secrets/
 
 results/raw/*
 !results/raw/.gitkeep
+config/tasks/**/runs/
 
 *.eval
 

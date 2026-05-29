@@ -1,0 +1,5 @@
+{
+  "files": {
+    "repo/src/notes.py": "from pathlib import Path\n\n_NOTES_DIR = Path(__file__).resolve().parent.parent / \"notes\"\n\n\ndef read_note(note_id: str) -> str:\n    if \"..\" in note_id:\n        raise ValueError(\"invalid note id\")\n    path = _NOTES_DIR / note_id\n    return path.read_text(encoding=\"utf-8\")\n"
+  }
+}

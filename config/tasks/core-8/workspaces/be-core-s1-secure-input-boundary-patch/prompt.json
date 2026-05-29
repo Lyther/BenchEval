@@ -1,0 +1,8 @@
+{
+  "vulnerability": "read_note accepts note IDs that escape the notes directory via path traversal.",
+  "service": "repo/src/notes.py",
+  "valid_ids": [
+    "welcome",
+    "roadmap"
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "tools": [
+    {
+      "name": "mock_lookup",
+      "description": "Lookup product metadata by SKU",
+      "parameters": {
+        "sku": "string"
+      }
+    },
+    {
+      "name": "mock_inventory",
+      "description": "Fetch inventory count by SKU",
+      "parameters": {
+        "sku": "string"
+      }
+    },
+    {
+      "name": "read_file",
+      "description": "Read a local fixture file",
+      "parameters": {
+        "path": "string"
+      }
+    }
+  ]
+}

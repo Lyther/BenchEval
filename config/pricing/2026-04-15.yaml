@@ -1,4 +1,4 @@
-﻿# Pin: edits require a new dated filename. Rates are planning anchors; null = provisional.
+# Pin: edits require a new dated filename. Rates are planning anchors; null = provisional.
 version: "2026-04-15"
 providers:
   anthropic:

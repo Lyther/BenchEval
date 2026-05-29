@@ -1,0 +1,12 @@
+{
+  "tool": "mock_calendar",
+  "arguments": {
+    "title": "Core-8 sync",
+    "date": "2026-06-01",
+    "time": "10:00",
+    "timezone": "UTC",
+    "attendees": [
+      "ada@example.com"
+    ]
+  }
+}

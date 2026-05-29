@@ -1,0 +1,5 @@
+{
+  "bug_description": "divide() uses integer floor division instead of true division for positive ints.",
+  "source_module": "repo/src/mathops.py",
+  "test_harness": "repo/tests"
+}

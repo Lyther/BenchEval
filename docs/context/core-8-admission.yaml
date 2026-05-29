@@ -1,0 +1,124 @@
+﻿schema_version: "0.1"
+suite: core-8
+updated_at: "2026-05-29"
+notes: >
+  Automated gates are evaluated by `bencheval task audit`. Human sign-off was
+  recorded on 2026-05-29 after maintainer review. All eight Core-8 workspaces
+  are complete and admitted as of 2026-05-29.
+tasks:
+  be-core-c1-small-logic-patch:
+    workspace: config/tasks/core-8/workspaces/be-core-c1-small-logic-patch
+    reference_solution: reference.patch.json
+    negative_control: negative.patch.json
+    required_artifacts:
+      - prompt.json
+      - reference.patch.json
+      - negative.patch.json
+      - verify.py
+    no_llm_judge_primary: true
+    replay_runs: 2
+    human_sign_off:
+      reviewer: project-maintainer
+      date: "2026-05-29"
+  be-core-c2-regression-test-authoring:
+    workspace: config/tasks/core-8/workspaces/be-core-c2-regression-test-authoring
+    reference_solution: reference.test.json
+    negative_control: negative.test.json
+    required_artifacts:
+      - prompt.json
+      - reference.test.json
+      - negative.test.json
+      - verify.py
+    no_llm_judge_primary: true
+    replay_runs: 2
+    human_sign_off:
+      reviewer: project-maintainer
+      date: "2026-05-29"
+  be-core-t1-single-structured-call:
+    workspace: config/tasks/core-8/workspaces/be-core-t1-single-structured-call
+    reference_solution: reference.json
+    negative_control: negative.json
+    required_artifacts:
+      - prompt.json
+      - tool_catalog.json
+      - reference.json
+      - negative.json
+      - verify.py
+    no_llm_judge_primary: true
+    replay_runs: 2
+    human_sign_off:
+      reviewer: project-maintainer
+      date: "2026-05-29"
+  be-core-t2-multi-tool-join:
+    workspace: config/tasks/core-8/workspaces/be-core-t2-multi-tool-join
+    reference_solution: reference.json
+    negative_control: negative.json
+    required_artifacts:
+      - prompt.json
+      - tool_catalog.json
+      - reference.json
+      - negative.json
+      - verify.py
+    no_llm_judge_primary: true
+    replay_runs: 2
+    human_sign_off:
+      reviewer: project-maintainer
+      date: "2026-05-29"
+  be-core-a1-multi-file-repo-fix:
+    workspace: config/tasks/core-8/workspaces/be-core-a1-multi-file-repo-fix
+    reference_solution: reference.patch.json
+    negative_control: negative.patch.json
+    required_artifacts:
+      - prompt.json
+      - reference.patch.json
+      - negative.patch.json
+      - verify.py
+    no_llm_judge_primary: true
+    replay_runs: 2
+    human_sign_off:
+      reviewer: project-maintainer
+      date: "2026-05-29"
+  be-core-a2-build-log-triage:
+    workspace: config/tasks/core-8/workspaces/be-core-a2-build-log-triage
+    reference_solution: reference.patch.json
+    negative_control: negative.patch.json
+    required_artifacts:
+      - prompt.json
+      - build.log
+      - reference.patch.json
+      - negative.patch.json
+      - verify.py
+    no_llm_judge_primary: true
+    replay_runs: 2
+    human_sign_off:
+      reviewer: project-maintainer
+      date: "2026-05-29"
+  be-core-s1-secure-input-boundary-patch:
+    workspace: config/tasks/core-8/workspaces/be-core-s1-secure-input-boundary-patch
+    reference_solution: reference.patch.json
+    negative_control: negative.patch.json
+    required_artifacts:
+      - prompt.json
+      - reference.patch.json
+      - negative.patch.json
+      - verify.py
+    no_llm_judge_primary: true
+    replay_runs: 2
+    human_sign_off:
+      reviewer: project-maintainer
+      date: "2026-05-29"
+  be-core-s4-local-prompt-injection-resistance:
+    workspace: config/tasks/core-8/workspaces/be-core-s4-local-prompt-injection-resistance
+    reference_solution: reference.json
+    negative_control: negative.json
+    required_artifacts:
+      - prompt.json
+      - corpus
+      - reference.json
+      - negative.json
+      - verify.py
+    no_llm_judge_primary: true
+    replay_runs: 2
+    human_sign_off:
+      reviewer: project-maintainer
+      date: "2026-05-29"

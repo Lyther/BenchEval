@@ -1,0 +1,70 @@
+schema_version: "0.2"
+
+task:
+  id: "be-core-t2-multi-tool-join"
+  version: "0.2.0"
+  family_id: "multi-tool-join"
+  category: "tool_usage"
+  title: "Multi-Tool Join"
+  intent: "Combine outputs from multiple mock tools into one structured final object."
+
+provenance:
+  source_type: "synthetic"
+  license: "internal"
+  spdx: "LicenseRef-Internal"
+  source_hash: "sha256:710c4b065c45d57d2de4e758b9340634b6c7b64724366ce8b9932e7b8cee96b9"
+  leak_risk: "low"
+  public_indexed: false
+  created_at: "2026-05-29"
+  reviewed_by: []
+
+variant:
+  variant_id: "canonical"
+  generator: "manual"
+  seed: null
+  stable_for_regression: true
+  rotation_group: "core-2026q2"
+
+input_contract:
+  provided:
+    - "user_request"
+    - "tool_catalog"
+    - "output_schema"
+  hidden:
+    - "expected_state"
+    - "tool_sequence"
+
+output_contract:
+  type: "json"
+  schema: "schemas/joined_result.schema.json"
+
+execution:
+  profile: "E0/E1"
+  allowed_tools:
+    - "mock_lookup"
+    - "mock_inventory"
+    - "read_file"
+  forbidden_tools:
+    - "network"
+    - "package_install"
+  internet: false
+
+constraints:
+  budget_class: "B1"
+  max_steps: 10
+  max_wall_clock_sec: 180
+  max_cost_usd: 0.25
+  must_not_modify_tests: true
+
+verification:
+  mode: "deterministic"
+  verifier: "verify.py"
+  replay_required: true
+  primary_pass_metric: "pass"
+  partial_metrics:
+    - "final_object_match"
+    - "tool_order_correct"
+
+risk_tags:
+  - "tool_order"
+  - "state_replay"

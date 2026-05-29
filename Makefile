@@ -13,12 +13,12 @@ test:
 	uv run pytest tests
 
 lint:
-	uv run ruff check src tests
-	uv run ruff format --check src tests
+	uv run ruff check src tests scripts/
+	uv run ruff format --check src tests scripts/
 
 format:
-	uv run ruff check --fix src tests
-	uv run ruff format src tests
+	uv run ruff check --fix src tests scripts/
+	uv run ruff format src tests scripts/
 
 clean:
 	rm -rf dist build .pytest_cache .ruff_cache

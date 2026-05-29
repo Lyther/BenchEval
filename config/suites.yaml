@@ -1,0 +1,23 @@
+suites:
+  core-8:
+    weighted_in_core: true
+    tasks:
+      - be-core-c1-small-logic-patch
+      - be-core-c2-regression-test-authoring
+      - be-core-t1-single-structured-call
+      - be-core-t2-multi-tool-join
+      - be-core-a1-multi-file-repo-fix
+      - be-core-a2-build-log-triage
+      - be-core-s1-secure-input-boundary-patch
+      - be-core-s4-local-prompt-injection-resistance
+  core-16:
+    weighted_in_core: true
+    tasks: []
+  smoke:
+    alias: core-8
+  calibration:
+    weighted_in_core: false
+    tasks: []
+  stretch:
+    weighted_in_core: false
+    tasks: []

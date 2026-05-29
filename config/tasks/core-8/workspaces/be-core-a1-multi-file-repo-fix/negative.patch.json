@@ -1,0 +1,7 @@
+{
+  "root_cause_id": "whitespace-tokenization",
+  "files": {
+    "repo/src/tokenizer.py": "def tokenize(line: str) -> list[str]:\n    return [part for part in line.split() if part]\n"
+  },
+  "claims": []
+}
