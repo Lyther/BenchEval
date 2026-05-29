@@ -54,10 +54,16 @@ def test_provider_smoke_invalid_profile_exits_nonzero() -> None:
     assert "skip openai/gpt-test" not in proc.stderr
 
 
-def test_provider_smoke_unexpected_doctor_failure_exits_nonzero() -> None:
+def test_provider_smoke_unexpected_doctor_failure_exits_nonzero(tmp_path: Path) -> None:
+    fake_uv = tmp_path / "uv"
+    fake_uv.write_text(
+        "#!/usr/bin/env bash\nprintf 'synthetic uv failure\\n' >&2\nexit 42\n",
+        encoding="utf-8",
+    )
+    fake_uv.chmod(0o755)
     proc = _run_script(
         "openai/gpt-test",
-        env={"PATH": "/usr/bin:/bin"},
+        env={"PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"},
     )
     assert proc.returncode == 1, proc.stderr
     assert "fail openai/gpt-test: doctor failed unexpectedly" in proc.stderr

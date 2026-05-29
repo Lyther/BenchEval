@@ -90,6 +90,8 @@ def _file_manifest(root: Path) -> dict[str, str]:
     for path in sorted(root.rglob("*")):
         if path.is_file():
             rel = path.relative_to(root).as_posix()
+            if path.name.endswith((".pyc", ".pyo")) or "__pycache__/" in rel:
+                continue
             manifest[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
     return manifest
 

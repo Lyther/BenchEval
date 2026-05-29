@@ -12,7 +12,12 @@ from bencheval.backends import HARBOR_BACKEND, INSPECT_BACKEND, LOCAL_BACKEND
 from bencheval.doctor import run_doctor
 from bencheval.exceptions import BenchEvalError
 from bencheval.executor import execute_task
-from bencheval.harbor_adapter import HarborAdapterConfig, HarborInvokeResult, export_harbor_task
+from bencheval.harbor_adapter import (
+    HarborAdapterConfig,
+    HarborInvokeResult,
+    HarborPackage,
+    export_harbor_task,
+)
 from bencheval.inspect_adapter import InspectAdapterConfig, InspectInvokeResult
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -233,6 +238,14 @@ def test_harbor_reexport_replaces_marked_directory(tmp_path: Path) -> None:
 
 
 def test_harbor_runner_maps_to_evidence(tmp_path: Path) -> None:
+    def fake_export(config: HarborAdapterConfig) -> HarborPackage:
+        return HarborPackage(
+            root=config.package_dir,
+            manifest_sha256="test-manifest",
+            harbor_revision="test-revision",
+            task_id=config.task_id,
+        )
+
     def fake_runner(config, package):
         config.artifacts_dir.mkdir(parents=True, exist_ok=True)
         candidate = config.artifacts_dir / "reference.json"
@@ -259,6 +272,7 @@ def test_harbor_runner_maps_to_evidence(tmp_path: Path) -> None:
         output_path=out,
         run_artifacts_dir=tmp_path / "artifacts",
         harbor_runner=fake_runner,
+        harbor_export=fake_export,
         skip_doctor=True,
     )
     assert result.evidence.primary_pass is True

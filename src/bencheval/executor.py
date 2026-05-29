@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from bencheval.exceptions import AdapterFailureError, BenchEvalError
 from bencheval.harbor_adapter import (
     HARBOR_SUPPORTED_TASKS,
     HarborAdapterConfig,
+    HarborPackage,
     HarborRunner,
     export_harbor_task,
     run_harbor_adapter,
@@ -231,6 +233,7 @@ def execute_task(
     run_artifacts_dir: Path | None = None,
     inspect_invoke: InspectInvoker | None = None,
     harbor_runner: HarborRunner | None = None,
+    harbor_export: Callable[[HarborAdapterConfig], HarborPackage] | None = None,
     harbor_package_dir: Path | None = None,
     skip_doctor: bool = False,
 ) -> RunResult:
@@ -381,7 +384,7 @@ def execute_task(
         harbor_result = run_harbor_adapter(
             config,
             runner=harbor_runner,
-            export=export_harbor_task,
+            export=harbor_export or export_harbor_task,
         )
         assert_model_id(
             requested=model_id,

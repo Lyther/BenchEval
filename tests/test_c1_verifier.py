@@ -120,6 +120,17 @@ def test_tests_unchanged_rejects_removed_test_file() -> None:
         assert mod._tests_unchanged(_C1_WS, sandbox) is False
 
 
+def test_tests_unchanged_ignores_runtime_pycache() -> None:
+    mod = _load_c1_verify_module()
+    with tempfile.TemporaryDirectory(prefix="bencheval-c1-test-") as tmp:
+        sandbox = Path(tmp)
+        shutil.copytree(_C1_WS / "repo", sandbox / "repo")
+        pycache = sandbox / "repo" / "tests" / "__pycache__"
+        pycache.mkdir()
+        (pycache / "test_counter.cpython-314-pytest-9.0.3.pyc").write_bytes(b"cache")
+        assert mod._tests_unchanged(_C1_WS, sandbox) is True
+
+
 def test_reference_still_passes_admission_verifier() -> None:
     report = run_workspace_verifier(_C1_WS, _C1_WS / "reference.patch.json")
     assert report.primary_pass is True
