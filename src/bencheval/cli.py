@@ -7,7 +7,11 @@ import json
 import sys
 from pathlib import Path
 
-from bencheval.admission import audit_suite_admission, audit_task_admission
+from bencheval.admission import (
+    admission_path_for_task,
+    audit_suite_admission,
+    audit_task_admission,
+)
 from bencheval.backends import HARBOR_BACKEND, INSPECT_BACKEND, LOCAL_BACKEND, ExecutionBackend
 from bencheval.doctor import run_doctor
 from bencheval.evidence import read_evidence_jsonl
@@ -80,7 +84,7 @@ def _task_audit(args: argparse.Namespace) -> int:
         report = audit_suite_admission(target)
         payload = report.to_dict()
     else:
-        report = audit_task_admission(target)
+        report = audit_task_admission(target, admission_path=admission_path_for_task(target))
         payload = report.to_dict()
     sys.stdout.write(json.dumps(payload, indent=2) + "\n")
     admitted = payload.get("admitted", False)
@@ -253,8 +257,11 @@ def _build_parser() -> argparse.ArgumentParser:
     validate.add_argument("target", help="Task id or path to YAML")
     validate.set_defaults(handler=_task_validate)
 
-    audit = task_sub.add_parser("audit", help="Audit Core-8 admission gates")
-    audit.add_argument("target", help="Task id or suite name (e.g. core-8, smoke)")
+    audit = task_sub.add_parser(
+        "audit",
+        help="Audit Core-8/Core-16 admission gates (exit 1 when not fully admitted)",
+    )
+    audit.add_argument("target", help="Task id or suite name (e.g. core-8, core-16, smoke)")
     audit.set_defaults(handler=_task_audit)
 
     run = sub.add_parser("run", help="Run planning and execution")

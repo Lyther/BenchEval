@@ -21,6 +21,14 @@ _SUPPORTED_OFFLINE_TASKS: dict[str, ExecutionProfile] = {
     "be-core-a2-build-log-triage": "E1",
     "be-core-s1-secure-input-boundary-patch": "E1",
     "be-core-s4-local-prompt-injection-resistance": "E1",
+    "be-core-t3-tool-necessity-gate": "E0",
+    "be-core-s3-alert-triage-evidence-json": "E0",
+    "be-core-t4-stateful-policy-workflow": "E0",
+    "be-core-c3-backward-compatible-config-migration": "E1",
+    "be-core-c4-minimal-refactor-under-invariants": "E1",
+    "be-core-s2-authorization-matrix-regression": "E1",
+    "be-core-a3-dependency-api-bump": "E1",
+    "be-core-a4-feature-with-invariants": "E1",
 }
 
 

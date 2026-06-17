@@ -19,6 +19,7 @@ from bencheval.harbor_adapter import (
     export_harbor_task,
 )
 from bencheval.inspect_adapter import InspectAdapterConfig, InspectInvokeResult
+from bencheval.workspace_staging import stage_agent_workspace
 
 _ROOT = Path(__file__).resolve().parents[1]
 _T1_WS = _ROOT / "config/tasks/core-8/workspaces/be-core-t1-single-structured-call"
@@ -181,6 +182,24 @@ def test_inspect_unsupported_task_rejected(tmp_path: Path) -> None:
             output_path=tmp_path / "evidence.jsonl",
             skip_doctor=True,
         )
+
+
+def test_harbor_export_copies_verify_from_verifier_workspace(tmp_path: Path) -> None:
+    if shutil.which("harbor") is None:
+        pytest.skip("harbor CLI not available")
+    staged = stage_agent_workspace(_S4_WS, tmp_path / "agent-workspace")
+    assert not (staged / "verify.py").exists()
+    config = HarborAdapterConfig(
+        task_id="be-core-s4-local-prompt-injection-resistance",
+        model_id="openai/gpt-test",
+        workspace=staged,
+        verifier_workspace=_S4_WS,
+        reference_artifact_name="reference.json",
+        package_dir=tmp_path / "pkg",
+        artifacts_dir=tmp_path / "artifacts",
+    )
+    export_harbor_task(config)
+    assert (config.package_dir / "verify.py").is_file()
 
 
 def test_harbor_export_is_deterministic(tmp_path: Path) -> None:

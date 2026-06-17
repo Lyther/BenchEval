@@ -12,7 +12,23 @@ suites:
       - be-core-s4-local-prompt-injection-resistance
   core-16:
     weighted_in_core: true
-    tasks: []
+    tasks:
+      - be-core-c1-small-logic-patch
+      - be-core-c2-regression-test-authoring
+      - be-core-t1-single-structured-call
+      - be-core-t2-multi-tool-join
+      - be-core-a1-multi-file-repo-fix
+      - be-core-a2-build-log-triage
+      - be-core-s1-secure-input-boundary-patch
+      - be-core-s4-local-prompt-injection-resistance
+      - be-core-t3-tool-necessity-gate
+      - be-core-s3-alert-triage-evidence-json
+      - be-core-t4-stateful-policy-workflow
+      - be-core-c3-backward-compatible-config-migration
+      - be-core-c4-minimal-refactor-under-invariants
+      - be-core-s2-authorization-matrix-regression
+      - be-core-a3-dependency-api-bump
+      - be-core-a4-feature-with-invariants
   smoke:
     alias: core-8
   calibration:

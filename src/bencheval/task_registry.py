@@ -81,11 +81,26 @@ def load_task_contract(path: Path, *, raw_bytes: bytes | None = None) -> TaskCon
         raise TaskContractError(f"{p.name}: {e}") from e
 
 
+def _iter_task_contract_paths(root: Path) -> list[Path]:
+    """Yield task contract YAML paths; ignore workspace fixture trees."""
+    resolved = root.resolve()
+    if not resolved.is_dir():
+        return []
+    direct = sorted(resolved.glob("*.yaml"))
+    if direct:
+        return direct
+    paths: list[Path] = []
+    for suite_dir in sorted(resolved.iterdir()):
+        if suite_dir.is_dir():
+            paths.extend(sorted(suite_dir.glob("*.yaml")))
+    return paths
+
+
 def load_task_dir(path: Path) -> list[TaskContract]:
     root = path.resolve()
     if not root.is_dir():
         raise TaskContractError(f"task directory not found: {root}")
-    files = sorted(root.rglob("*.yaml"))
+    files = _iter_task_contract_paths(root)
     contracts: list[TaskContract] = []
     for fp in files:
         contracts.append(load_task_contract(fp))
@@ -152,7 +167,7 @@ def resolve_task_path(task_id_or_path: str, tasks_root: Path | None = None) -> P
     if not root.is_dir():
         raise TaskContractError(f"tasks root not found: {root}")
     matches: list[Path] = []
-    for fp in root.rglob("*.yaml"):
+    for fp in _iter_task_contract_paths(root):
         try:
             contract = load_task_contract(fp)
         except TaskContractError:
@@ -267,7 +282,7 @@ def lint_task_path(
 def index_tasks(tasks_root: Path | None = None) -> dict[str, Path]:
     root = (tasks_root or default_tasks_root()).resolve()
     index: dict[str, Path] = {}
-    for fp in sorted(root.rglob("*.yaml")):
+    for fp in _iter_task_contract_paths(root):
         contract = load_task_contract(fp)
         if contract.task.id in index:
             raise BenchEvalError(f"duplicate task id {contract.task.id}")

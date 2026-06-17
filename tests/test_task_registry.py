@@ -5,6 +5,7 @@ from pathlib import Path
 import yaml
 
 from bencheval.task_registry import (
+    index_tasks,
     lint_task_contract,
     lint_task_path,
     load_suites,
@@ -26,6 +27,21 @@ def test_load_task_dir_deterministic_order() -> None:
     ids = [c.task.id for c in contracts]
     assert ids == sorted(ids)
     assert len(ids) == 8
+
+
+def test_load_task_dir_core16() -> None:
+    root = Path(__file__).resolve().parents[1]
+    contracts = load_task_dir(root / "config/tasks/core-16")
+    ids = [c.task.id for c in contracts]
+    assert ids == sorted(ids)
+    assert len(ids) == 8
+
+
+def test_index_tasks_includes_core8_and_core16() -> None:
+    index = index_tasks()
+    assert len(index) == 16
+    assert "be-core-c1-small-logic-patch" in index
+    assert "be-core-t3-tool-necessity-gate" in index
 
 
 def test_lint_reports_stable_issue_codes(tmp_path: Path) -> None:

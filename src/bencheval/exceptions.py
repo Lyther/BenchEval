@@ -15,7 +15,7 @@ class EvalLogError(BenchEvalError):
 
 
 class ComparisonError(BenchEvalError):
-    """Raised when a delta comparison violates §7 guardrails."""
+    """Raised when a delta comparison violates guardrails."""
 
 
 class TaskContractError(BenchEvalError):

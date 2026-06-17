@@ -7,7 +7,11 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from bencheval.admission import load_admission_document, run_workspace_verifier
+from bencheval.admission import (
+    admission_path_for_task,
+    load_admission_document,
+    run_workspace_verifier,
+)
 from bencheval.backends import HARBOR_BACKEND, INSPECT_BACKEND, LOCAL_BACKEND, ExecutionBackend
 from bencheval.doctor import require_doctor_ok, run_doctor
 from bencheval.evidence import EvidenceRecord, JsonlEvidenceSink
@@ -39,6 +43,7 @@ from bencheval.runner import (
 )
 from bencheval.task_contract import ExecutionProfile
 from bencheval.task_registry import load_task_contract, resolve_task_path
+from bencheval.workspace_staging import agent_workspace_for_run
 
 
 def _repo_root() -> Path:
@@ -54,7 +59,7 @@ def _path_for_evidence(path: Path, root: Path) -> str:
 
 
 def _resolve_workspace(task_id: str) -> tuple[Path, str]:
-    admission = load_admission_document()
+    admission = load_admission_document(admission_path_for_task(task_id))
     if task_id not in admission.tasks:
         raise BenchEvalError(f"task {task_id} missing from admission document")
     entry = admission.tasks[task_id]
@@ -302,11 +307,13 @@ def execute_task(
         root = _repo_root()
         rid = run_id or new_run_id()
         artifacts_root = run_artifacts_dir or (root / "results" / "raw" / rid)
+        agent_workspace = agent_workspace_for_run(workspace, artifacts_root)
         config = InspectAdapterConfig(
             task_id=task_id,
             model_id=model_id,
             execution_profile=execution_profile,
-            workspace=workspace,
+            workspace=agent_workspace,
+            verifier_workspace=workspace,
             reference_artifact_name=reference_name,
             artifacts_dir=artifacts_root,
             sandbox_docker=execution_profile == "E1",
@@ -366,10 +373,12 @@ def execute_task(
         rid = run_id or new_run_id()
         artifacts_root = run_artifacts_dir or (root / "results" / "raw" / rid)
         package_root = harbor_package_dir or (artifacts_root / "harbor-package")
+        agent_workspace = agent_workspace_for_run(workspace, artifacts_root)
         config = HarborAdapterConfig(
             task_id=task_id,
             model_id=model_id,
-            workspace=workspace,
+            workspace=agent_workspace,
+            verifier_workspace=workspace,
             reference_artifact_name=reference_name,
             package_dir=package_root,
             artifacts_dir=artifacts_root,
