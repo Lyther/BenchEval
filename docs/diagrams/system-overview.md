@@ -96,4 +96,4 @@ flowchart LR
 
 - Baseline auth lane uses Inspect provider env vars only; experimental lane is isolated at the row level (`auth_lane`, cost XOR).
 - Core-8: 8/8 admitted offline (2026-05-29). Live provider, Docker E1, and Harbor jobs blocked on environment.
-- Core-16: planned in `docs/context/core-16-expansion-plan.md`; not implemented.
+- Core-16: 16-task suite (Core-8 + expansion); 8/8 Core-8 admitted, expansion automated gates pass with human sign-off pending (`bencheval task audit core-16` exits 1 by design).

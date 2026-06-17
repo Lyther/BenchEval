@@ -53,11 +53,11 @@ Dry-run planner sets `requires_harbor=true` when any selected task profile inclu
 | Suite | Size | Weighted in Core | Notes |
 |-------|-----:|------------------|-------|
 | Core-8 Smoke | 8 | Yes | MVP; two tasks per category; **8/8 admitted** (2026-05-29) |
-| Core-16 | 16 | Yes | Planned in `docs/context/core-16-expansion-plan.md`; not yet implemented |
+| Core-16 | 16 | Yes | Core-8 plus eight expansion tasks; 8/8 Core-8 admitted, expansion automated gates pass with human sign-off pending |
 | Calibration Pack | Variable | **No** | Appendix-only diagnostics |
 | Stretch Pack | Variable | **No** | Separate safety review |
 
-Suite membership: `config/suites.yaml`. Task definitions: `config/tasks/core-8/*.yaml`.
+Suite membership: `config/suites.yaml`. Task definitions: `config/tasks/core-8/*.yaml`, `config/tasks/core-16/*.yaml`.
 
 ## 4. Budget Classes
 

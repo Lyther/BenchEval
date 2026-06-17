@@ -16,4 +16,4 @@ MVP target: **Core-8 Smoke** + task contract + E0/E1 execution + JSONL evidence 
 
 The prior benchmark-tracker concept (Inspect `.eval` summary rows, SWE-bench Verified, CyBench, Harbor secondary lanes) remains implemented in `src/bencheval/summary.py`, `scripts/extract_summary.py`, and `scripts/compare.py`. Those modules are **legacy score handling** per v0.2 §18; new Core scoring uses the vNext task contract and evidence store.
 
-For the archived 2026-04-15 HLD text, see git history of this file or `docs/architecture.md` (legacy appendix).
+External suites (SWE-bench, CyBench, etc.) are catalogued for Calibration/Stretch adapters in `docs/context/external-benchmark-catalog.md`.

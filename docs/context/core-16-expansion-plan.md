@@ -31,7 +31,7 @@ config/tasks/core-16/workspaces/<task-id>/
 docs/context/core-16-admission.yaml   # automated gates only; human sign-off pending
 ```
 
-Suite membership is incremental: add each ID to `config/suites.yaml` `core-16.tasks` only after that task's contract, workspace, reference artifact, negative control, verifier tests, and automated audit pass. Human sign-off remains pending until maintainer review.
+`config/suites.yaml` `core-16` lists all 16 tasks (Core-8 plus expansion). This admission file covers the eight expansion tasks only; `bencheval task audit core-16` audits Core-8 via `core-8-admission.yaml` and expansion via this file. Human sign-off remains pending for expansion tasks until maintainer review.
 
 ---
 

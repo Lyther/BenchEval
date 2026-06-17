@@ -62,7 +62,10 @@
 ## P5 — Core-16
 
 - [x] Expansion plan: `docs/context/core-16-expansion-plan.md` (eight task IDs, profiles, verifier strategy)
-- [ ] Add remaining 8 tasks (two per category per concept-zero §9)
+- [x] Add remaining 8 tasks (two per category per concept-zero §9)
+- [x] `core-16` suite lists all 16 tasks (Core-8 + expansion) per HLD
+- [x] Automated admission gates pass for all eight expansion tasks (`bencheval task audit core-16`; exit 1 until expansion sign-off)
+- [ ] Human sign-off for all eight expansion tasks
 - [ ] Stable evidence panels; variant families designed but canonical-only in normal runs
 
 ## P6 — Calibration Pack
@@ -79,8 +82,8 @@
 ## Hot files (vNext)
 
 - `docs/context/concept-zero.md` — authoritative HLD
-- `docs/context/core-16-expansion-plan.md` — Core-16 task plan (not yet implemented)
-- `config/tasks/core-8/*.yaml`, `config/suites.yaml`
+- `docs/context/core-16-expansion-plan.md` — Core-16 task plan (8/8 implemented; sign-off pending)
+- `config/tasks/core-8/*.yaml`, `config/tasks/core-16/*.yaml`, `config/suites.yaml`
 - `src/bencheval/task_contract.py`, `task_registry.py`, `planner.py`, `evidence.py`, `report.py`, `export.py`, `evidence_compare.py`, `cli.py`, `executor.py`, `doctor.py`, `inspect_adapter.py`, `harbor_adapter.py`
 - `scripts/run_provider_smoke.sh` — bounded live provider smoke (credential-gated)
 - `tests/test_task_*.py`, `tests/test_planner.py`, `tests/test_evidence.py`, `tests/test_report.py`, `tests/test_export.py`, `tests/test_evidence_compare.py`, `tests/test_inspect_adapter.py`, `tests/test_inspect_harbor.py`, `tests/test_provider_smoke_script.py`, `tests/test_cli_task.py`

@@ -4,14 +4,14 @@ Private-first, evidence-based evaluation for coding, tool use, agentic coding, a
 
 ## Layout
 
-- `config/tasks/` — vNext task contracts (Core-8 under `core-8/`)
-- `config/suites.yaml` — suite membership (core-8, smoke, calibration, stretch)
-- `config/` — legacy manifests, pricing YAML (no secrets)
-- `src/bencheval/` — library: task contract, registry, planner, evidence JSONL, legacy summary/compare
+- `config/tasks/` — vNext task contracts (`core-8/`, `core-16/`)
+- `config/suites.yaml` — suite membership (core-8, core-16, smoke, calibration, stretch)
+- `config/` — legacy manifests, pricing YAML, models YAML (no secrets)
+- `src/bencheval/` — library: task contract, registry, planner, evidence JSONL, report/export/compare, legacy summary/compare
 - `scripts/` — `compare.py`, `extract_summary.py`, `preflight_disk.sh`, `verify_auth.sh`, `run_provider_smoke.sh`
 - `tests/` — pytest suite
 - `results/` — run artifacts (gitignored where noted)
-- `docs/` — architecture, roadmap, concept-zero context, Core-16 expansion plan
+- `docs/` — architecture, roadmap, concept-zero context, external benchmark catalog
 
 ## Setup
 
@@ -19,7 +19,7 @@ Private-first, evidence-based evaluation for coding, tool use, agentic coding, a
 uv sync
 ```
 
-Use `uv sync --extra eval` only when running real Inspect / Harbor evals (vNext P1+).
+Use `uv sync --extra eval` only when running real Inspect / Harbor evals.
 
 ## vNext CLI
 
@@ -39,8 +39,8 @@ uv run bencheval run \
   --output results/evidence/run-001.jsonl \
   --artifacts-dir results/raw/run-001
 
-# All eight Core-8 tasks are admitted; offline harness supports T1/T2 (E0) and C1/C2/A1/A2/S1/S4 (E1).
 uv run bencheval task audit core-8
+uv run bencheval task audit core-16  # 16 tasks; exits 1 until expansion sign-off
 
 # Preflight for live Inspect/Harbor backends (never prints secret values)
 uv sync --extra eval
@@ -93,7 +93,7 @@ Writes `results/evidence/`, `results/raw/`, and `results/reports/` per model. Re
 
 ## Legacy summary pipeline
 
-Emit one strict summary row (manifest + stamp JSON + header JSON → JSONL):
+Emit one strict summary row (manifest + stamp JSON + header JSON to JSONL):
 
 ```bash
 uv run python scripts/extract_summary.py \
@@ -116,7 +116,16 @@ uv run python scripts/compare.py \
 
 ## Package
 
-Public exports (`from bencheval import …`) match `bencheval.__all__` — legacy summary/compare types. vNext modules (`task_contract`, `task_registry`, `planner`, `evidence`, `report`) are imported from submodules or via the `bencheval` CLI.
+```python
+from bencheval import EvidenceRecord, SummaryRow, TaskContract
+from bencheval import read_evidence_jsonl, read_summary_jsonl
+```
+
+Public exports include legacy summary/compare types and vNext evidence/task-contract types. vNext modules are also available from submodules (`task_registry`, `planner`, `report`, ...) or via the `bencheval` CLI.
+
+## External benchmarks
+
+Candidate third-party suites for Calibration/Stretch adapters: [`docs/context/external-benchmark-catalog.md`](docs/context/external-benchmark-catalog.md).
 
 ## Development
 
@@ -125,7 +134,8 @@ uv run pytest -q
 uv run ruff check src tests scripts/
 uv run ruff format --check src tests scripts/
 shellcheck scripts/*.sh && bash -n scripts/*.sh
-uv run bencheval task audit core-8  # 8/8 admitted
+uv run bencheval task audit core-8
+uv run bencheval task audit core-16  # 16 tasks; exits 1 until expansion sign-off (8/16 admitted today)
 ```
 
 Live Inspect/Harbor proof requires `uv sync --extra eval`, provider credentials, Docker (E1), and Harbor CLI (S4 live). See [`docs/roadmap.md`](docs/roadmap.md) live blockers.
