@@ -1,0 +1,34 @@
+{
+  "scanner": "bench-static",
+  "version": "1.0",
+  "alerts": [
+    {
+      "alert_id": "ALERT-001",
+      "rule_id": "python.sql-injection",
+      "title": "Possible SQL injection via string formatting",
+      "file": "snippets/utils.py",
+      "line": 7
+    },
+    {
+      "alert_id": "ALERT-002",
+      "rule_id": "python.hardcoded-secret",
+      "title": "Hardcoded credential detected",
+      "file": "snippets/auth.py",
+      "line": 6
+    },
+    {
+      "alert_id": "ALERT-003",
+      "rule_id": "python.path-traversal",
+      "title": "User-controlled path joined without validation",
+      "file": "snippets/auth.py",
+      "line": 11
+    },
+    {
+      "alert_id": "ALERT-004",
+      "rule_id": "python.unused-import",
+      "title": "Unused import statement",
+      "file": "snippets/utils.py",
+      "line": 3
+    }
+  ]
+}

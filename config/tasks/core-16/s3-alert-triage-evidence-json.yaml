@@ -1,0 +1,75 @@
+schema_version: "0.2"
+
+task:
+  id: "be-core-s3-alert-triage-evidence-json"
+  version: "0.2.0"
+  family_id: "alert-triage-evidence-json"
+  category: "defensive_security"
+  title: "Alert Triage Evidence JSON"
+  intent: "Classify static-analysis alerts and cite local evidence IDs."
+
+provenance:
+  source_type: "synthetic"
+  license: "internal"
+  spdx: "LicenseRef-Internal"
+  source_hash: "sha256:5864d47e46370f06b931bc14798db3a1de3dd838a3b2a45c528b15de13799d51"
+  leak_risk: "low"
+  public_indexed: false
+  created_at: "2026-05-29"
+  reviewed_by: []
+
+variant:
+  variant_id: "canonical"
+  generator: "manual"
+  seed: null
+  stable_for_regression: true
+  rotation_group: "core-2026q2"
+
+input_contract:
+  provided:
+    - "repo_or_snippets"
+    - "alert_report"
+    - "output_schema"
+  hidden:
+    - "gold_labels"
+    - "evidence_id_map"
+    - "verifier_only_alert_report"
+
+output_contract:
+  type: "json"
+  schema: "schemas/triage_verdict.schema.json"
+
+execution:
+  profile: "E0"
+  allowed_tools:
+    - "read_file"
+    - "search_local"
+  forbidden_tools:
+    - "network"
+    - "write_file"
+    - "package_install"
+    - "external_scan"
+    - "shell"
+  internet: false
+
+constraints:
+  budget_class: "B0"
+  max_steps: 4
+  max_wall_clock_sec: 60
+  max_cost_usd: 0.05
+  must_not_modify_tests: true
+
+verification:
+  mode: "deterministic"
+  verifier: "verify.py"
+  replay_required: true
+  primary_pass_metric: "pass"
+  partial_metrics:
+    - "label_accuracy"
+    - "evidence_id_accuracy"
+    - "unsupported_claim_count"
+
+risk_tags:
+  - "hallucination"
+  - "security_triage"
+  - "schema_adherence"

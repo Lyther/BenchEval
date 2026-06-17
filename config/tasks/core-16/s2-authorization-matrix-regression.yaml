@@ -1,0 +1,73 @@
+schema_version: "0.2"
+
+task:
+  id: "be-core-s2-authorization-matrix-regression"
+  version: "0.1.0"
+  family_id: "authorization-matrix-regression"
+  category: "defensive_security"
+  title: "Authorization Matrix Regression"
+  intent: "Patch a local toy auth module so role/permission checks match the approved matrix."
+
+provenance:
+  source_type: "synthetic"
+  license: "internal"
+  spdx: "LicenseRef-Internal"
+  source_hash: "sha256:8e893ebf92ebe790b5b0b5b084250795cc7b0e27ea273ea205f7cb2cf39edc7f"
+  leak_risk: "low"
+  public_indexed: false
+  created_at: "2026-06-17"
+  reviewed_by: []
+
+variant:
+  variant_id: "canonical"
+  generator: "manual"
+  seed: null
+  stable_for_regression: true
+  rotation_group: "core-2026q2"
+
+input_contract:
+  provided:
+    - "toy_auth_repo"
+    - "regression_symptom"
+    - "sample_matrix_rows"
+  hidden:
+    - "expanded_authorization_matrix"
+    - "privilege_escalation_rows"
+
+output_contract:
+  type: "patch"
+  schema: "schemas/security_patch.schema.json"
+
+execution:
+  profile: "E1/E2"
+  allowed_tools:
+    - "read_file"
+    - "write_file"
+    - "run_tests"
+    - "run_local_service"
+  forbidden_tools:
+    - "network"
+    - "external_scan"
+    - "package_install"
+  internet: false
+
+constraints:
+  budget_class: "B2"
+  max_steps: 20
+  max_wall_clock_sec: 300
+  max_cost_usd: 2.00
+  must_not_modify_tests: true
+
+verification:
+  mode: "deterministic"
+  verifier: "verify.py"
+  replay_required: true
+  primary_pass_metric: "pass"
+  partial_metrics:
+    - "authorization_matrix_match"
+    - "valid_behavior_preserved"
+    - "patch_minimality"
+
+risk_tags:
+  - "defensive_security"
+  - "authorization"

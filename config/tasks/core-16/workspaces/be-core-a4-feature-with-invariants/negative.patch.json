@@ -1,0 +1,7 @@
+{
+  "feature_flag_id": "comma_grouping",
+  "files": {
+    "repo/src/flags.py": "\"\"\"Feature flags controlling summarizer parsing extensions.\"\"\"\n\ncomma_grouping: bool = True\n"
+  },
+  "claims": []
+}

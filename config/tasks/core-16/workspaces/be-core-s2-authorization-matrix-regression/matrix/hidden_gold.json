@@ -1,0 +1,31 @@
+{
+  "tuples": [
+    {"role": "viewer", "action": "read", "resource": "document", "allow": true},
+    {"role": "viewer", "action": "read", "resource": "settings", "allow": false},
+    {"role": "viewer", "action": "read", "resource": "audit_log", "allow": false},
+    {"role": "viewer", "action": "write", "resource": "document", "allow": false},
+    {"role": "viewer", "action": "write", "resource": "settings", "allow": false},
+    {"role": "viewer", "action": "write", "resource": "audit_log", "allow": false},
+    {"role": "viewer", "action": "delete", "resource": "document", "allow": false},
+    {"role": "viewer", "action": "delete", "resource": "settings", "allow": false},
+    {"role": "viewer", "action": "delete", "resource": "audit_log", "allow": false},
+    {"role": "editor", "action": "read", "resource": "document", "allow": true},
+    {"role": "editor", "action": "read", "resource": "settings", "allow": true},
+    {"role": "editor", "action": "read", "resource": "audit_log", "allow": false},
+    {"role": "editor", "action": "write", "resource": "document", "allow": true},
+    {"role": "editor", "action": "write", "resource": "settings", "allow": false},
+    {"role": "editor", "action": "write", "resource": "audit_log", "allow": false},
+    {"role": "editor", "action": "delete", "resource": "document", "allow": false},
+    {"role": "editor", "action": "delete", "resource": "settings", "allow": false},
+    {"role": "editor", "action": "delete", "resource": "audit_log", "allow": false},
+    {"role": "admin", "action": "read", "resource": "document", "allow": true},
+    {"role": "admin", "action": "read", "resource": "settings", "allow": true},
+    {"role": "admin", "action": "read", "resource": "audit_log", "allow": true},
+    {"role": "admin", "action": "write", "resource": "document", "allow": true},
+    {"role": "admin", "action": "write", "resource": "settings", "allow": true},
+    {"role": "admin", "action": "write", "resource": "audit_log", "allow": true},
+    {"role": "admin", "action": "delete", "resource": "document", "allow": true},
+    {"role": "admin", "action": "delete", "resource": "settings", "allow": true},
+    {"role": "admin", "action": "delete", "resource": "audit_log", "allow": false}
+  ]
+}

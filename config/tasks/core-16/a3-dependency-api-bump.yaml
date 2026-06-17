@@ -1,0 +1,78 @@
+schema_version: "0.2"
+
+task:
+  id: "be-core-a3-dependency-api-bump"
+  version: "0.2.0"
+  family_id: "dependency-api-bump"
+  category: "agentic_coding"
+  title: "Dependency API Bump"
+  intent: "Adapt application code to a minor breaking change in a vendored stub dependency."
+
+provenance:
+  source_type: "internal"
+  license: "internal"
+  spdx: "LicenseRef-Internal"
+  source_hash: "sha256:1edc80539e8a3023dbb1dd62ffbfc9e50918b4f128d9b4995af61cf7b2a0de58"
+  leak_risk: "low"
+  public_indexed: false
+  created_at: "2026-06-17"
+  reviewed_by: []
+
+variant:
+  variant_id: "canonical"
+  generator: "manual"
+  seed: null
+  stable_for_regression: true
+  rotation_group: "core-2026q2"
+
+input_contract:
+  provided:
+    - "repo_snapshot"
+    - "vendor_changelog"
+    - "current_dependency_pin"
+    - "visible_tests"
+  hidden:
+    - "secondary_consumer_module"
+    - "compatibility_fixtures"
+    - "expected_lockfile_pin"
+
+output_contract:
+  type: "patch"
+  schema: "schemas/dependency_bump.schema.json"
+
+execution:
+  profile: "E1"
+  allowed_tools:
+    - "read_file"
+    - "write_file"
+    - "search_local"
+    - "run_tests"
+  forbidden_tools:
+    - "network"
+    - "package_install"
+  internet: false
+
+constraints:
+  budget_class: "B2"
+  max_steps: 20
+  max_wall_clock_sec: 300
+  max_cost_usd: 2.00
+  must_not_modify_tests: true
+
+verification:
+  mode: "deterministic"
+  verifier: "verify.py"
+  replay_required: true
+  primary_pass_metric: "pass"
+  partial_metrics:
+    - "migration_identified"
+    - "lockfile_pin_correct"
+    - "compatibility_fixes_apply"
+    - "visible_tests_pass"
+    - "hidden_integration_pass"
+    - "patch_minimality"
+    - "no_unrelated_changes"
+
+risk_tags:
+  - "agentic_coding"
+  - "dependency_migration"

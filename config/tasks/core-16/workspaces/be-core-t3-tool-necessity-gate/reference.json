@@ -1,0 +1,55 @@
+{
+  "variant_responses": {
+    "canonical": {
+      "use_tool": true,
+      "tool_call": {
+        "tool": "mock_lookup",
+        "arguments": {
+          "query": "ada@example.com"
+        }
+      }
+    },
+    "direct-arithmetic": {
+      "use_tool": false,
+      "answer": {
+        "result": 42
+      }
+    },
+    "context-sufficient": {
+      "use_tool": false,
+      "answer": {
+        "department": "Sales"
+      }
+    },
+    "calendar-required": {
+      "use_tool": true,
+      "tool_call": {
+        "tool": "mock_calendar",
+        "arguments": {
+          "title": "Core-16 sync",
+          "date": "2026-07-01",
+          "time": "14:00",
+          "timezone": "UTC",
+          "attendees": [
+            "ops@example.com"
+          ]
+        }
+      }
+    },
+    "lookup-phone": {
+      "use_tool": true,
+      "tool_call": {
+        "tool": "mock_lookup",
+        "arguments": {
+          "query": "carol@example.com"
+        }
+      }
+    },
+    "inverted-necessity": {
+      "use_tool": false,
+      "answer": {
+        "sku": "widget-99"
+      }
+    }
+  }
+}

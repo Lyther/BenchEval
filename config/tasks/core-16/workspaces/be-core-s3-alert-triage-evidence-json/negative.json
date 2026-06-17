@@ -1,0 +1,28 @@
+{
+  "verdicts": [
+    {
+      "alert_id": "ALERT-001",
+      "disposition": "true_positive",
+      "severity": "low",
+      "evidence_ids": ["utils-sqli-7"]
+    },
+    {
+      "alert_id": "ALERT-002",
+      "disposition": "false_positive",
+      "severity": "info",
+      "evidence_ids": ["auth-test-token-15"]
+    },
+    {
+      "alert_id": "ALERT-003",
+      "disposition": "true_positive",
+      "severity": "critical",
+      "evidence_ids": ["EV-999"]
+    },
+    {
+      "alert_id": "ALERT-005",
+      "disposition": "false_positive",
+      "severity": "info",
+      "evidence_ids": []
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "feature_flag_id": "comma_grouping",
+  "files": {
+    "repo/src/flags.py": "\"\"\"Feature flags controlling summarizer parsing extensions.\"\"\"\n\ncomma_grouping: bool = True\n",
+    "repo/src/normalize.py": "import flags\n\n\ndef parse_tokens(line: str) -> list[int]:\n    parts = line.split()\n    values: list[int] = []\n    for part in parts:\n        if not part:\n            continue\n        token = part.replace(\",\", \"\") if flags.comma_grouping else part\n        values.append(int(token))\n    return values\n"
+  },
+  "claims": []
+}

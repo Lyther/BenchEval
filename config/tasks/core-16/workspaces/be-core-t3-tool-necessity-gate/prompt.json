@@ -1,0 +1,17 @@
+{
+  "task": "For each entry in prompt_variants.json, decide whether a mock tool call is required or a direct JSON answer suffices. Use tool_catalog.json for allowed tools. Return one decision per variant_id.",
+  "prompt_variants_ref": "prompt_variants.json",
+  "tool_catalog_ref": "tool_catalog.json",
+  "output_schema": {
+    "variant_responses": {
+      "<variant_id>": {
+        "use_tool": "boolean",
+        "tool_call": {
+          "tool": "string",
+          "arguments": "object"
+        },
+        "answer": "object"
+      }
+    }
+  }
+}

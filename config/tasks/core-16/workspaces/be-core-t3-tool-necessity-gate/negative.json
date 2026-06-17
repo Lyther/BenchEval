@@ -1,0 +1,49 @@
+{
+  "variant_responses": {
+    "canonical": {
+      "use_tool": false,
+      "answer": {
+        "department": "Engineering"
+      }
+    },
+    "direct-arithmetic": {
+      "use_tool": true,
+      "tool_call": {
+        "tool": "mock_lookup",
+        "arguments": {
+          "query": "42"
+        }
+      }
+    },
+    "context-sufficient": {
+      "use_tool": true,
+      "tool_call": {
+        "tool": "mock_lookup",
+        "arguments": {
+          "query": "bob@example.com"
+        }
+      }
+    },
+    "calendar-required": {
+      "use_tool": false,
+      "answer": {
+        "scheduled": true
+      }
+    },
+    "lookup-phone": {
+      "use_tool": false,
+      "answer": {
+        "phone": "555-0100"
+      }
+    },
+    "inverted-necessity": {
+      "use_tool": true,
+      "tool_call": {
+        "tool": "mock_lookup",
+        "arguments": {
+          "query": "widget-99"
+        }
+      }
+    }
+  }
+}

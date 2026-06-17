@@ -1,0 +1,77 @@
+schema_version: "0.2"
+
+task:
+  id: "be-core-t4-stateful-policy-workflow"
+  version: "0.2.0"
+  family_id: "stateful-policy-workflow"
+  category: "tool_usage"
+  title: "Stateful Policy Workflow"
+  intent: "Execute CRUD on an in-memory policy store under role constraints and emit an ordered audit log."
+
+provenance:
+  source_type: "synthetic"
+  license: "internal"
+  spdx: "LicenseRef-Internal"
+  source_hash: "sha256:76567b1ea6821657583edca37f177e5a656184000efeb166706cc85fd520a5c4"
+  leak_risk: "low"
+  public_indexed: false
+  created_at: "2026-06-17"
+  reviewed_by: []
+
+variant:
+  variant_id: "canonical"
+  generator: "manual"
+  seed: null
+  stable_for_regression: true
+  rotation_group: "core-2026q2"
+
+input_contract:
+  provided:
+    - "user_request"
+    - "starting_state"
+    - "role_permissions"
+    - "tool_catalog"
+    - "output_schema"
+  hidden:
+    - "expected_final_state"
+    - "expected_audit_sequence"
+    - "alternate_starting_state"
+
+output_contract:
+  type: "json"
+  schema: "schemas/policy_workflow_result.schema.json"
+
+execution:
+  profile: "E0"
+  allowed_tools:
+    - "policy_create"
+    - "policy_update"
+    - "policy_delete"
+    - "read_file"
+  forbidden_tools:
+    - "network"
+    - "package_install"
+    - "shell"
+  internet: false
+
+constraints:
+  budget_class: "B0"
+  max_steps: 8
+  max_wall_clock_sec: 90
+  max_cost_usd: 0.05
+  must_not_modify_tests: true
+
+verification:
+  mode: "deterministic"
+  verifier: "verify.py"
+  replay_required: true
+  primary_pass_metric: "pass"
+  partial_metrics:
+    - "final_state_match"
+    - "audit_sequence_match"
+    - "forbidden_action_absent"
+
+risk_tags:
+  - "state_replay"
+  - "policy_constraints"
+  - "audit_trail"

@@ -1,0 +1,8 @@
+{
+  "migration_id": "strutil-v2-field-parser",
+  "files": {
+    "repo/src/loader.py": "\"\"\"Load delimited field records from text lines.\"\"\"\n\nfrom strutil import parse_fields\n\n\ndef load_records(blob: str) -> list[list[str]]:\n    lines = [line for line in blob.strip().splitlines() if line.strip()]\n    return [parse_fields(line, delim=\",\") for line in lines]\n",
+    "repo/src/reporting.py": "\"\"\"Reporting helpers not exercised by visible tests.\"\"\"\n\nfrom strutil import parse_fields\n\n\ndef field_count(line: str) -> int:\n    return len(parse_fields(line, delim=\"|\"))\n",
+    "repo/requirements.txt": "strutil==2.0.0\n"
+  }
+}

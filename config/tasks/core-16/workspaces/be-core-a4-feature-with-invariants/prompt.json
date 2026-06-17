@@ -1,0 +1,6 @@
+{
+  "issue": "Enable the comma_grouping feature flag and implement comma-aware token parsing without changing legacy behavior when the flag is off.",
+  "visible_symptom": "Space-separated inputs work in visible tests, but comma-grouped numbers are not supported yet.",
+  "repo": "repo/",
+  "feature_flag": "comma_grouping"
+}

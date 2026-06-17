@@ -1,0 +1,6 @@
+{
+  "migration_description": "Add optional enable_async (default false) to config/settings.py. When enable_async is true, normalized output must set feature_flags.async_pipeline to true. Old configs without the field must still parse and normalize. Bump schemas/normalized_schema.json to schema_version 0.2 documenting enable_async and the async_pipeline derivation.",
+  "schema_snapshot": "repo/schemas/normalized_schema.json",
+  "settings_module": "repo/config/settings.py",
+  "visible_tests": "repo/tests/test_visible.py"
+}

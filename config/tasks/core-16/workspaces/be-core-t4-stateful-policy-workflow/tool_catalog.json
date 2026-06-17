@@ -1,0 +1,33 @@
+{
+  "tools": [
+    {
+      "name": "policy_create",
+      "description": "Create a new policy record in the in-memory store",
+      "parameters": {
+        "policy": "object"
+      }
+    },
+    {
+      "name": "policy_update",
+      "description": "Update an existing policy by id",
+      "parameters": {
+        "id": "string",
+        "patch": "object"
+      }
+    },
+    {
+      "name": "policy_delete",
+      "description": "Delete a policy by id (admin role only)",
+      "parameters": {
+        "id": "string"
+      }
+    },
+    {
+      "name": "read_file",
+      "description": "Read a local fixture file",
+      "parameters": {
+        "path": "string"
+      }
+    }
+  ]
+}

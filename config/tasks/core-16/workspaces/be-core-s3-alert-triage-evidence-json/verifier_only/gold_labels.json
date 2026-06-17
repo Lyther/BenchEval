@@ -1,0 +1,28 @@
+{
+  "verdicts": [
+    {
+      "alert_id": "ALERT-001",
+      "disposition": "true_positive",
+      "severity": "high",
+      "evidence_ids": ["EV-002"]
+    },
+    {
+      "alert_id": "ALERT-002",
+      "disposition": "false_positive",
+      "severity": "info",
+      "evidence_ids": ["EV-001"]
+    },
+    {
+      "alert_id": "ALERT-003",
+      "disposition": "true_positive",
+      "severity": "critical",
+      "evidence_ids": ["EV-003"]
+    },
+    {
+      "alert_id": "ALERT-004",
+      "disposition": "false_positive",
+      "severity": "info",
+      "evidence_ids": []
+    }
+  ]
+}

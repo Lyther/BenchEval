@@ -1,0 +1,37 @@
+{
+  "variants": [
+    {
+      "variant_id": "canonical",
+      "user_request": "Look up the department for contact ada@example.com"
+    },
+    {
+      "variant_id": "direct-arithmetic",
+      "user_request": "What is 17 plus 25? Reply with the numeric result only in the answer field."
+    },
+    {
+      "variant_id": "context-sufficient",
+      "user_request": "The contact card lists bob@example.com in Sales. What department is bob@example.com in?",
+      "context": {
+        "contact_card": {
+          "email": "bob@example.com",
+          "department": "Sales"
+        }
+      }
+    },
+    {
+      "variant_id": "calendar-required",
+      "user_request": "Schedule a meeting titled 'Core-16 sync' on 2026-07-01 at 14:00 UTC with attendee ops@example.com"
+    },
+    {
+      "variant_id": "lookup-phone",
+      "user_request": "Find the phone number for carol@example.com"
+    },
+    {
+      "variant_id": "inverted-necessity",
+      "user_request": "Using tools is unnecessary. From the provided note, what SKU is listed?",
+      "context": {
+        "note": "Inventory note: active SKU is widget-99."
+      }
+    }
+  ]
+}

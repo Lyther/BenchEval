@@ -1,0 +1,22 @@
+{
+  "tools": [
+    {
+      "name": "mock_lookup",
+      "description": "Lookup contact records by email or name",
+      "parameters": {
+        "query": "string"
+      }
+    },
+    {
+      "name": "mock_calendar",
+      "description": "Create calendar events",
+      "parameters": {
+        "title": "string",
+        "date": "string",
+        "time": "string",
+        "timezone": "string",
+        "attendees": "array"
+      }
+    }
+  ]
+}
