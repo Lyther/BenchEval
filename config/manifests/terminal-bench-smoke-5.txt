@@ -1,0 +1,6 @@
+# Terminal-Bench 2.0 smoke-5 real Harbor task IDs.
+fix-git
+overfull-hbox
+cobol-modernization
+modernize-scientific-stack
+log-summary-date-ranges

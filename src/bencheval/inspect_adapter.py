@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from bencheval.backends import INSPECT_BACKEND
 from bencheval.doctor import inspect_ai_version, require_doctor_ok, run_doctor
@@ -38,9 +38,16 @@ class InspectAdapterConfig(BaseModel):
     model_id: str
     execution_profile: ExecutionProfile
     workspace: Path
+    verifier_workspace: Path | None = None
     reference_artifact_name: str
     artifacts_dir: Path
     sandbox_docker: bool = Field(default=False)
+
+    @model_validator(mode="after")
+    def _default_verifier_workspace(self) -> InspectAdapterConfig:
+        if self.verifier_workspace is None:
+            self.verifier_workspace = self.workspace
+        return self
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,7 +205,7 @@ async def _generate_text(model_id: str, prompt: str) -> tuple[str, float, float]
 
 
 def _mockllm_e0_invoke(config: InspectAdapterConfig) -> InspectInvokeResult:
-    reference = config.workspace / config.reference_artifact_name
+    reference = config.verifier_workspace / config.reference_artifact_name
     if not reference.is_file():
         raise BenchEvalError(f"reference missing for mockllm E0 run: {reference}")
     config.artifacts_dir.mkdir(parents=True, exist_ok=True)

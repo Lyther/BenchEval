@@ -1,0 +1,21 @@
+{
+  "task": "Triage the static-analysis alerts in alert_report.json. Read snippets/ to decide whether each alert is a true positive, false positive, or needs review. Cite local evidence IDs for true positives.",
+  "alert_report": "alert_report.json",
+  "snippets_dir": "snippets/",
+  "output_schema": {
+    "verdicts": [
+      {
+        "alert_id": "string",
+        "disposition": "true_positive | false_positive | needs_review",
+        "severity": "critical | high | medium | low | info",
+        "evidence_ids": [
+          "string"
+        ]
+      }
+    ]
+  },
+  "notes": [
+    "Match alerts by alert_id only; do not invent alerts not present in alert_report.json.",
+    "Evidence IDs may use canonical or alias forms defined in the local snippet index."
+  ]
+}

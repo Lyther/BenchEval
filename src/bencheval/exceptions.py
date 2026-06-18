@@ -15,7 +15,7 @@ class EvalLogError(BenchEvalError):
 
 
 class ComparisonError(BenchEvalError):
-    """Raised when a delta comparison violates §7 guardrails."""
+    """Raised when a delta comparison violates guardrails."""
 
 
 class TaskContractError(BenchEvalError):
@@ -24,6 +24,10 @@ class TaskContractError(BenchEvalError):
 
 class EvidenceValidationError(BenchEvalError):
     """Raised when an evidence JSONL row fails schema or business rules."""
+
+
+class LiveRunManifestError(BenchEvalError):
+    """Raised when a live run manifest record fails schema or business rules."""
 
 
 class AdapterFailureError(BenchEvalError):

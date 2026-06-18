@@ -1,0 +1,17 @@
+{
+  "schema_version": "0.1",
+  "normalized_fields": {
+    "app_name": {
+      "type": "string",
+      "default": "app"
+    },
+    "debug": {
+      "type": "boolean",
+      "default": false
+    },
+    "feature_flags": {
+      "type": "object",
+      "default": {}
+    }
+  }
+}

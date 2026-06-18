@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from bencheval.doctor import harbor_revision
 from bencheval.exceptions import BenchEvalError
@@ -27,9 +27,16 @@ class HarborAdapterConfig(BaseModel):
     task_id: str
     model_id: str
     workspace: Path
+    verifier_workspace: Path | None = None
     reference_artifact_name: str
     package_dir: Path
     artifacts_dir: Path
+
+    @model_validator(mode="after")
+    def _default_verifier_workspace(self) -> HarborAdapterConfig:
+        if self.verifier_workspace is None:
+            self.verifier_workspace = self.workspace
+        return self
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,7 +116,7 @@ def export_harbor_task(config: HarborAdapterConfig) -> HarborPackage:
     )
     (root / "instruction.md").write_text(instruction + "\n", encoding="utf-8")
     shutil.copytree(config.workspace / "corpus", root / "corpus")
-    shutil.copy2(config.workspace / "verify.py", root / "verify.py")
+    shutil.copy2(config.verifier_workspace / "verify.py", root / "verify.py")
     (root / "task.toml").write_text(
         "\n".join(
             [

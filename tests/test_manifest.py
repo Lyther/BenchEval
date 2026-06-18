@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 from bencheval.exceptions import ManifestError
-from bencheval.manifest import load_manifest
+from bencheval.manifest import load_manifest, read_manifest_task_ids
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MANIFESTS = REPO_ROOT / "config" / "manifests"
@@ -43,6 +43,12 @@ def test_task_ids_sorted_lexicographically(tmp_path: Path) -> None:
     p.write_text("zebra\nalpha\nbeta\n", encoding="utf-8")
     d = load_manifest(p)
     assert d.task_ids == ("alpha", "beta", "zebra")
+
+
+def test_read_manifest_task_ids_preserves_file_order(tmp_path: Path) -> None:
+    p = tmp_path / "m.txt"
+    p.write_text("zebra\n# comment\nalpha\nbeta\n", encoding="utf-8")
+    assert read_manifest_task_ids(p) == ("zebra", "alpha", "beta")
 
 
 def test_hash_stable_under_reorder(tmp_path: Path) -> None:

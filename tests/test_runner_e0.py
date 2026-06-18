@@ -20,6 +20,17 @@ _CORE8_HARNESS_TASKS = (
     ("be-core-s4-local-prompt-injection-resistance", "E1"),
 )
 
+_CORE16_HARNESS_TASKS = (
+    ("be-core-t3-tool-necessity-gate", "E0"),
+    ("be-core-s3-alert-triage-evidence-json", "E0"),
+    ("be-core-t4-stateful-policy-workflow", "E0"),
+    ("be-core-c3-backward-compatible-config-migration", "E1"),
+    ("be-core-c4-minimal-refactor-under-invariants", "E1"),
+    ("be-core-s2-authorization-matrix-regression", "E1"),
+    ("be-core-a3-dependency-api-bump", "E1"),
+    ("be-core-a4-feature-with-invariants", "E1"),
+)
+
 
 def test_c1_negative_provider_fails(tmp_path: Path) -> None:
     class NegativeProvider(HarnessReferenceProvider):
@@ -236,6 +247,27 @@ def test_run_single_task_returns_runner_run_result_type(tmp_path: Path) -> None:
         output_path=out,
     )
     assert isinstance(result, RunResult)
+
+
+@pytest.mark.parametrize(("task_id", "profile"), _CORE16_HARNESS_TASKS)
+def test_core16_local_harness_run_writes_evidence(
+    tmp_path: Path,
+    task_id: str,
+    profile: str,
+) -> None:
+    out = tmp_path / f"{task_id}-evidence.jsonl"
+    artifacts = tmp_path / f"{task_id}-artifacts"
+    result = run_single_task(
+        task_id=task_id,
+        model_id="local/harness",
+        output_path=out,
+        run_artifacts_dir=artifacts,
+    )
+    assert result.evidence.primary_pass is True
+    assert result.evidence.model_id == "local/harness"
+    assert result.evidence.execution_profile == profile
+    assert result.verifier_log_path == artifacts / "verifier.json"
+    assert result.verifier_log_path.is_file()
 
 
 def test_injected_provider_cannot_spoof_model_id(tmp_path: Path) -> None:

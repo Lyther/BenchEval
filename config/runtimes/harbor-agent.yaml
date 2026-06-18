@@ -1,0 +1,34 @@
+schema_version: "0.1"
+runtime:
+  id: "harbor-agent"
+  kind: "harness_agent"
+  display_name: "Harbor default agent"
+  lifecycle: "containerized"
+  supported_platforms: ["macos", "linux"]
+  supported_harnesses: ["harbor"]
+  model_binding: "bencheval_injected"
+launch:
+  command_template: ["harbor", "run"]
+  working_dir_policy: "ephemeral_workspace"
+  env_vars_required: []
+  env_vars_optional: ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
+  timeout_sec_default: 600
+capabilities:
+  reads_files: true
+  edits_files: true
+  runs_shell: true
+  supports_mcp: false
+  supports_subagents: false
+  supports_hooks: false
+  supports_noninteractive: true
+  supports_json_output: "partial"
+safety:
+  network_default: "deny"
+  workspace_boundary: "ephemeral_only"
+  requires_user_approval: false
+  forbidden_features_for_eval:
+    - "external_network_unless_benchmark_requires"
+versioning:
+  version_command: ["harbor", "--version"]
+  config_hash_inputs: []
+admission: "draft"

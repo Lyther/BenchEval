@@ -1,0 +1,100 @@
+schema_version: "0.1"
+suite: core-16
+updated_at: "2026-06-17"
+notes: >
+  Expansion-task admission only (8 tasks). Full Core-16 suite audit uses
+  `bencheval task audit core-16` across Core-8 + expansion (16 tasks).
+  Human sign-off is pending maintainer review for all eight expansion tasks.
+tasks:
+  be-core-t3-tool-necessity-gate:
+    workspace: config/selftest/core-16/workspaces/be-core-t3-tool-necessity-gate
+    reference_solution: reference.json
+    negative_control: negative.json
+    required_artifacts:
+      - prompt.json
+      - prompt_variants.json
+      - reference.json
+      - negative.json
+      - tool_catalog.json
+      - verify.py
+    no_llm_judge_primary: true
+    replay_runs: 2
+  be-core-s3-alert-triage-evidence-json:
+    workspace: config/selftest/core-16/workspaces/be-core-s3-alert-triage-evidence-json
+    reference_solution: reference.json
+    negative_control: negative.json
+    required_artifacts:
+      - prompt.json
+      - reference.json
+      - negative.json
+      - alert_report.json
+      - verify.py
+    no_llm_judge_primary: true
+    replay_runs: 2
+  be-core-t4-stateful-policy-workflow:
+    workspace: config/selftest/core-16/workspaces/be-core-t4-stateful-policy-workflow
+    reference_solution: reference.json
+    negative_control: negative.json
+    required_artifacts:
+      - prompt.json
+      - reference.json
+      - negative.json
+      - tool_catalog.json
+      - verify.py
+    no_llm_judge_primary: true
+    replay_runs: 2
+  be-core-c3-backward-compatible-config-migration:
+    workspace: config/selftest/core-16/workspaces/be-core-c3-backward-compatible-config-migration
+    reference_solution: reference.patch.json
+    negative_control: negative.patch.json
+    required_artifacts:
+      - prompt.json
+      - reference.patch.json
+      - negative.patch.json
+      - verify.py
+    no_llm_judge_primary: true
+    replay_runs: 2
+  be-core-c4-minimal-refactor-under-invariants:
+    workspace: config/selftest/core-16/workspaces/be-core-c4-minimal-refactor-under-invariants
+    reference_solution: reference.patch.json
+    negative_control: negative.patch.json
+    required_artifacts:
+      - prompt.json
+      - reference.patch.json
+      - negative.patch.json
+      - verify.py
+    no_llm_judge_primary: true
+    replay_runs: 2
+  be-core-s2-authorization-matrix-regression:
+    workspace: config/selftest/core-16/workspaces/be-core-s2-authorization-matrix-regression
+    reference_solution: reference.patch.json
+    negative_control: negative.patch.json
+    required_artifacts:
+      - prompt.json
+      - reference.patch.json
+      - negative.patch.json
+      - verify.py
+    no_llm_judge_primary: true
+    replay_runs: 2
+  be-core-a3-dependency-api-bump:
+    workspace: config/selftest/core-16/workspaces/be-core-a3-dependency-api-bump
+    reference_solution: reference.patch.json
+    negative_control: negative.patch.json
+    required_artifacts:
+      - prompt.json
+      - reference.patch.json
+      - negative.patch.json
+      - verify.py
+    no_llm_judge_primary: true
+    replay_runs: 2
+  be-core-a4-feature-with-invariants:
+    workspace: config/selftest/core-16/workspaces/be-core-a4-feature-with-invariants
+    reference_solution: reference.patch.json
+    negative_control: negative.patch.json
+    required_artifacts:
+      - prompt.json
+      - reference.patch.json
+      - negative.patch.json
+      - verify.py
+    no_llm_judge_primary: true
+    replay_runs: 2

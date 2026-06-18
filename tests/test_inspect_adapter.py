@@ -15,9 +15,11 @@ from bencheval.inspect_adapter import (
     _extract_json_object,
     default_inspect_invoke,
 )
+from bencheval.workspace_staging import stage_agent_workspace
+from tests.selftest_paths import core8_workspace
 
 _ROOT = Path(__file__).resolve().parents[1]
-_T1_WS = _ROOT / "config/tasks/core-8/workspaces/be-core-t1-single-structured-call"
+_T1_WS = core8_workspace("be-core-t1-single-structured-call")
 
 
 def test_extract_json_from_fenced_prose() -> None:
@@ -163,6 +165,25 @@ def test_cli_inspect_mockllm_subprocess_smoke(tmp_path: Path) -> None:
     assert payload["model_id"] == MOCKLLM_MODEL_ID
     record = read_evidence_jsonl(out)[0]
     assert record.adapter_metadata["invocation_mode"] == "mockllm_deterministic"
+
+
+def test_mockllm_reads_reference_from_verifier_workspace_when_agent_staged(
+    tmp_path: Path,
+) -> None:
+    staged = stage_agent_workspace(_T1_WS, tmp_path / "agent-workspace")
+    assert not (staged / "reference.json").exists()
+    config = InspectAdapterConfig(
+        task_id="be-core-t1-single-structured-call",
+        model_id=MOCKLLM_MODEL_ID,
+        execution_profile="E0",
+        workspace=staged,
+        verifier_workspace=_T1_WS,
+        reference_artifact_name="reference.json",
+        artifacts_dir=tmp_path / "artifacts",
+    )
+    result = default_inspect_invoke(config)
+    assert result.candidate_path.is_file()
+    assert json.loads(result.candidate_path.read_text(encoding="utf-8"))
 
 
 def test_default_inspect_invoke_mockllm_skips_generate(

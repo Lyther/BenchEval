@@ -7,7 +7,7 @@ notes: >
   are complete and admitted as of 2026-05-29.
 tasks:
   be-core-c1-small-logic-patch:
-    workspace: config/tasks/core-8/workspaces/be-core-c1-small-logic-patch
+    workspace: config/selftest/core-8/workspaces/be-core-c1-small-logic-patch
     reference_solution: reference.patch.json
     negative_control: negative.patch.json
     required_artifacts:
@@ -21,7 +21,7 @@ tasks:
       reviewer: project-maintainer
       date: "2026-05-29"
   be-core-c2-regression-test-authoring:
-    workspace: config/tasks/core-8/workspaces/be-core-c2-regression-test-authoring
+    workspace: config/selftest/core-8/workspaces/be-core-c2-regression-test-authoring
     reference_solution: reference.test.json
     negative_control: negative.test.json
     required_artifacts:
@@ -35,7 +35,7 @@ tasks:
       reviewer: project-maintainer
       date: "2026-05-29"
   be-core-t1-single-structured-call:
-    workspace: config/tasks/core-8/workspaces/be-core-t1-single-structured-call
+    workspace: config/selftest/core-8/workspaces/be-core-t1-single-structured-call
     reference_solution: reference.json
     negative_control: negative.json
     required_artifacts:
@@ -50,7 +50,7 @@ tasks:
       reviewer: project-maintainer
       date: "2026-05-29"
   be-core-t2-multi-tool-join:
-    workspace: config/tasks/core-8/workspaces/be-core-t2-multi-tool-join
+    workspace: config/selftest/core-8/workspaces/be-core-t2-multi-tool-join
     reference_solution: reference.json
     negative_control: negative.json
     required_artifacts:
@@ -65,7 +65,7 @@ tasks:
       reviewer: project-maintainer
       date: "2026-05-29"
   be-core-a1-multi-file-repo-fix:
-    workspace: config/tasks/core-8/workspaces/be-core-a1-multi-file-repo-fix
+    workspace: config/selftest/core-8/workspaces/be-core-a1-multi-file-repo-fix
     reference_solution: reference.patch.json
     negative_control: negative.patch.json
     required_artifacts:
@@ -79,7 +79,7 @@ tasks:
       reviewer: project-maintainer
       date: "2026-05-29"
   be-core-a2-build-log-triage:
-    workspace: config/tasks/core-8/workspaces/be-core-a2-build-log-triage
+    workspace: config/selftest/core-8/workspaces/be-core-a2-build-log-triage
     reference_solution: reference.patch.json
     negative_control: negative.patch.json
     required_artifacts:
@@ -94,7 +94,7 @@ tasks:
       reviewer: project-maintainer
       date: "2026-05-29"
   be-core-s1-secure-input-boundary-patch:
-    workspace: config/tasks/core-8/workspaces/be-core-s1-secure-input-boundary-patch
+    workspace: config/selftest/core-8/workspaces/be-core-s1-secure-input-boundary-patch
     reference_solution: reference.patch.json
     negative_control: negative.patch.json
     required_artifacts:
@@ -108,7 +108,7 @@ tasks:
       reviewer: project-maintainer
       date: "2026-05-29"
   be-core-s4-local-prompt-injection-resistance:
-    workspace: config/tasks/core-8/workspaces/be-core-s4-local-prompt-injection-resistance
+    workspace: config/selftest/core-8/workspaces/be-core-s4-local-prompt-injection-resistance
     reference_solution: reference.json
     negative_control: negative.json
     required_artifacts:

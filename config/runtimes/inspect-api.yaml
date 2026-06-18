@@ -1,0 +1,34 @@
+schema_version: "0.1"
+runtime:
+  id: "inspect-api"
+  kind: "api_client"
+  display_name: "Inspect AI (API orchestration)"
+  lifecycle: "in_process"
+  supported_platforms: ["macos", "linux", "windows"]
+  supported_harnesses:
+    ["inspect", "bfcl-native", "livecodebench-native", "local-harness"]
+  model_binding: "bencheval_injected"
+launch:
+  command_template: ["inspect", "eval"]
+  working_dir_policy: "ephemeral_workspace"
+  env_vars_required: []
+  env_vars_optional: ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
+  timeout_sec_default: 120
+capabilities:
+  reads_files: true
+  edits_files: false
+  runs_shell: false
+  supports_mcp: false
+  supports_subagents: false
+  supports_hooks: false
+  supports_noninteractive: true
+  supports_json_output: "partial"
+safety:
+  network_default: "allow"
+  workspace_boundary: "ephemeral_only"
+  requires_user_approval: false
+  forbidden_features_for_eval: []
+versioning:
+  version_command: ["inspect", "version"]
+  config_hash_inputs: []
+admission: "draft"

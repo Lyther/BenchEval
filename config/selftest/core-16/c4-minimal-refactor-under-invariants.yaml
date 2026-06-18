@@ -1,0 +1,76 @@
+schema_version: "0.2"
+
+task:
+  id: "be-core-c4-minimal-refactor-under-invariants"
+  version: "0.2.0"
+  family_id: "minimal-refactor-under-invariants"
+  category: "coding"
+  title: "Minimal Refactor Under Invariants"
+  intent: "Restructure internal helpers in a small Python package while preserving public API, error types, and diff locality."
+
+provenance:
+  source_type: "synthetic"
+  license: "internal"
+  spdx: "LicenseRef-Internal"
+  source_hash: "sha256:4d4ed9a53e5fcfe4391ad317beefb729769a31a0762a55fee68ef1671bf5b045"
+  leak_risk: "low"
+  public_indexed: false
+  created_at: "2026-06-17"
+  reviewed_by: []
+
+variant:
+  variant_id: "canonical"
+  generator: "manual"
+  seed: null
+  stable_for_regression: true
+  rotation_group: "core-2026q2"
+
+input_contract:
+  provided:
+    - "package_root"
+    - "refactor_goal"
+    - "visible_tests"
+    - "allowed_change_paths"
+  hidden:
+    - "hidden_integration_checks"
+    - "complexity_invariants"
+
+output_contract:
+  type: "patch"
+  schema: "schemas/patch_output.schema.json"
+
+execution:
+  profile: "E1"
+  allowed_tools:
+    - "read_file"
+    - "write_file"
+    - "run_tests"
+  forbidden_tools:
+    - "network"
+    - "package_install"
+  internet: false
+
+constraints:
+  budget_class: "B1"
+  max_steps: 10
+  max_wall_clock_sec: 180
+  max_cost_usd: 0.25
+  must_not_modify_tests: true
+
+verification:
+  mode: "deterministic"
+  verifier: "verify.py"
+  replay_required: true
+  primary_pass_metric: "pass"
+  partial_metrics:
+    - "patch_applies"
+    - "diff_locality"
+    - "public_api_unchanged"
+    - "invariants_ok"
+    - "visible_tests_pass"
+    - "hidden_integration_pass"
+
+risk_tags:
+  - "coding"
+  - "refactor_minimality"
+  - "api_stability"

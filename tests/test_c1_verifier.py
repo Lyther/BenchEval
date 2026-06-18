@@ -8,9 +8,10 @@ import tempfile
 from pathlib import Path
 
 from bencheval.admission import run_workspace_verifier
+from tests.selftest_paths import core8_workspace
 
 _ROOT = Path(__file__).resolve().parents[1]
-_C1_WS = _ROOT / "config/tasks/core-8/workspaces/be-core-c1-small-logic-patch"
+_C1_WS = core8_workspace("be-core-c1-small-logic-patch")
 _FIXED_SOURCE = (
     'def increment(value: int) -> int:\n    """Return value plus one."""\n    return value + 1\n'
 )

@@ -23,7 +23,12 @@ eval = [
 analytics = ["duckdb>=1.2.0", "pyarrow>=18.0.0"]
 
 [dependency-groups]
-dev = ["pytest>=9.0.3", "ruff>=0.15.10"]
+dev = [
+    "hypothesis>=6.155.3",
+    "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.10",
+]
 
 [tool.ruff]
 line-length = 100
@@ -34,3 +39,10 @@ select = ["E", "F", "I", "W"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source_pkgs = ["bencheval"]
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+fail_under = 80

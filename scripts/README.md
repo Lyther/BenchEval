@@ -1,16 +1,37 @@
 # Scripts
 
-Planned wrappers (see `concept-zero.md` §4.2 and `docs/architecture.md`):
+## Control plane / release
 
-- `run_eval.sh` — preflight → `inspect eval` → summary extraction
-- `extract_summary.py` — `.eval` → JSONL summaries
-- `compare.py` — cross-run deltas
-- `verify_auth.sh` — probe every baseline provider credential present: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, and `MOONSHOT_API_KEY` (OpenAI-compatible via `MOONSHOT_BASE_URL`, needed for the Phase 3 Kimi K2.5 row). Must cover all baseline providers before a Phase 3 Kimi run launches — not Phase-1-only.
-- `preflight_disk.sh` — when `BENCHEVAL_RUNTIME=local` (default), require ≥100 GiB free on the filesystem hosting `results/raw` (`BENCHEVAL_RESULTS_RAW` overrides the relative path from repo root). When `BENCHEVAL_RUNTIME=harbor`, exits 0 without checking disk.
-- `run_provider_smoke.sh` — bounded Inspect E0 provider smoke for Core-8 T1. Runs `bencheval doctor` per model; **skips** only known blockers (missing credentials, Docker unavailable, Inspect dependency unavailable); **fails** on invalid `BENCHEVAL_SMOKE_BACKEND`/`BENCHEVAL_SMOKE_PROFILE` or unexpected doctor errors. Writes `results/evidence/`, `results/raw/`, `results/reports/`. Example: `BENCHEVAL_MODELS="openai/gpt-4o anthropic/claude-sonnet" ./scripts/run_provider_smoke.sh`
+- `export-config-bundle.sh` — copy full control-plane `config/` tree for `BENCHEVAL_HOME` wheel installs.
+- `check-domain-coverage.sh` — local pytest-cov gate (paths, path_safety, control_plane_executor, evidence_compare).
+- `verify-performance.sh` — micro-benchmarks for planner/catalog/compare hot paths.
+- `check-production-v1.sh` — internal pilot CI gate (`make check-production-v1`).
+- `run-live-pilot-matrix.sh` — Phase B live TB/BFCL/SWE matrix; writes `results/preflight/` on blockers.
+  Set `BYTELLM_API_KEY` for ByteLLM pilots; the script keeps real auth on the
+  host shim and passes only dummy runtime keys into Harbor containers.
+  Set `BENCHEVAL_ANTHROPIC_SYSTEM_ROLE_SHIM=1` for Anthropic-compatible
+  routers that require top-level `system` instead of `messages[].role=system`.
+  Set `BENCHEVAL_CLAUDE_CODE_NPM_REGISTRY` when the default npm registry is
+  slow from the task container.
+  Set `BENCHEVAL_PILOT_CLAUDE_MODEL` / `BENCHEVAL_PILOT_CODEX_MODEL` when
+  Anthropic and Responses routers need different model aliases.
+  Set `BENCHEVAL_CLAUDE_CODE_ALLOWED_TOOLS` when a router rejects advanced
+  Claude Code tool schemas and only basic terminal/edit tools are needed.
+- `write_preflight.py` — JSON `preflight_v1` artifact helper.
+- `doctor-pilot.sh` — Phase B wrapper: `verify_auth.sh` (optional) + `bencheval doctor --profile pilot`
+  runs `verify_auth.sh`, then `bencheval doctor`. See `docs/ops/dev-box-pilot.md`.
 
-Baseline lane uses Inspect provider env vars only (Anthropic, OpenAI, Moonshot). Any credential-rotation helper
-for the experimental lane (Phase 4 — Cursor CLI, Claude Code gateway, Codex sign-in) lives outside this directory
-and must not touch the baseline result path.
+## Legacy summary lane (non-primary scoring)
 
-Implemented now: `extract_summary.py`, `compare.py` (legacy summary JSONL), `verify_auth.sh`, `preflight_disk.sh`, `run_provider_smoke.sh` (see bullets above).
+- `extract_summary.py` — legacy `.eval` to strict summary JSONL.
+- `compare.py` — legacy summary JSONL cross-run deltas.
+
+## Ops / preflight
+
+- `verify_auth.sh` — probe ByteLLM proxy auth (`BYTELLM_API_KEY` /
+  `BYTELLM_PROXY_API_KEY`) or baseline provider credentials
+  (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `MOONSHOT_API_KEY`).
+- `preflight_disk.sh` — disk check for local `results/raw` (skipped when `BENCHEVAL_RUNTIME=harbor`).
+- `run_provider_smoke.sh` — bounded Inspect E0 provider smoke; runs `bencheval doctor` per model; skips known blockers only; fails on invalid smoke config or unexpected doctor errors.
+
+Baseline lane uses Inspect provider env vars only. Any credential-rotation helper for experimental lanes lives outside this directory and must not touch the baseline result path.

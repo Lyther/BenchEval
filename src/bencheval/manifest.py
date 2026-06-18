@@ -7,16 +7,13 @@ from bencheval.exceptions import ManifestError
 from bencheval.models import ManifestDigest
 
 
-def load_manifest(path: Path | str) -> ManifestDigest:
-    """Load a task manifest file and return ids plus canonical SHA-256.
-
-    Canonical bytes: ``sorted(task_ids)``, joined with ``\\n``, plus a trailing ``\\n``,
-    encoded as UTF-8. Comments and blank lines do not affect the hash.
-    """
+def read_manifest_task_ids(path: Path | str) -> tuple[str, ...]:
+    """Return task ids in manifest file order, ignoring comments and blanks."""
     p = Path(path)
-    benchmark = p.stem
     try:
         raw_text = p.read_text(encoding="utf-8")
+    except UnicodeDecodeError as e:
+        raise ManifestError(f"cannot decode manifest {p} as UTF-8: {e}") from e
     except OSError as e:
         raise ManifestError(f"cannot read manifest {p}: {e}") from e
 
@@ -29,6 +26,14 @@ def load_manifest(path: Path | str) -> ManifestDigest:
 
     if not task_ids:
         raise ManifestError(f"manifest {p} has no task ids after stripping comments and blanks")
+    return tuple(task_ids)
+
+
+def load_manifest(path: Path | str) -> ManifestDigest:
+    """Load a task manifest file and return sorted ids plus canonical SHA-256."""
+    p = Path(path)
+    benchmark = p.stem
+    task_ids = read_manifest_task_ids(p)
 
     canonical = "\n".join(sorted(task_ids)) + "\n"
     digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()

@@ -1,0 +1,5 @@
+{
+  "files": {
+    "repo/src/shipkit/rating.py": "\"\"\"Rate computation with a public API regression.\"\"\"\n\nfrom shipkit.models import Parcel, RateQuote, ShipKitError\n\n_BASE_RATE = {\"local\": 500, \"regional\": 800, \"national\": 1200}\n\n\ndef compute_rate(parcel: Parcel, dest_zone: str, *, expedited: bool = False) -> RateQuote:\n    if parcel.weight_oz <= 0:\n        raise ValueError(\"weight must be positive\")\n    if parcel.length_in <= 0 or parcel.width_in <= 0 or parcel.height_in <= 0:\n        raise ShipKitError(\"dimensions must be positive\")\n    weight = int(parcel.weight_oz)\n    if weight > 1000:\n        raise ShipKitError(\"weight exceeds limit\")\n\n    zone = dest_zone.strip().lower()\n    if not zone:\n        raise ShipKitError(\"zone required\")\n    if zone not in _BASE_RATE:\n        raise ShipKitError(\"unknown zone\")\n\n    dim_weight = (parcel.length_in * parcel.width_in * parcel.height_in) // 166\n    billable = max(weight, dim_weight)\n    rate = _BASE_RATE[zone] + (billable - 1) * 50\n    if expedited:\n        rate += 300\n    return RateQuote(zone=zone, rate_cents=rate, billable_weight_oz=billable)\n"
+  }
+}

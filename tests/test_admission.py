@@ -17,6 +17,7 @@ from bencheval.admission import (
     run_workspace_verifier,
 )
 from bencheval.exceptions import BenchEvalError
+from tests.selftest_paths import core8_workspace
 
 _CORE8_TASKS = (
     "be-core-t1-single-structured-call",
@@ -81,7 +82,7 @@ def test_suite_audit_smoke_alias_covers_eight_tasks() -> None:
 
 def test_human_sign_off_complete_enables_admitted(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
-    t1_ws = root / "config/tasks/core-8/workspaces/be-core-t1-single-structured-call"
+    t1_ws = core8_workspace("be-core-t1-single-structured-call")
     doc = Core8AdmissionDocument(
         schema_version="0.1",
         suite="core-8",
@@ -110,8 +111,8 @@ def test_human_sign_off_complete_enables_admitted(tmp_path: Path) -> None:
 
 
 def test_workspace_verifier_replay_is_deterministic() -> None:
-    root = Path(__file__).resolve().parents[1]
-    ws = root / "config/tasks/core-8/workspaces/be-core-t1-single-structured-call"
+    Path(__file__).resolve().parents[1]
+    ws = core8_workspace("be-core-t1-single-structured-call")
     ref = ws / "reference.json"
     first = run_workspace_verifier(ws, ref)
     second = run_workspace_verifier(ws, ref)

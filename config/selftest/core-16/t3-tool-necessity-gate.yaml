@@ -1,0 +1,72 @@
+schema_version: "0.2"
+
+task:
+  id: "be-core-t3-tool-necessity-gate"
+  version: "0.2.0"
+  family_id: "tool-necessity-gate"
+  category: "tool_usage"
+  title: "Tool Necessity Gate"
+  intent: "Decide whether a mock tool call is required or a direct JSON answer suffices."
+
+provenance:
+  source_type: "synthetic"
+  license: "internal"
+  spdx: "LicenseRef-Internal"
+  source_hash: "sha256:a9578f8ec34837c48e071a469cd39543a9ed63914a781adc290cbf8ae14b7c1d"
+  leak_risk: "low"
+  public_indexed: false
+  created_at: "2026-06-17"
+  reviewed_by: []
+
+variant:
+  variant_id: "canonical"
+  generator: "manual"
+  seed: null
+  stable_for_regression: true
+  rotation_group: "core-2026q2"
+
+input_contract:
+  provided:
+    - "prompt_variants"
+    - "tool_catalog"
+    - "output_schema"
+  hidden:
+    - "necessity_gold_labels"
+
+output_contract:
+  type: "json"
+  schema: "schemas/tool_necessity_gate.schema.json"
+
+execution:
+  profile: "E0"
+  allowed_tools:
+    - "mock_lookup"
+    - "mock_calendar"
+  forbidden_tools:
+    - "network"
+    - "package_install"
+    - "shell"
+  internet: false
+
+constraints:
+  budget_class: "B0"
+  max_steps: 4
+  max_wall_clock_sec: 60
+  max_cost_usd: 0.05
+  must_not_modify_tests: true
+
+verification:
+  mode: "deterministic"
+  verifier: "verify.py"
+  replay_required: true
+  primary_pass_metric: "pass"
+  partial_metrics:
+    - "schema_valid"
+    - "necessity_precision"
+    - "necessity_recall"
+    - "tool_call_match"
+
+risk_tags:
+  - "tool_schema"
+  - "function_calling"
+  - "necessity_gating"

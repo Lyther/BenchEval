@@ -43,5 +43,5 @@ jobs:
           shellcheck scripts/*.sh
           bash -n scripts/*.sh
 
-      - name: Tests
-        run: uv run pytest tests -q
+      - name: Production v1 gate
+        run: make check-production-v1

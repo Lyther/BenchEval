@@ -1,0 +1,14 @@
+{
+  "refactor_goal": "Deduplicate parcel and zone validation shared between repo/src/shipkit/rating.py and repo/src/shipkit/zones.py without changing the public API in repo/src/shipkit/__init__.py.",
+  "package_root": "repo/src/shipkit",
+  "visible_tests": "repo/tests/test_visible.py",
+  "constraints": {
+    "preserve_public_api": true,
+    "preserve_error_types": true,
+    "allowed_change_paths": [
+      "repo/src/shipkit/rating.py",
+      "repo/src/shipkit/zones.py",
+      "repo/src/shipkit/_internal.py"
+    ]
+  }
+}

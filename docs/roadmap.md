@@ -1,104 +1,138 @@
-# Execution Roadmap (vNext)
+# Execution Roadmap (vNext v0.3)
 
-> **Source:** [`docs/context/concept-zero.md`](context/concept-zero.md) §20 (2026-05-29)
-> **Status (2026-05-29):** P0, P3, and P4 complete. Core-8 offline MVP is strong: 8/8 admitted, local harness smoke, Inspect mockllm E0 (no `inspect_ai` required), evidence/report/export/compare, and provider-smoke orchestrator (`scripts/run_provider_smoke.sh`). **283** pytest tests green. Live Inspect E0/E1, Harbor jobs, and real provider evidence remain blocked on credentials, Docker, and Harbor CLI.
+> **Source:** [`docs/context/concept-hld.md`](context/concept-hld.md) §11.2, §14 + [`docs/architecture.md`](architecture.md) §17
+> **Ledger:** Checked `- [x]` milestones below record completed phases (P1–P9). Current production v1 bar: [`production-readiness.md`](context/production-readiness.md) + `make check-production-v1`.
+> **Status (2026-06-19):** v0.3 control-plane P1–P6/P5.1/P5.3/P9.2 implemented. Remaining: P5.2 LiveCodeBench, P7–P8 security/GUI, Phase B live matrix on dev-box — see §Live blockers.
+> **Principle:** additive only. Never break the v0.2 `EvidenceRecord` flat contract. Never delete working coverage to reach a new shape.
 
-## P0 — Scope freeze and task contract
+## Phase 0 — Validation (research spikes, no code)
 
-- [x] Accept v0.2 concept-zero as design source (`docs/context/concept-zero.md`)
-- [x] Promote root `concept-zero.md` pointer; update `docs/architecture.md` for vNext
-- [x] Implement `src/bencheval/task_contract.py` (schema v0.2)
-- [x] Implement `src/bencheval/task_registry.py` (load, lint, suites)
-- [x] Commit Core-8 task YAMLs under `config/tasks/core-8/`
-- [x] Add `config/suites.yaml` (core-8, core-16 placeholder, smoke alias, calibration, stretch)
-- [x] CLI: `bencheval task lint`, `bencheval task validate`, `bencheval task audit`
-- [x] Core-8 admission artifact: `docs/context/core-8-admission.yaml` (automated gates + human sign-off recorded 2026-05-29)
-- [x] Human review: Core-8 human sign-off gate closed for all eight tasks
+- [ ] **S0.1** Spike: confirm Harbor CLI install path + `harbor run --dataset terminal-bench@2.0 --agent claude-code` works locally with Docker (credential-gated). Capture exact `--agent` enum, exit codes, result-file layout. *Block:* if Harbor CLI result schema is unstable, freeze TB adapter at adapter-smoke only.
+- [ ] **S0.2** Spike: verify `claude-code` and `codex-cli` noninteractive launch + version capture + ephemeral workspace isolation on this host. *Risk:* runtime auth/subscription gating.
+- [ ] **S0.3** Spike: confirm additive `EvidenceRecord` v0.3 fields keep all v0.2 JSONL fixtures parseable (run `read_evidence_jsonl` over existing results). *Block:* if any v0.2 row breaks, fix the field defaults before proceeding.
+- [ ] **S0.4** Spike: enumerate which of the 80 `config/benchmarks.yaml` entries already have a native/Inspect/Harbor harness vs. which are metadata-only. Produce a runnable-adapter coverage gap report.
 
-## P1 — Harness skeleton
+> Constraint: no feature code in Phase 0. Output is notes + a coverage-gap table under `docs/context/`.
 
-- [x] E0 offline single-task runner for T1 + T2 (`local/harness` reference path)
-- [x] E1 offline local-harness runner for C1, C2, A1, A2, S1, S4 (not Inspect/Docker)
-- [x] Inspect adapter module + `bencheval doctor --backend inspect --profile E0|E1|E2`
-- [x] CLI `--backend local|inspect|harbor` on `bencheval run`
-- [x] Inspect E0 mockllm path (`mockllm/model`) — deterministic reference stand-in; skips Inspect doctor; no `inspect_ai` import or `generate()` call
-- [x] Adapter failure evidence policy (`adapter_error`, `model_output_invalid`; preflight aborts without evidence)
-- [ ] E0: live T1 via Inspect adapter with real provider (gated on eval extra + credentials)
-- [ ] E1: live C1 via Inspect + Docker (gated on Docker + credentials)
-- [x] Capture JSONL `EvidenceRecord` rows from offline and adapter-backed runs
-- [x] Wire `bencheval run --task|--suite … --output …` for smoke batches
-- [x] Eval extra documented: `uv sync --extra eval`
+## Phase 1 — MVP (control-plane walking skeleton)
 
-## P1.5 — Harbor POC
+> Goal: `benchmark list|show`, `runtime list|show`, and `run --dry-run` produce correct four-axis execution plans. **No live execution yet.**
 
-- [x] Harbor packaging/export slice for S4 (`harbor_adapter.py`)
-- [x] Harbor revision metadata on evidence when adapter runner is used
-- [ ] Live Harbor agent execution via `harbor jobs start`
-- [x] Interim decision: keep Harbor **Stretch/Calibration-first** until live jobs land
+- [x] **P1.1** `runtime_registry.py` + Pydantic `RuntimeProfile` (frozen, extra="forbid") per architecture §7.3. Ship `config/runtimes/claude-code.yaml`, `codex-cli.yaml`, `inspect-api.yaml`, `harbor-agent.yaml`, `native-api.yaml`, `mini-swe-agent.yaml` (best-effort, marked `admission: draft`).
+- [x] **P1.2** CLI: `bencheval runtime list`, `bencheval runtime show <id>`, `bencheval model list`, `bencheval model show <id>`, `bencheval adapter list`.
+- [x] **P1.3** `SliceManifest` typed wrapper (`slice_manifest.py`) over existing plain-text `config/manifests/*.txt`. Fields: id, benchmark_id, purpose, selection_policy, instances_source, budget, labels.
+- [x] **P1.4** CLI: `bencheval benchmark slices <id>` reading typed slice manifests.
+- [x] **P1.5** Extend `planner.py` to four-axis plan: (benchmark, slice, model, runtime) → `RunPlan` with harness_kind, adapter_id, instance_count, cost envelope, disk/cache, network policy, cleanup policy, caveats, comparison-validity verdict.
+- [x] **P1.6** CLI: `bencheval run --dry-run --benchmark <id> --slice <id> --runtime <id> --model <id>`. Dry-run output per HLD §8.2 (9 fields + comparison-validity line). Keep `--task/--manifest/--backend` for selftest.
+- [x] **P1.7** Additive `EvidenceRecord` v0.3 fields (architecture §7.4). Update `tests/test_evidence.py` for new optional fields; prove v0.2 fixtures still parse.
+- [x] **P1.8** Reposition Core-8/16 as `selftest`: add `selftest` lane flag to `config/suites.yaml` entries; keep all verifiers/admission green. No task deletion.
 
-## P2 — Core-8 Smoke
+> Constraint: no "nice to haves" (no dashboard, no weighted portfolio, no leaderboard).
 
-- [x] All 8 tasks pass admission gates — 8/8 admitted
-- [x] CLI: `bencheval report <evidence.jsonl> --output …` with backend/model table
-- [x] Provider-smoke orchestrator: `scripts/run_provider_smoke.sh` (doctor per model; skip known blockers only; fail on config/doctor errors)
-- [ ] End-to-end runs for ≥3 models without manual intervention (orchestrator ready; blocked on credentials)
-- [ ] Markdown evidence report from real provider runs under `results/reports/` (blocked on credentials)
-- [x] Task contracts disable internet; admission confirms no LLM judge for primary scoring
+## Phase 2 — First runtime benchmark adapter (Terminal-Bench via Harbor)
 
-## P3 — Verifier hardening
+> Goal: Terminal-Bench smoke-5 runs through Harbor on ≥1 CLI runtime and one baseline, producing `EvidenceRecord` v0.3 + markdown report.
 
-- [x] Reference oracle + negative control for every Core-8 task
-- [x] Hidden validation cases (workspace verifiers)
-- [x] Replay determinism checks (same artifact → same score)
-- [x] Reward-hack review: `docs/context/core-8-reward-hack-review.md`
+- [x] **P2.1** `config/manifests/terminal-bench-smoke-5.txt` (5 fixed instance ids).
+- [x] **P2.2** Typed `SliceManifest` for `terminal-bench/smoke-5` + `lite-20`; benchmark contract fields in `config/benchmarks.yaml` for `terminal-bench` (native_harness=harbor, default_adapter, caveats, slices).
+- [x] **P2.3** Harbor adapter: `terminal_bench_harbor.py` runs `harbor run --dataset terminal-bench@2.0 --agent <runtime> --model <model>`, parses native result, preserves raw_result/stdout/stderr/verifier logs. Adapter failure policy: preflight aborts; post-preflight writes `EvidenceRecord` with failure label.
+- [x] **P2.4** Version capture: benchmark/harness (harbor)/adapter/runtime/model versions recorded on every `EvidenceRecord`.
+- [x] **P2.5** Pass adapter admission gates (architecture §13.1) for `terminal-bench-harbor`; flip `adapter_status` to `manifest_available` in YAML.
+- [x] **P2.6** CLI: `bencheval run --benchmark terminal-bench --slice smoke-5 --runtime claude-code --model <m> --cleanup always --output <evidence.jsonl>` (live Harbor requires doctor; adapter-smoke via injected runner in tests).
 
-## P4 — DuckDB/Parquet analytics
+> Blocker: credentials + Docker (live blockers, see §Live blockers). Adapter-smoke with deterministic stand-in is acceptable for P2 gate if live is blocked.
 
-- [x] `bencheval export <evidence.jsonl> --format parquet|duckdb --output warehouse/…`
-- [x] Parquet tables: attempts, failures, adapter_metadata, task_versions
-- [x] DuckDB view: `warehouse/views/attempt_scores.sql`
-- [x] Cross-run compare CLI beyond legacy summary JSONL (`bencheval compare <baseline.jsonl> <current.jsonl> --format md|json --output …`)
+## Phase 3 — Runtime comparison report
 
-## P5 — Core-16
+> Goal: Claude Code vs Codex CLI on Terminal-Bench smoke-5 produces a normalized comparison with caveat labels.
 
-- [x] Expansion plan: `docs/context/core-16-expansion-plan.md` (eight task IDs, profiles, verifier strategy)
-- [ ] Add remaining 8 tasks (two per category per concept-zero §9)
-- [ ] Stable evidence panels; variant families designed but canonical-only in normal runs
+- [x] **P3.1** `report.py` emits runtime-comparison panel (same benchmark/slice, different runtime) with per-runtime cost/latency/pass/CI + interpretation label `runtime_comparison`.
+- [x] **P3.2** `compare.py` / `evidence_compare.py` enforce comparison-validity gates (architecture §13.3): identical benchmark/slice/adapter/harness version; failed attempts reported not dropped; caveats shown.
+- [x] **P3.3** Markdown + JSON report output; HTML post-MVP.
 
-## P6 — Calibration Pack
+## Phase 4 — SWE-family adapter
 
-- [ ] Public micro-slices as appendix-only diagnostics
-- [ ] Never import into `weighted_total`
-- [ ] Contamination warnings on every calibration row
+> Goal: SWE-bench-family smoke-10 materializes instances and stores verifier artifacts, with contamination/legacy caveat.
 
-## P7 — Scale-out
+- [x] **P4.1** `swebench` adapter (native or via `inspect-evals` `eval` extra): materialize one repo instance → patch → run test verifier → `EvidenceRecord` with `native_score`, workspace_diff_path, verifier_log_path.
+- [x] **P4.2** SWE-rebench latest-window smoke slice (decontaminated catalog: `swe-rebench` benchmark + `swe-rebench-smoke-10` typed slice; harness `adapter_pending`).
+- [x] **P4.3** Contamination/legacy caveat labels on every SWE-bench-Verified row; `contaminated_or_legacy` interpretation label in reports.
+- [x] **P4.4** Pass adapter admission gates; flip `swe-bench-verified` to `manifest_available`.
 
-- [ ] Optional Modal/Kubernetes backends without task semantic changes
-- [ ] Weekly drift detection cron (after baseline stable)
+## Phase 5 — Model-only adapter
 
-## Hot files (vNext)
+> Goal: BFCL/LiveCodeBench/BigCodeBench smoke runs through native/API or Inspect path. Cheap model comparison.
 
-- `docs/context/concept-zero.md` — authoritative HLD
-- `docs/context/core-16-expansion-plan.md` — Core-16 task plan (not yet implemented)
-- `config/tasks/core-8/*.yaml`, `config/suites.yaml`
-- `src/bencheval/task_contract.py`, `task_registry.py`, `planner.py`, `evidence.py`, `report.py`, `export.py`, `evidence_compare.py`, `cli.py`, `executor.py`, `doctor.py`, `inspect_adapter.py`, `harbor_adapter.py`
-- `scripts/run_provider_smoke.sh` — bounded live provider smoke (credential-gated)
-- `tests/test_task_*.py`, `tests/test_planner.py`, `tests/test_evidence.py`, `tests/test_report.py`, `tests/test_export.py`, `tests/test_evidence_compare.py`, `tests/test_inspect_adapter.py`, `tests/test_inspect_harbor.py`, `tests/test_provider_smoke_script.py`, `tests/test_cli_task.py`
+- [x] **P5.1** BFCL V4 adapter (model-only, `native-api`/`inspect-api` runtime).
+- [ ] **P5.2** LiveCodeBench or BigCodeBench adapter (latest-window / instruct subset).
+- [x] **P5.3** Model-comparison report (same benchmark/slice/runtime, different model) with `model_comparison` label (`model_compare.py` + CLI `compare` auto mode).
 
-## Live blockers (2026-05-29)
+## Phase 6 — Analytics store
 
-| Gate | Status |
-|------|--------|
-| Provider credentials (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) | Required for live Inspect E0/E1 and P2 multi-model smoke |
-| Docker daemon | Required for Inspect E1 / Harbor doctor |
-| Harbor CLI (`harbor jobs start` contract) | Not installed on dev host; live runner not wired |
+> Goal: DuckDB/Parquet views for cost, latency, pass/fail, runtime failure, historical regression.
 
-## Legacy tracker (maintained, not expanded)
+- [x] **P6.1** `export.py` Parquet tables: attempts, failures, adapter_metadata, runtime, model, task_versions (extend existing schema with v0.3 fields).
+- [x] **P6.2** DuckDB views: `warehouse/views/attempt_scores.sql`, `warehouse/views/runtime_comparison.sql`, `warehouse/views/cost_latency.sql`.
+- [x] **P6.3** `bencheval export <evidence.jsonl> --format parquet|duckdb --output warehouse/…` with v0.3 fields.
 
-The 2026-04-15 Inspect/Harbor summary pipeline (`SummaryRow`, `extract_summary.py`, `compare.py`) stays for existing JSONL rollups. Do not prioritize CyBench/Harbor spikes or baseline credential probes ahead of vNext P1 unless explicitly requested.
+## Phase 7 — Defensive security adapter
+
+> Goal: CyberSecEval / CyberGym defensive smoke only, explicit safety boundary.
+
+- [ ] **P7.1** CyberSecEval 4 AutoPatchBench/CyberSOC defensive adapter (sandbox, no network, no live targets).
+- [ ] **P7.2** CyberGym defensive slice (vulnerability reproduction against **pre-patch** code with sanitizers) — `smoke-10`; `defensive_security_only` label; never exploit deployment.
+- [ ] **P7.3** Safety-review gate documented in benchmark contract (`safety_review: dual_use`); CLI refuses `--slice` resolving to offensive tasks outside Stretch without `--allow-stretch`.
+
+## Phase 8 — Offensive-restricted Stretch + GUI (gated)
+
+> Goal: ExploitGym / BountyBench Exploit / OSWorld behind explicit safety review and approval.
+
+- [ ] **P8.1** ExploitGym Stretch adapter (offensive-restricted; explicit safety review + approval gate; never Core-weighted; no live targets). Blocked on S0 confirmation of source URL/license.
+- [ ] **P8.2** BountyBench Detect+Patch in normal lanes (P7-equivalent); Exploit tasks Stretch-only.
+- [ ] **P8.3** OSWorld GUI adapter (post-MVP; VM snapshot/replay stability required).
+- [ ] **P8.4** CyberGym-E2E adapter — **wait** for public task release; registry keeps `reference_only`/`unverified` until then.
+
+## Phase 9 — Selftest maintenance (ongoing, frozen scope)
+
+- [x] **P9.1** Keep Core-8/Core-16 verifiers + admission green as regression for the control plane itself.
+- [x] **P9.2** Re-label `config/tasks/core-8` → `config/selftest/core-8` (move, not delete); update `task_registry` paths.
+- [ ] **P9.3** Freeze Core-16 expansion; no new selftest tasks unless they test a control-plane codepath.
+
+## Hot files (v0.3)
+
+- `docs/context/concept-hld.md` — product HLD (source of truth)
+- `docs/architecture.md` — this companion (decisions)
+- `config/benchmarks.yaml` (81 entries), `config/runtimes/*.yaml` (new), `config/manifests/*.txt` + `config/manifests/*.yaml` (typed wrappers)
+- `src/bencheval/`: `benchmark_registry.py`, `manifest.py` (+`slice_manifest.py` new), `models.py`, `pricing.py`, `runtime_registry.py` (new), `planner.py`, `doctor.py`, `executor.py`, `backends.py`, `inspect_adapter.py`, `harbor_adapter.py`, `evidence.py`, `report.py`, `compare.py`, `evidence_compare.py`, `export.py`, `cli.py`, `lifecycle.py`, `workspace_staging.py`
+- `scripts/run_provider_smoke.sh`, `scripts/verify_auth.sh`
+- Tests: extend `test_evidence.py`, `test_planner.py`, `test_cli_task.py`, `test_cli_benchmark.py`; add `test_runtime_registry.py`, `test_slice_manifest.py`, `test_cli_runtime.py`, `test_harbor_adapter.py` (live-gated)
+
+## Live blockers (2026-06-17)
+
+| Gate | Status | Affects |
+|------|--------|---------|
+| Provider credentials (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) | Required | P2–P5 live runs |
+| Docker daemon | Required | P2 Harbor / P4 SWE E1 |
+| Harbor CLI install + contract stability | Required (S0.1) | P2 Terminal-Bench |
+| `claude-code` / `codex-cli` noninteractive + auth | Required (S0.2) | P2 runtime comparison |
+| CyberGym-E2E public task release | Pending | P8.4 |
+| ExploitGym stable source URL/license | Pending | P8.1 |
+
+Adapter-smoke with deterministic stand-ins is acceptable for admission gates while live blockers hold; reports must label such runs `adapter_smoke`, never `benchmark_native_claim`.
 
 ## Checkpoints
 
-- **After P2:** tag `checkpoint-vnext-core8-smoke`
-- **After P3:** tag `checkpoint-vnext-verifiers`
-- **Before P6:** tag `checkpoint-pre-calibration`
+- After P1: tag `checkpoint-v03-control-plane-skeleton`
+- After P2: tag `checkpoint-v03-first-adapter`
+- After P3: tag `checkpoint-v03-runtime-comparison`
+- After P4: tag `checkpoint-v03-swe-family`
+- Before P7: tag `checkpoint-pre-defensive-security`
+- Before P8: tag `checkpoint-pre-stretch-offensive` (safety review record required)
+
+## Definition of Done per phase
+
+- All touched modules pass `ruff check` + `ruff format --check` + `pytest` (affected suites green).
+- Every new Pydantic model is `frozen=True, extra="forbid"`.
+- Every `EvidenceRecord` write is additive; v0.2 fixtures still parse.
+- Every adapter that flips to `manifest_available` passes admission gates §13.1.
+- No live-credential claim without a real run; otherwise label `adapter_smoke`.

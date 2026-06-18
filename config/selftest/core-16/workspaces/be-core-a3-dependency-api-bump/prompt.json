@@ -1,0 +1,8 @@
+{
+  "issue": "Security advisory requires bumping vendored strutil from 1.0.0 to 2.0.0. The 2.0.0 source and CHANGELOG live under vendor/strutil-2.0.0/ (tarball stub: vendor/strutil-2.0.0.tar.gz). Adapt application code to the new API and update repo/requirements.txt.",
+  "current_pin": "strutil==1.0.0",
+  "target_pin": "strutil==2.0.0",
+  "repo": "repo/",
+  "vendor_changelog": "vendor/strutil-2.0.0/CHANGELOG.md",
+  "visible_symptom": "pytest fails once strutil 2.0.0 is on PYTHONPATH because split_fields was renamed."
+}

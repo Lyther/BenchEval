@@ -1,4 +1,4 @@
-"""Core-8 task admission checklist loader and offline auditor."""
+"""Task admission checklist loader and offline auditor (Core-8 and expansion)."""
 
 from __future__ import annotations
 
@@ -13,6 +13,8 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError, field_validator
 
 from bencheval.exceptions import BenchEvalError, TaskContractError
+from bencheval.path_safety import ensure_resolved_under_root
+from bencheval.paths import repo_root as _repo_root
 from bencheval.task_registry import (
     lint_task_path,
     load_suites,
@@ -98,6 +100,10 @@ class SuiteAdmissionReport:
 
     @property
     def failed_count(self) -> int:
+        return sum(1 for task in self.tasks if not task.automated_pass)
+
+    @property
+    def not_admitted_count(self) -> int:
         return sum(1 for task in self.tasks if not task.admitted)
 
     @property
@@ -112,17 +118,44 @@ class SuiteAdmissionReport:
             "admitted_count": self.admitted_count,
             "automated_pass_count": self.automated_pass_count,
             "failed_count": self.failed_count,
+            "not_admitted_count": self.not_admitted_count,
             "pending_count": self.pending_count,
             "tasks": [t.to_dict() for t in self.tasks],
         }
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
-
-
 def default_admission_path() -> Path:
     return _repo_root() / "docs" / "context" / "core-8-admission.yaml"
+
+
+def admission_path_for_suite(suite: str) -> Path:
+    if suite == "core-16":
+        return _repo_root() / "docs" / "context" / "core-16-admission.yaml"
+    return default_admission_path()
+
+
+def _is_expansion_task(task_id: str) -> bool:
+    try:
+        path = resolve_task_path(task_id)
+    except TaskContractError:
+        return False
+    return path.parent.name == "core-16"
+
+
+def admission_path_for_task(task_id: str) -> Path:
+    core16_path = admission_path_for_suite("core-16")
+    is_expansion = _is_expansion_task(task_id)
+    try:
+        doc = load_admission_document(core16_path)
+    except BenchEvalError:
+        if is_expansion:
+            raise
+        return default_admission_path()
+    if task_id in doc.tasks:
+        return core16_path
+    if is_expansion:
+        raise TaskContractError(f"task {task_id} missing from Core-16 admission document")
+    return default_admission_path()
 
 
 def load_admission_document(path: Path | None = None) -> Core8AdmissionDocument:
@@ -220,7 +253,11 @@ def audit_task_admission(
         raise TaskContractError(f"task {task_id} missing from admission document")
     entry = doc.tasks[task_id]
     root = _repo_root()
-    workspace = (root / entry.workspace).resolve()
+    workspace = ensure_resolved_under_root(
+        (root / entry.workspace).resolve(),
+        root,
+        what="admission workspace",
+    )
     suites = load_suites(root / "config" / "suites.yaml")
     task_path = resolve_task_path(task_id)
     contract_report = lint_task_path(task_path, suites=suites)
@@ -390,7 +427,19 @@ def audit_suite_admission(
     admission: Core8AdmissionDocument | None = None,
     admission_path: Path | None = None,
 ) -> SuiteAdmissionReport:
-    doc = admission or load_admission_document(admission_path)
+    if suite == "core-16" and admission is None:
+        task_ids = tasks_for_suite(suite)
+        reports = tuple(
+            audit_task_admission(
+                task_id,
+                admission_path=admission_path or admission_path_for_task(task_id),
+            )
+            for task_id in task_ids
+        )
+        return SuiteAdmissionReport(suite=suite, tasks=reports)
+
+    resolved_path = admission_path or admission_path_for_suite(suite)
+    doc = admission or load_admission_document(resolved_path)
     try:
         task_ids = tasks_for_suite(suite)
     except TaskContractError:
@@ -399,7 +448,7 @@ def audit_suite_admission(
         else:
             raise
     reports = tuple(
-        audit_task_admission(task_id, admission=doc, admission_path=admission_path)
+        audit_task_admission(task_id, admission=doc, admission_path=resolved_path)
         for task_id in task_ids
     )
     return SuiteAdmissionReport(suite=suite, tasks=reports)

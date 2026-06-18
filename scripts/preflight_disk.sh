@@ -7,7 +7,7 @@ if [ "${runtime}" = "harbor" ]; then
 fi
 
 target="${BENCHEVAL_RESULTS_RAW:-results/raw}"
-script_dir="$(cd "$(dirname "$0")" && pwd)"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 dir="${repo_root}/${target}"
 mkdir -p "${dir}"

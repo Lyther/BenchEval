@@ -8,9 +8,10 @@ import sys
 from pathlib import Path
 
 from bencheval.admission import run_workspace_verifier
+from tests.selftest_paths import core8_workspace
 
 _ROOT = Path(__file__).resolve().parents[1]
-_C2_WS = _ROOT / "config/tasks/core-8/workspaces/be-core-c2-regression-test-authoring"
+_C2_WS = core8_workspace("be-core-c2-regression-test-authoring")
 
 
 def _load_c2_verify_module():
