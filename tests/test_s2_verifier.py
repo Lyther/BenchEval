@@ -8,9 +8,10 @@ import sys
 from pathlib import Path
 
 from bencheval.admission import run_workspace_verifier
+from tests.selftest_paths import core16_workspace
 
 _ROOT = Path(__file__).resolve().parents[1]
-_S2_WS = _ROOT / "config/tasks/core-16/workspaces/be-core-s2-authorization-matrix-regression"
+_S2_WS = core16_workspace("be-core-s2-authorization-matrix-regression")
 _REF = json.loads((_S2_WS / "reference.patch.json").read_text(encoding="utf-8"))
 
 

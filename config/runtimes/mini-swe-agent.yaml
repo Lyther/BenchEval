@@ -1,0 +1,33 @@
+schema_version: "0.1"
+runtime:
+  id: "mini-swe-agent"
+  kind: "harness_agent"
+  display_name: "mini-SWE-agent"
+  lifecycle: "containerized"
+  supported_platforms: ["macos", "linux"]
+  supported_harnesses: ["swebench-native", "local-harness"]
+  model_binding: "bencheval_injected"
+launch:
+  command_template: ["mini-extra", "swebench"]
+  working_dir_policy: "ephemeral_workspace"
+  env_vars_required: []
+  env_vars_optional: ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
+  timeout_sec_default: 900
+capabilities:
+  reads_files: true
+  edits_files: true
+  runs_shell: true
+  supports_mcp: false
+  supports_subagents: false
+  supports_hooks: false
+  supports_noninteractive: true
+  supports_json_output: "none"
+safety:
+  network_default: "deny"
+  workspace_boundary: "ephemeral_only"
+  requires_user_approval: false
+  forbidden_features_for_eval: []
+versioning:
+  version_command: ["python", "--version"]
+  config_hash_inputs: []
+admission: "draft"

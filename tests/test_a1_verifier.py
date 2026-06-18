@@ -8,9 +8,10 @@ import sys
 from pathlib import Path
 
 from bencheval.admission import run_workspace_verifier
+from tests.selftest_paths import core8_workspace
 
 _ROOT = Path(__file__).resolve().parents[1]
-_A1_WS = _ROOT / "config/tasks/core-8/workspaces/be-core-a1-multi-file-repo-fix"
+_A1_WS = core8_workspace("be-core-a1-multi-file-repo-fix")
 _REF = json.loads((_A1_WS / "reference.patch.json").read_text(encoding="utf-8"))
 
 

@@ -7,9 +7,10 @@ import sys
 from pathlib import Path
 
 from bencheval.admission import run_workspace_verifier
+from tests.selftest_paths import core16_workspace
 
 _ROOT = Path(__file__).resolve().parents[1]
-_T4_WS = _ROOT / "config/tasks/core-16/workspaces/be-core-t4-stateful-policy-workflow"
+_T4_WS = core16_workspace("be-core-t4-stateful-policy-workflow")
 _REF = json.loads((_T4_WS / "reference.json").read_text(encoding="utf-8"))
 _ALT = json.loads((_T4_WS / "hidden" / "alternate_gold.json").read_text(encoding="utf-8"))
 

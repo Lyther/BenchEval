@@ -1,4 +1,4 @@
-.PHONY: dev build test lint format clean install sync
+.PHONY: dev build test lint format clean install sync check-production-v1
 
 install sync:
 	uv sync
@@ -15,6 +15,9 @@ test:
 lint:
 	uv run ruff check src tests scripts/
 	uv run ruff format --check src tests scripts/
+
+check-production-v1:
+	./scripts/check-production-v1.sh
 
 format:
 	uv run ruff check --fix src tests scripts/

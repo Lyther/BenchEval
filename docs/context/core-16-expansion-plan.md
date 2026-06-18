@@ -3,7 +3,7 @@
 > **Status (2026-05-29):** Planning only. Core-8 remains 8/8 admitted and unchanged.
 > **Source:** [`concept-zero.md`](concept-zero.md) §9.
 
-Core-16 adds the remaining two tasks per category. Canonical task IDs follow Core-8 naming under `config/tasks/core-16/`.
+Core-16 adds the remaining two tasks per category. Canonical task IDs follow Core-8 naming under `config/selftest/core-16/`.
 
 ## Summary
 
@@ -21,8 +21,8 @@ Core-16 adds the remaining two tasks per category. Canonical task IDs follow Cor
 Layout per task:
 
 ```text
-config/tasks/core-16/<slug>.yaml
-config/tasks/core-16/workspaces/<task-id>/
+config/selftest/core-16/<slug>.yaml
+config/selftest/core-16/workspaces/<task-id>/
   prompt.json
   reference.<ext>
   negative.<ext>

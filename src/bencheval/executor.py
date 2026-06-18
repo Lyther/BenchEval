@@ -33,6 +33,8 @@ from bencheval.inspect_adapter import (
     mockllm_e0_skips_inspect_doctor,
     run_inspect_adapter,
 )
+from bencheval.path_safety import ensure_resolved_under_root
+from bencheval.paths import repo_root as _repo_root
 from bencheval.run_result import RunResult
 from bencheval.runner import (
     _SUPPORTED_OFFLINE_TASKS,
@@ -44,10 +46,6 @@ from bencheval.runner import (
 from bencheval.task_contract import ExecutionProfile
 from bencheval.task_registry import load_task_contract, resolve_task_path
 from bencheval.workspace_staging import agent_workspace_for_run
-
-
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
 
 
 def _path_for_evidence(path: Path, root: Path) -> str:
@@ -64,7 +62,11 @@ def _resolve_workspace(task_id: str) -> tuple[Path, str]:
         raise BenchEvalError(f"task {task_id} missing from admission document")
     entry = admission.tasks[task_id]
     root = _repo_root()
-    workspace = (root / entry.workspace).resolve()
+    workspace = ensure_resolved_under_root(
+        (root / entry.workspace).resolve(),
+        root,
+        what="task workspace",
+    )
     return workspace, entry.reference_solution
 
 

@@ -6,8 +6,22 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from bencheval.evidence import EvidenceRecord, read_evidence_jsonl
-from bencheval.exceptions import BenchEvalError
+from bencheval.exceptions import BenchEvalError, TaskContractError
 from bencheval.task_registry import load_task_contract, resolve_task_path
+
+
+def _is_control_plane_record(record: EvidenceRecord) -> bool:
+    return bool(record.benchmark_id and record.slice_id and record.adapter_id)
+
+
+def _task_version_for_record(record: EvidenceRecord) -> str:
+    if _is_control_plane_record(record):
+        return record.benchmark_version or record.harness_version or "control-plane"
+    try:
+        contract = load_task_contract(resolve_task_path(record.task_id))
+    except TaskContractError:
+        return "unknown"
+    return contract.task.version
 
 
 def _require_analytics_deps(*, require_duckdb: bool = False):
@@ -45,6 +59,13 @@ def _table_schemas(pa):
                 ("latency_sec", pa.float64()),
                 ("verifier_log_path", pa.string()),
                 ("created_at", pa.string()),
+                ("benchmark_id", pa.string()),
+                ("slice_id", pa.string()),
+                ("adapter_id", pa.string()),
+                ("runtime_id", pa.string()),
+                ("instance_id", pa.string()),
+                ("interpretation_label", pa.string()),
+                ("harness_version", pa.string()),
             ],
         ),
         "failures": pa.schema(
@@ -69,6 +90,20 @@ def _table_schemas(pa):
                 ("exported_at", pa.string()),
             ],
         ),
+        "runtime": pa.schema(
+            [
+                ("run_id", pa.string()),
+                ("runtime_id", pa.string()),
+                ("runtime_version", pa.string()),
+                ("runtime_kind", pa.string()),
+            ],
+        ),
+        "model": pa.schema(
+            [
+                ("run_id", pa.string()),
+                ("model_id", pa.string()),
+            ],
+        ),
     }
 
 
@@ -82,12 +117,11 @@ def _table_from_rows(pa, name: str, rows: list[dict[str, object]], schemas: dict
 def _attempt_rows(records: list[EvidenceRecord]) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for record in records:
-        contract = load_task_contract(resolve_task_path(record.task_id))
         rows.append(
             {
                 "run_id": record.run_id,
                 "task_id": record.task_id,
-                "task_version": contract.task.version,
+                "task_version": _task_version_for_record(record),
                 "model_id": record.model_id,
                 "backend": record.backend,
                 "execution_profile": record.execution_profile,
@@ -97,8 +131,46 @@ def _attempt_rows(records: list[EvidenceRecord]) -> list[dict[str, object]]:
                 "latency_sec": record.latency_sec,
                 "verifier_log_path": record.verifier_log_path,
                 "created_at": record.created_at.isoformat(),
+                "benchmark_id": record.benchmark_id,
+                "slice_id": record.slice_id,
+                "adapter_id": record.adapter_id,
+                "runtime_id": record.runtime_id,
+                "instance_id": record.instance_id,
+                "interpretation_label": record.interpretation_label,
+                "harness_version": record.harness_version,
             },
         )
+    return rows
+
+
+def _runtime_rows(records: list[EvidenceRecord]) -> list[dict[str, object]]:
+    seen: set[tuple[str, str | None]] = set()
+    rows: list[dict[str, object]] = []
+    for record in records:
+        key = (record.run_id, record.runtime_id)
+        if key in seen or record.runtime_id is None:
+            continue
+        seen.add(key)
+        rows.append(
+            {
+                "run_id": record.run_id,
+                "runtime_id": record.runtime_id,
+                "runtime_version": record.runtime_version,
+                "runtime_kind": record.runtime_kind,
+            },
+        )
+    return rows
+
+
+def _model_rows(records: list[EvidenceRecord]) -> list[dict[str, object]]:
+    seen: set[tuple[str, str]] = set()
+    rows: list[dict[str, object]] = []
+    for record in records:
+        key = (record.run_id, record.model_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append({"run_id": record.run_id, "model_id": record.model_id})
     return rows
 
 
@@ -141,6 +213,7 @@ def export_evidence(
     pa, pq, duck = _require_analytics_deps(require_duckdb=fmt == "duckdb")
     schemas = _table_schemas(pa)
     output_dir.mkdir(parents=True, exist_ok=True)
+    exported_at = datetime.now(tz=UTC).isoformat()
     tables = {
         "attempts": _attempt_rows(records),
         "failures": _failure_rows(records),
@@ -148,11 +221,13 @@ def export_evidence(
         "task_versions": [
             {
                 "task_id": record.task_id,
-                "task_version": load_task_contract(resolve_task_path(record.task_id)).task.version,
-                "exported_at": datetime.now(tz=UTC).isoformat(),
+                "task_version": _task_version_for_record(record),
+                "exported_at": exported_at,
             }
             for record in records
         ],
+        "runtime": _runtime_rows(records),
+        "model": _model_rows(records),
     }
     if fmt == "parquet":
         for name, rows in tables.items():
@@ -176,7 +251,9 @@ def export_evidence(
                     f"CREATE TABLE {name} AS SELECT * FROM read_parquet(?)",
                     [str(parquet_dir / f"{name}.parquet")],
                 )
-            views_dir = Path(__file__).resolve().parents[2] / "warehouse" / "views"
+            from bencheval.paths import repo_root
+
+            views_dir = repo_root() / "warehouse" / "views"
             if views_dir.is_dir():
                 for sql_path in sorted(views_dir.glob("*.sql")):
                     con.execute(sql_path.read_text(encoding="utf-8"))

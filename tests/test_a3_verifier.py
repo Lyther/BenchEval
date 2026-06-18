@@ -8,9 +8,10 @@ import sys
 from pathlib import Path
 
 from bencheval.admission import run_workspace_verifier
+from tests.selftest_paths import core16_workspace
 
 _ROOT = Path(__file__).resolve().parents[1]
-_A3_WS = _ROOT / "config/tasks/core-16/workspaces/be-core-a3-dependency-api-bump"
+_A3_WS = core16_workspace("be-core-a3-dependency-api-bump")
 _REF = json.loads((_A3_WS / "reference.patch.json").read_text(encoding="utf-8"))
 
 

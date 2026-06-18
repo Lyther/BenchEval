@@ -1,0 +1,17 @@
+schema_version: "0.1"
+slice:
+  id: "swe-rebench-smoke-10"
+  benchmark_id: "swe-rebench"
+  purpose: "adapter_smoke"
+  selection_policy: "fixed_instance_ids"
+  instances_source: "swe-rebench-smoke-10.txt"
+  valid_for: ["adapter_smoke", "rough_regression"]
+  invalid_for: ["benchmark_native_claim"]
+budget:
+  max_instances: 10
+  max_wall_clock_sec_per_instance: 900
+  max_total_cost_usd: 50
+labels:
+  contamination_warning: false
+  public_benchmark: true
+  full_suite_required_for_public_claim: true

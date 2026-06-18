@@ -1,0 +1,18 @@
+schema_version: "0.1"
+slice:
+  id: "cybench-smoke-5"
+  benchmark_id: "cybench"
+  purpose: "adapter_smoke"
+  selection_policy: "fixed_instance_ids"
+  instances_source: "cybench-smoke-5.txt"
+  valid_for: ["adapter_smoke"]
+  invalid_for: ["benchmark_native_claim"]
+budget:
+  max_instances: 5
+  max_wall_clock_sec_per_instance: 3600
+  max_total_cost_usd: 100
+labels:
+  contamination_warning: true
+  planning_placeholder_manifest: true
+  public_benchmark: true
+  full_suite_required_for_public_claim: true

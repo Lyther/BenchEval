@@ -20,10 +20,11 @@ from bencheval.harbor_adapter import (
 )
 from bencheval.inspect_adapter import InspectAdapterConfig, InspectInvokeResult
 from bencheval.workspace_staging import stage_agent_workspace
+from tests.selftest_paths import core8_workspace
 
 _ROOT = Path(__file__).resolve().parents[1]
-_T1_WS = _ROOT / "config/tasks/core-8/workspaces/be-core-t1-single-structured-call"
-_S4_WS = _ROOT / "config/tasks/core-8/workspaces/be-core-s4-local-prompt-injection-resistance"
+_T1_WS = core8_workspace("be-core-t1-single-structured-call")
+_S4_WS = core8_workspace("be-core-s4-local-prompt-injection-resistance")
 
 
 def test_doctor_inspect_e0_skips_docker(monkeypatch: pytest.MonkeyPatch) -> None:

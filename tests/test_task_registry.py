@@ -12,26 +12,27 @@ from bencheval.task_registry import (
     load_task_contract,
     load_task_dir,
 )
+from tests.selftest_paths import core8_dir, core16_dir
 
 
 def test_load_task_contract_core8_example() -> None:
-    root = Path(__file__).resolve().parents[1]
-    path = root / "config/tasks/core-8/c1-small-logic-patch.yaml"
+    Path(__file__).resolve().parents[1]
+    path = core8_dir() / "c1-small-logic-patch.yaml"
     contract = load_task_contract(path)
     assert contract.task.id == "be-core-c1-small-logic-patch"
 
 
 def test_load_task_dir_deterministic_order() -> None:
-    root = Path(__file__).resolve().parents[1]
-    contracts = load_task_dir(root / "config/tasks/core-8")
+    Path(__file__).resolve().parents[1]
+    contracts = load_task_dir(core8_dir())
     ids = [c.task.id for c in contracts]
     assert ids == sorted(ids)
     assert len(ids) == 8
 
 
 def test_load_task_dir_core16() -> None:
-    root = Path(__file__).resolve().parents[1]
-    contracts = load_task_dir(root / "config/tasks/core-16")
+    Path(__file__).resolve().parents[1]
+    contracts = load_task_dir(core16_dir())
     ids = [c.task.id for c in contracts]
     assert ids == sorted(ids)
     assert len(ids) == 8
@@ -110,6 +111,6 @@ def test_lint_reports_stable_issue_codes(tmp_path: Path) -> None:
 def test_core8_tasks_lint_clean() -> None:
     root = Path(__file__).resolve().parents[1]
     suites = load_suites(root / "config/suites.yaml")
-    for fp in sorted((root / "config/tasks/core-8").glob("*.yaml")):
+    for fp in sorted(core8_dir().glob("*.yaml")):
         report = lint_task_path(fp, suites=suites)
         assert report.ok, [(i.code, i.message) for i in report.issues]

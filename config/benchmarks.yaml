@@ -1,2 +1,1218 @@
-﻿# Benchmark suite definitions (Tier 1 / Tier 2). Pin canonical task lists (e.g. CyBench subset).
-suites: {}
+schema_version: 1
+benchmarks:
+  - id: swe-bench-verified
+    name: SWE-bench Verified
+    aliases: ["SWE-bench Verified", "swebench-verified"]
+    category: coding
+    tier: calibration
+    adapter_status: manifest_available
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 500
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://www.swebench.com/verified.html"
+    notes: "Human-filtered SWE-bench subset; public calibration only."
+  - id: swe-rebench
+    name: SWE-rebench
+    aliases: ["SWE-rebench", "swerebench"]
+    category: coding
+    tier: calibration
+    adapter_status: adapter_pending
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: low
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://arxiv.org/abs/2505.20411"
+    notes: "Decontaminated refreshed SWE tasks; latest-window smoke slice is catalog-only until live harness."
+  - id: swe-bench-lite
+    name: SWE-bench Lite
+    aliases: ["SWE-bench Lite", "swebench-lite"]
+    category: coding
+    tier: calibration
+    adapter_status: adapter_pending
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 300
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://www.swebench.com/lite.html"
+    notes: "Cost-reduced SWE-bench subset."
+  - id: swe-bench-full
+    name: SWE-bench Full
+    aliases: ["SWE-bench", "swebench"]
+    category: coding
+    tier: stretch
+    adapter_status: adapter_pending
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 2294
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: true
+    safety_review: standard
+    source_url: null
+    notes: "Full public SWE issue benchmark; expensive."
+  - id: swe-bench-pro
+    name: SWE-bench Pro
+    aliases: ["SWE-bench Pro", "swebench-pro"]
+    category: coding
+    tier: stretch
+    adapter_status: adapter_pending
+    recommended_backend: harbor
+    recommended_profile: E4
+    task_count: 1865
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://www.swebench.com/"
+    notes: "Scale AI SWE-bench family slice; likely Harbor-first."
+  - id: multi-swe-bench
+    name: Multi-SWE-bench
+    aliases: ["Multi-SWE-bench", "SWE-bench Multilingual"]
+    category: coding
+    tier: stretch
+    adapter_status: adapter_pending
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://multi-swe-bench.github.io/"
+    notes: "Multilingual repository repair benchmark."
+  - id: swe-bench-multimodal
+    name: SWE-bench Multimodal
+    aliases: ["SWE-bench Multimodal", "swebench-mm"]
+    category: multimodal
+    tier: stretch
+    adapter_status: adapter_pending
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 517
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://www.swebench.com/multimodal.html"
+    notes: "SWE tasks with visual context."
+  - id: swe-lancer
+    name: SWE-Lancer
+    aliases: ["SWE-Lancer", "swelancer"]
+    category: coding
+    tier: stretch
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 1488
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://openai.com/index/swe-lancer/"
+    notes: "Freelance software task benchmark."
+  - id: aider-polyglot
+    name: Aider Polyglot
+    aliases: ["Aider Polyglot", "aider-polyglot"]
+    category: coding
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 225
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://aider.chat/docs/leaderboards/"
+    notes: "Multi-language edit benchmark used by Aider leaderboard."
+  - id: humaneval
+    name: HumanEval
+    aliases: ["HumanEval", "human-eval"]
+    category: coding
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 164
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://github.com/openai/human-eval"
+    notes: "Classic single-function code generation benchmark; saturated."
+  - id: humaneval-plus
+    name: HumanEval+
+    aliases: ["HumanEval+", "HumanEval Plus", "evalplus-humaneval"]
+    category: coding
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 164
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://evalplus.github.io/leaderboard.html"
+    notes: "HumanEval with stronger tests."
+  - id: mbpp
+    name: MBPP
+    aliases: ["MBPP", "Mostly Basic Python Problems"]
+    category: coding
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 974
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://github.com/google-research/google-research/tree/master/mbpp"
+    notes: "Basic Python programming tasks."
+  - id: mbpp-plus
+    name: MBPP+
+    aliases: ["MBPP+", "evalplus-mbpp"]
+    category: coding
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 399
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://evalplus.github.io/leaderboard.html"
+    notes: "MBPP with stronger tests."
+  - id: apps
+    name: APPS
+    aliases: ["APPS"]
+    category: coding
+    tier: stretch
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 10000
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://github.com/hendrycks/apps"
+    notes: "Competitive programming benchmark."
+  - id: livecodebench
+    name: LiveCodeBench
+    aliases: ["LiveCodeBench", "LCB"]
+    category: coding
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://livecodebench.github.io/"
+    notes: "Time-versioned code benchmark designed to reduce contamination."
+  - id: bigcodebench
+    name: BigCodeBench
+    aliases: ["BigCodeBench"]
+    category: coding
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 1140
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://bigcode-bench.github.io/"
+    notes: "Practical programming tasks with library/API use."
+  - id: ds-1000
+    name: DS-1000
+    aliases: ["DS-1000", "DS1000"]
+    category: data_science
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 1000
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://ds1000-code-gen.github.io/"
+    notes: "Data science code generation and repair."
+  - id: repobench
+    name: RepoBench
+    aliases: ["RepoBench"]
+    category: coding
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://github.com/Leolty/repobench"
+    notes: "Repository-level context and completion benchmark."
+  - id: dev-eval
+    name: DevEval
+    aliases: ["DevEval"]
+    category: coding
+    tier: stretch
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 1825
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://github.com/open-compass/DevEval"
+    notes: "Real-world software development task benchmark."
+  - id: cruxeval
+    name: CRUXEval
+    aliases: ["CRUXEval"]
+    category: coding
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 800
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://crux-eval.github.io/"
+    notes: "Code reasoning benchmark."
+  - id: codeforces
+    name: Codeforces benchmark
+    aliases: ["Codeforces", "Codeforces Evals"]
+    category: coding
+    tier: stretch
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://codeforces.com/"
+    notes: "Competitive-programming source used by many eval suites."
+  - id: terminal-bench
+    name: Terminal-Bench
+    aliases: ["Terminal-Bench", "t-bench"]
+    category: agentic_terminal
+    tier: stretch
+    adapter_status: manifest_available
+    recommended_backend: harbor
+    recommended_profile: E4
+    task_count: 89
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://www.tbench.ai/"
+    notes: "Containerized terminal-agent tasks."
+  - id: swe-smith
+    name: SWE-smith
+    aliases: ["SWE-smith", "swesmith"]
+    category: coding
+    tier: stretch
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://swesmith.com/"
+    notes: "Synthetic SWE task generation pipeline."
+  - id: ml-bench
+    name: ML-Bench
+    aliases: ["ML-Bench"]
+    category: ml_research
+    tier: stretch
+    adapter_status: cataloged
+    recommended_backend: harbor
+    recommended_profile: E4
+    task_count: null
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://github.com/gersteinlab/ML-bench"
+    notes: "Machine-learning engineering tasks."
+  - id: mle-bench
+    name: MLE-bench
+    aliases: ["MLE-bench", "MLEBench"]
+    category: ml_research
+    tier: stretch
+    adapter_status: cataloged
+    recommended_backend: harbor
+    recommended_profile: E4
+    task_count: 75
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://openai.com/index/mle-bench/"
+    notes: "Kaggle-style machine-learning engineering benchmark."
+  - id: mlagentbench
+    name: MLAgentBench
+    aliases: ["MLAgentBench"]
+    category: ml_research
+    tier: stretch
+    adapter_status: cataloged
+    recommended_backend: harbor
+    recommended_profile: E4
+    task_count: null
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://github.com/snap-stanford/MLAgentBench"
+    notes: "Research-oriented ML agent benchmark."
+  - id: paperbench
+    name: PaperBench
+    aliases: ["PaperBench", "Paper Bench"]
+    category: ml_research
+    tier: stretch
+    adapter_status: cataloged
+    recommended_backend: harbor
+    recommended_profile: E4
+    task_count: 8316
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://openai.com/index/paperbench/"
+    notes: "Scientific paper reproduction tasks."
+  - id: bfcl-v4
+    name: Berkeley Function Calling Leaderboard v4
+    aliases:
+      ["BFCL", "BFCL v3", "BFCL v4", "Berkeley Function Calling Leaderboard"]
+    category: tool_use
+    tier: calibration
+    adapter_status: manifest_available
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://gorilla.cs.berkeley.edu/leaderboard.html"
+    notes: "Function-calling smoke via bfcl-native adapter (P5.1); live Gorilla harness optional."
+  - id: tau-bench
+    name: tau-bench
+    aliases: ["tau-bench"]
+    category: tool_use
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://github.com/sierra-research/tau-bench"
+    notes: "Stateful tool-agent benchmark."
+  - id: tau2-bench
+    name: tau2-bench
+    aliases: ["tau2-bench", "tau squared bench"]
+    category: tool_use
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://github.com/sierra-research/tau2-bench"
+    notes: "Follow-on stateful tool benchmark."
+  - id: api-bank
+    name: API-Bank
+    aliases: ["API-Bank", "APIBank"]
+    category: tool_use
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://github.com/AlibabaResearch/DAMO-ConvAI/tree/main/api-bank"
+    notes: "Tool-use benchmark with API planning."
+  - id: toolbench
+    name: ToolBench
+    aliases: ["ToolBench"]
+    category: tool_use
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://github.com/OpenBMB/ToolBench"
+    notes: "Tool-use instruction-following benchmark."
+  - id: acebench
+    name: ACEBench
+    aliases: ["ACEBench"]
+    category: tool_use
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://github.com/ACEBench/ACEBench"
+    notes: "Agent and function-calling evaluation."
+  - id: agentdojo
+    name: AgentDojo
+    aliases: ["AgentDojo"]
+    category: safety
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    safety_review: dual_use
+    source_url: "https://github.com/ethz-spylab/agentdojo"
+    notes: "Tool-agent benchmark with prompt-injection security tasks."
+  - id: webarena
+    name: WebArena
+    aliases: ["WebArena"]
+    category: web_agent
+    tier: stretch
+    adapter_status: cataloged
+    recommended_backend: harbor
+    recommended_profile: E4
+    task_count: 812
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://webarena.dev/"
+    notes: "Self-hosted realistic web tasks."
+  - id: visualwebarena
+    name: VisualWebArena
+    aliases: ["VisualWebArena", "VWA"]
+    category: web_agent
+    tier: stretch
+    adapter_status: cataloged
+    recommended_backend: harbor
+    recommended_profile: E4
+    task_count: 910
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://jykoh.com/vwa"
+    notes: "Multimodal web-agent tasks."
+  - id: webvoyager
+    name: WebVoyager
+    aliases: ["WebVoyager"]
+    category: web_agent
+    tier: stretch
+    adapter_status: cataloged
+    recommended_backend: harbor
+    recommended_profile: E4
+    task_count: 643
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://github.com/MinorJerry/WebVoyager"
+    notes: "Real-world web navigation benchmark."
+  - id: mind2web
+    name: Mind2Web
+    aliases: ["Mind2Web"]
+    category: web_agent
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 2350
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://osu-nlp-group.github.io/Mind2Web/"
+    notes: "Web task planning from demonstrations."
+  - id: osworld
+    name: OSWorld
+    aliases: ["OSWorld"]
+    category: os_desktop
+    tier: stretch
+    adapter_status: cataloged
+    recommended_backend: harbor
+    recommended_profile: E4
+    task_count: 369
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://os-world.github.io/"
+    notes: "Desktop OS agent benchmark."
+  - id: windows-agent-arena
+    name: Windows Agent Arena
+    aliases: ["Windows Agent Arena", "WAA"]
+    category: os_desktop
+    tier: stretch
+    adapter_status: cataloged
+    recommended_backend: harbor
+    recommended_profile: E4
+    task_count: null
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://microsoft.github.io/WindowsAgentArena/"
+    notes: "Windows desktop agent benchmark."
+  - id: osuniverse
+    name: OSUniverse
+    aliases: ["OSUniverse"]
+    category: os_desktop
+    tier: stretch
+    adapter_status: cataloged
+    recommended_backend: harbor
+    recommended_profile: E4
+    task_count: null
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://github.com/xlang-ai/OSUniverse"
+    notes: "Desktop computer-use benchmark."
+  - id: gaia
+    name: GAIA
+    aliases: ["GAIA"]
+    category: general_agent
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 466
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://huggingface.co/spaces/gaia-benchmark/leaderboard"
+    notes: "General assistant benchmark with tools and web-style reasoning."
+  - id: agentbench
+    name: AgentBench
+    aliases: ["AgentBench"]
+    category: general_agent
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://github.com/THUDM/AgentBench"
+    notes: "Multi-domain agent benchmark."
+  - id: livebench
+    name: LiveBench
+    aliases: ["LiveBench"]
+    category: reasoning
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://livebench.ai/"
+    notes: "Rolling general capability benchmark."
+  - id: browsecomp
+    name: BrowseComp
+    aliases: ["BrowseComp"]
+    category: general_agent
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 1266
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://openai.com/index/browsecomp/"
+    notes: "Hard web-browsing benchmark."
+  - id: simpleqa
+    name: SimpleQA
+    aliases: ["SimpleQA"]
+    category: reasoning
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 4326
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://openai.com/index/simpleqa/"
+    notes: "Short-answer factuality benchmark."
+  - id: gpqa
+    name: GPQA
+    aliases: ["GPQA", "GPQA Diamond"]
+    category: reasoning
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 448
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://github.com/idavidrein/gpqa"
+    notes: "Graduate-level science QA benchmark."
+  - id: math
+    name: MATH
+    aliases: ["MATH", "MATH benchmark"]
+    category: reasoning
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 12500
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://github.com/hendrycks/math"
+    notes: "Competition math benchmark."
+  - id: aime
+    name: AIME
+    aliases: ["AIME"]
+    category: reasoning
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://artofproblemsolving.com/wiki/index.php/AIME_Problems_and_Solutions"
+    notes: "Math contest tasks used in many leaderboards."
+  - id: mmlu-pro
+    name: MMLU-Pro
+    aliases: ["MMLU-Pro", "MMLU Pro"]
+    category: reasoning
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 12032
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://github.com/TIGER-AI-Lab/MMLU-Pro"
+    notes: "Harder knowledge and reasoning multiple-choice benchmark."
+  - id: mmmu
+    name: MMMU
+    aliases: ["MMMU"]
+    category: multimodal
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 11500
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://mmmu-benchmark.github.io/"
+    notes: "Multimodal college-level reasoning benchmark."
+  - id: chartqa
+    name: ChartQA
+    aliases: ["ChartQA"]
+    category: multimodal
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://github.com/vis-nlp/ChartQA"
+    notes: "Chart visual-question-answering benchmark."
+  - id: docvqa
+    name: DocVQA
+    aliases: ["DocVQA"]
+    category: multimodal
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://rrc.cvc.uab.es/?ch=17"
+    notes: "Document visual-question-answering benchmark."
+  - id: longbench
+    name: LongBench
+    aliases: ["LongBench"]
+    category: long_context
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://github.com/THUDM/LongBench"
+    notes: "Long-context understanding benchmark."
+  - id: infinitebench
+    name: InfiniteBench
+    aliases: ["InfiniteBench"]
+    category: long_context
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://github.com/OpenBMB/InfiniteBench"
+    notes: "Very-long-context benchmark."
+  - id: loogle
+    name: LooGLE
+    aliases: ["LooGLE"]
+    category: long_context
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://github.com/bigai-nlco/LooGLE"
+    notes: "Long-context QA benchmark."
+  - id: needle-in-haystack
+    name: Needle-in-a-haystack
+    aliases: ["Needle-in-a-haystack", "NIAH"]
+    category: long_context
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: low
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://github.com/gkamradt/LLMTest_NeedleInAHaystack"
+    notes: "Synthetic long-context retrieval probe."
+  - id: cybench
+    name: Cybench
+    aliases: ["Cybench", "CyBench"]
+    category: cybersecurity
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 40
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: true
+    safety_review: dual_use
+    source_url: "https://cybench.github.io/"
+    notes: "Professional CTF benchmark; metadata_only until CyBench adapter (see docs/context/cybench-hard-39-run-difficulties.md)."
+  - id: cybergym
+    name: CyberGym
+    aliases: ["CyberGym"]
+    category: cybersecurity
+    tier: stretch
+    adapter_status: cataloged
+    recommended_backend: harbor
+    recommended_profile: E4
+    task_count: 1507
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    safety_review: offensive_restricted
+    source_url: "https://www.cybergym.io/"
+    notes: "Agentic vulnerability reproduction benchmark; not Core-eligible."
+  - id: exploitgym
+    name: ExploitGym
+    aliases: ["ExploitGym", "Exploit Gym"]
+    category: cybersecurity
+    tier: stretch
+    adapter_status: cataloged
+    recommended_backend: harbor
+    recommended_profile: E4
+    task_count: 869
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    safety_review: offensive_restricted
+    source_url: "https://www.cybergym.io/"
+    notes: "Exploit-generation benchmark; treat as restricted Stretch only."
+  - id: bountybench
+    name: BountyBench
+    aliases: ["BountyBench"]
+    category: cybersecurity
+    tier: stretch
+    adapter_status: cataloged
+    recommended_backend: harbor
+    recommended_profile: E4
+    task_count: null
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    safety_review: offensive_restricted
+    source_url: "https://bountybench.github.io/"
+    notes: "Real bug bounty style benchmark."
+  - id: cyberseceval4-autopatchbench
+    name: CyberSecEval 4 AutoPatchBench
+    aliases: ["CyberSecEval 4", "AutoPatchBench"]
+    category: cybersecurity
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    safety_review: dual_use
+    source_url: "https://meta-llama.github.io/PurpleLlama/CyberSecEval/"
+    notes: "Defensive native-code patching benchmark."
+  - id: secure-codegen
+    name: SECURE
+    aliases: ["SECURE", "Secure Code Generation"]
+    category: cybersecurity
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: dual_use
+    source_url: "https://arxiv.org/abs/2310.16840"
+    notes: "Security-aware code generation benchmark."
+  - id: secbench
+    name: SecBench
+    aliases: ["SecBench"]
+    category: cybersecurity
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: dual_use
+    source_url: "https://arxiv.org/abs/2312.04724"
+    notes: "Security benchmark family for LLM code."
+  - id: deepswe
+    name: DeepSWE
+    aliases: ["DeepSWE", "Deep SWE"]
+    category: coding
+    tier: reference_only
+    adapter_status: unverified
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: unknown
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://www.swebench.com/"
+    notes: "Requested name; no distinct public benchmark verified on 2026-06-17. Track as alias until a canonical source is provided."
+  - id: swe-gym
+    name: SWE-Gym
+    aliases: ["SWE-Gym", "swe-gym"]
+    category: coding
+    tier: calibration
+    adapter_status: adapter_pending
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 2438
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://arxiv.org/abs/2412.21139"
+    notes: "2,438 executable Python SWE tasks for RL training/eval of agents; Princeton NLP."
+  - id: commit0
+    name: Commit0
+    aliases: ["Commit0"]
+    category: coding
+    tier: calibration
+    adapter_status: adapter_pending
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 57
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://github.com/commit-0/commit0"
+    notes: "57 Python libraries; generate/complete a library from scratch; repo-level codegen."
+  - id: r2e
+    name: R2E (Repo-to-Environment)
+    aliases: ["R2E", "r2e-dataset"]
+    category: coding
+    tier: calibration
+    adapter_status: adapter_pending
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: null
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://github.com/r2e-project/r2e"
+    notes: "Framework to build execution environments from any GitHub repo; scalable SWE eval."
+  - id: classeval
+    name: ClassEval
+    aliases: ["ClassEval"]
+    category: coding
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 100
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://arxiv.org/abs/2308.01861"
+    notes: "100 class-level code generation tasks; harder than function-level HumanEval/MBPP."
+  - id: codecontests
+    name: CodeContests
+    aliases: ["CodeContests", "DeepMind CodeContests"]
+    category: reasoning
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 165
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://github.com/google-deepmind/code_contests"
+    notes: "Competitive programming; ~13k train + valid, ~165 test; DeepMind."
+  - id: arc-agi
+    name: ARC-AGI
+    aliases: ["ARC-AGI", "ARC Prize", "ARC-AGI-1"]
+    category: reasoning
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 400
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://arcprize.org/"
+    notes: "Abstraction and reasoning corpus; fluid-intelligence/AGI probe; AGI-2/3 newer."
+  - id: gsm8k
+    name: GSM8K
+    aliases: ["GSM8K", "grade-school-math"]
+    category: reasoning
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 1319
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://github.com/openai/grade-school-math"
+    notes: "8,500 grade-school math problems; 1,319 test; saturated for frontier models."
+  - id: truthfulqa
+    name: TruthfulQA
+    aliases: ["TruthfulQA"]
+    category: general_agent
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 817
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://github.com/sylinrl/TruthfulQA"
+    notes: "817 questions measuring truthfulness vs common misconceptions."
+  - id: multipl-e
+    name: MultiPL-E
+    aliases: ["MultiPL-E"]
+    category: coding
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 1140
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://github.com/nuprl/MultiPL-E"
+    notes: "~1,140 problems × 18 languages; multilingual codegen benchmark."
+  - id: webshop
+    name: WebShop
+    aliases: ["WebShop"]
+    category: web_agent
+    tier: calibration
+    adapter_status: adapter_pending
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 12087
+    public_indexed: true
+    contamination_risk: low
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://webshop-pnlp.github.io/"
+    notes: "12,087 instructions over 1.18M products; e-commerce web agent sim."
+  - id: agentboard
+    name: AgentBoard
+    aliases: ["AgentBoard"]
+    category: general_agent
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 9
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://arxiv.org/abs/2401.13178"
+    notes: "9 task environments; multi-turn analytical agent evaluation with progress rate."
+  - id: scicode
+    name: SciCode
+    aliases: ["SciCode"]
+    category: ml_research
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 80
+    public_indexed: true
+    contamination_risk: low
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://github.com/scicode-bench/SciCode"
+    notes: "80 main problems / 338 subproblems; scientific code generation across domains."
+  - id: visualagentbench
+    name: VisualAgentBench
+    aliases: ["VisualAgentBench", "VAB"]
+    category: os_desktop
+    tier: stretch
+    adapter_status: adapter_pending
+    recommended_backend: inspect
+    recommended_profile: E4
+    task_count: 5
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://github.com/THUDM/VisualAgentBench"
+    notes: "5 environments (embodied/GUI/design); multimodal visual agent benchmark; Tsinghua."
+  - id: androidworld
+    name: AndroidWorld
+    aliases: ["AndroidWorld"]
+    category: os_desktop
+    tier: stretch
+    adapter_status: adapter_pending
+    recommended_backend: inspect
+    recommended_profile: E4
+    task_count: 116
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    safety_review: standard
+    source_url: "https://arxiv.org/abs/2405.14573"
+    notes: "116 tasks across 20 Android apps; mobile GUI agent benchmark; Google DeepMind."
+  - id: evalperf
+    name: EvalPerf
+    aliases: ["EvalPerf"]
+    category: coding
+    tier: calibration
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 251
+    public_indexed: true
+    contamination_risk: low
+    single_mode_required: false
+    safety_review: standard
+    source_url: "https://github.com/evalplus/evalplus"
+    notes: "251 performance-exercising tasks; code efficiency/perf sibling of EvalPlus; COLM'24."
+  - id: cybergym-e2e
+    name: CyberGym-E2E
+    aliases: ["CyberGym-E2E"]
+    category: cybersecurity
+    tier: reference_only
+    adapter_status: unverified
+    recommended_backend: harbor
+    recommended_profile: E4
+    task_count: null
+    public_indexed: true
+    contamination_risk: unknown
+    single_mode_required: true
+    safety_review: dual_use
+    source_url: "https://www.cybergym.io/"
+    notes: "End-to-end vulnerability lifecycle; Berkeley RDI paper 2026, public release pending. Track as reference_only until task set is published."

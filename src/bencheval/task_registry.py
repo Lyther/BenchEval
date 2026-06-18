@@ -12,6 +12,7 @@ import yaml
 from pydantic import ValidationError
 
 from bencheval.exceptions import BenchEvalError, TaskContractError
+from bencheval.paths import repo_root as _repo_root
 from bencheval.task_contract import TaskContract
 
 LintSeverity = Literal["error", "warning"]
@@ -51,12 +52,18 @@ def compute_source_hash(content: bytes) -> str:
     return f"sha256:{digest}"
 
 
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
+def selftest_tasks_root() -> Path:
+    """Canonical selftest lane root (P9.2); falls back to legacy ``config/tasks``."""
+    root = _repo_root()
+    selftest = root / "config" / "selftest"
+    if selftest.is_dir():
+        return selftest
+    legacy = root / "config" / "tasks"
+    return legacy
 
 
 def default_tasks_root() -> Path:
-    return _repo_root() / "config" / "tasks"
+    return selftest_tasks_root()
 
 
 def default_suites_path() -> Path:
@@ -160,10 +167,17 @@ def load_suites(path: Path | None = None) -> dict[str, SuiteDefinition]:
 
 
 def resolve_task_path(task_id_or_path: str, tasks_root: Path | None = None) -> Path:
+    root = (tasks_root or default_tasks_root()).resolve()
     candidate = Path(task_id_or_path)
     if candidate.exists():
-        return candidate.resolve()
-    root = (tasks_root or default_tasks_root()).resolve()
+        resolved = candidate.resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError as e:
+            raise TaskContractError(
+                f"task path {resolved} is outside tasks root {root}",
+            ) from e
+        return resolved
     if not root.is_dir():
         raise TaskContractError(f"tasks root not found: {root}")
     matches: list[Path] = []

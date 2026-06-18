@@ -16,6 +16,11 @@ def _record_key(record: EvidenceRecord) -> EvidenceKey:
     return (record.task_id, record.model_id, record.backend)
 
 
+def _evidence_key_label(key: EvidenceKey) -> str:
+    task_id, model_id, backend = key
+    return f"{task_id}|{model_id}|{backend}"
+
+
 def _index_records(records: list[EvidenceRecord]) -> dict[EvidenceKey, EvidenceRecord]:
     indexed: dict[EvidenceKey, EvidenceRecord] = {}
     for record in records:
@@ -124,7 +129,32 @@ class EvidenceComparisonReport:
 def compare_evidence_runs(
     baseline: list[EvidenceRecord],
     current: list[EvidenceRecord],
+    *,
+    mode: str = "auto",
 ) -> EvidenceComparisonReport:
+    if mode not in ("auto", "legacy", "runtime", "model"):
+        raise ComparisonError(f"unknown compare mode: {mode!r}")
+    from bencheval.model_compare import is_model_comparison_evidence
+    from bencheval.runtime_compare import (
+        is_dual_axis_comparison_drift,
+        is_runtime_comparison_evidence,
+    )
+
+    if mode == "auto" and is_dual_axis_comparison_drift(baseline, current):
+        raise ComparisonError(
+            "dual-axis drift: hold either model_id or runtime_id constant for comparison",
+        )
+    if mode == "runtime" or (mode == "auto" and is_runtime_comparison_evidence(baseline, current)):
+        raise ComparisonError(
+            "use compare_runtime_evidence() for v0.3 runtime comparison; "
+            "CLI selects runtime mode automatically",
+        )
+    if mode == "model" or (mode == "auto" and is_model_comparison_evidence(baseline, current)):
+        raise ComparisonError(
+            "use compare_model_evidence() for v0.3 model comparison; "
+            "CLI selects model mode automatically",
+        )
+
     if not baseline:
         raise ComparisonError("baseline evidence must be non-empty")
     if not current:
@@ -135,8 +165,8 @@ def compare_evidence_runs(
     base_keys = set(base_index)
     cur_keys = set(cur_index)
     shared = sorted(base_keys & cur_keys)
-    missing = sorted({key[0] for key in base_keys - cur_keys})
-    new = sorted({key[0] for key in cur_keys - base_keys})
+    missing = sorted(_evidence_key_label(key) for key in base_keys - cur_keys)
+    new = sorted(_evidence_key_label(key) for key in cur_keys - base_keys)
 
     task_deltas: list[TaskEvidenceDelta] = []
     for task_id, model_id, backend in shared:

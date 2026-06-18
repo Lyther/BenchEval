@@ -1,0 +1,80 @@
+{
+  "starting_state_id": "canonical",
+  "tool_sequence": [
+    {
+      "tool": "policy_create",
+      "arguments": {
+        "policy": {
+          "id": "pol-003",
+          "name": "reports-read",
+          "effect": "allow",
+          "resource": "reports",
+          "roles": [
+            "editor",
+            "auditor"
+          ]
+        }
+      }
+    },
+    {
+      "tool": "policy_update",
+      "arguments": {
+        "id": "pol-001",
+        "patch": {
+          "roles": [
+            "auditor",
+            "editor"
+          ]
+        }
+      }
+    }
+  ],
+  "final_state": {
+    "policies": [
+      {
+        "id": "pol-001",
+        "name": "logs-audit",
+        "effect": "allow",
+        "resource": "logs",
+        "roles": [
+          "auditor",
+          "editor"
+        ]
+      },
+      {
+        "id": "pol-002",
+        "name": "config-admin",
+        "effect": "allow",
+        "resource": "config",
+        "roles": [
+          "admin"
+        ]
+      },
+      {
+        "id": "pol-003",
+        "name": "reports-read",
+        "effect": "allow",
+        "resource": "reports",
+        "roles": [
+          "editor",
+          "auditor"
+        ]
+      }
+    ],
+    "actor_role": "editor"
+  },
+  "audit_log": [
+    {
+      "action": "create",
+      "entity_id": "pol-003",
+      "actor_role": "editor",
+      "timestamp": "2026-06-01T10:00:00Z"
+    },
+    {
+      "action": "update",
+      "entity_id": "pol-001",
+      "actor_role": "editor",
+      "timestamp": "2026-06-01T10:00:01Z"
+    }
+  ]
+}

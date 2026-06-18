@@ -9,9 +9,10 @@ import tempfile
 from pathlib import Path
 
 from bencheval.admission import run_workspace_verifier
+from tests.selftest_paths import core16_workspace
 
 _ROOT = Path(__file__).resolve().parents[1]
-_C3_WS = _ROOT / "config/tasks/core-16/workspaces/be-core-c3-backward-compatible-config-migration"
+_C3_WS = core16_workspace("be-core-c3-backward-compatible-config-migration")
 
 
 def _load_c3_verify_module():

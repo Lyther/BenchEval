@@ -1,6 +1,19 @@
 """BenchEval: LLM benchmark evaluation tracker."""
 
+from bencheval.benchmark_registry import (
+    BenchmarkCatalog,
+    BenchmarkEntry,
+    load_benchmark_catalog,
+)
 from bencheval.compare import GuardedComparisonReporter
+from bencheval.domain import (
+    AttemptSummaryDTO,
+    RunPlan,
+    RuntimeCatalog,
+    RuntimeProfile,
+    SliceManifest,
+    TokenUsage,
+)
 from bencheval.evidence import EvidenceRecord, read_evidence_jsonl
 from bencheval.exceptions import (
     AdapterFailureError,
@@ -22,13 +35,18 @@ from bencheval.models import (
     SummaryRow,
 )
 from bencheval.pricing import ModelPrice, PricingSheet, load_pricing
+from bencheval.runtime_registry import load_runtime_catalog, load_runtime_profile
 from bencheval.sink import JsonlSummarySink
+from bencheval.slice_manifest import load_slice_manifest
 from bencheval.summary import StrictSummaryBuilder
 from bencheval.task_contract import TaskContract
 
 __all__ = [
     "AdapterFailureError",
+    "AttemptSummaryDTO",
     "BenchEvalError",
+    "BenchmarkCatalog",
+    "BenchmarkEntry",
     "ComparisonError",
     "ComparisonReport",
     "DeltaRow",
@@ -42,13 +60,22 @@ __all__ = [
     "ModelFamily",
     "ModelPrice",
     "PricingSheet",
+    "RunPlan",
     "RunStamp",
+    "RuntimeCatalog",
+    "RuntimeProfile",
+    "SliceManifest",
     "StrictSummaryBuilder",
     "SummaryRow",
     "SummaryValidationError",
     "TaskContract",
     "TaskContractError",
+    "TokenUsage",
+    "load_benchmark_catalog",
     "load_pricing",
+    "load_runtime_catalog",
+    "load_runtime_profile",
+    "load_slice_manifest",
     "read_evidence_jsonl",
     "read_summary_jsonl",
 ]

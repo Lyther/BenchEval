@@ -1,0 +1,39 @@
+{
+  "legacy_flag_off": [
+    {
+      "input": "2 3",
+      "expect": 5
+    },
+    {
+      "input": "10 5",
+      "expect": 15
+    },
+    {
+      "input": "100",
+      "expect": 100
+    },
+    {
+      "input": "0 0 0",
+      "expect": 0
+    }
+  ],
+  "legacy_rejects_commas_flag_off": [
+    {
+      "input": "1,000"
+    }
+  ],
+  "feature_flag_on": [
+    {
+      "input": "1,000 2",
+      "expect": 1002
+    },
+    {
+      "input": "10,000",
+      "expect": 10000
+    },
+    {
+      "input": "1,234 5",
+      "expect": 1239
+    }
+  ]
+}

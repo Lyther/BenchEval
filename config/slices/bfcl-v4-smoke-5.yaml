@@ -1,0 +1,17 @@
+schema_version: "0.1"
+slice:
+  id: "smoke-5"
+  benchmark_id: "bfcl-v4"
+  purpose: "model_comparison"
+  selection_policy: "fixed_instance_ids"
+  instances_source: "bfcl-v4-smoke-5.txt"
+  valid_for: ["adapter_smoke", "model_comparison", "rough_regression"]
+  invalid_for: ["benchmark_native_claim"]
+budget:
+  max_instances: 5
+  max_wall_clock_sec_per_instance: 300
+  max_total_cost_usd: 10
+labels:
+  contamination_warning: false
+  public_benchmark: true
+  full_suite_required_for_public_claim: true

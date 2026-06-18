@@ -8,9 +8,10 @@ import sys
 from pathlib import Path
 
 from bencheval.admission import run_workspace_verifier
+from tests.selftest_paths import core8_workspace
 
 _ROOT = Path(__file__).resolve().parents[1]
-_S1_WS = _ROOT / "config/tasks/core-8/workspaces/be-core-s1-secure-input-boundary-patch"
+_S1_WS = core8_workspace("be-core-s1-secure-input-boundary-patch")
 _REF = json.loads((_S1_WS / "reference.patch.json").read_text(encoding="utf-8"))
 
 

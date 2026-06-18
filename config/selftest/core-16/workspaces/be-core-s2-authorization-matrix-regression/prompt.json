@@ -1,0 +1,39 @@
+{
+  "module": "repo/src/authz.py",
+  "symptom": "Role checks regress: forbidden roles gain access and some legitimate access is denied.",
+  "roles": [
+    "viewer",
+    "editor",
+    "admin"
+  ],
+  "actions": [
+    "read",
+    "write",
+    "delete"
+  ],
+  "resources": [
+    "document",
+    "settings",
+    "audit_log"
+  ],
+  "sample_expectations": [
+    {
+      "role": "viewer",
+      "action": "read",
+      "resource": "document",
+      "allow": true
+    },
+    {
+      "role": "editor",
+      "action": "write",
+      "resource": "document",
+      "allow": true
+    },
+    {
+      "role": "admin",
+      "action": "delete",
+      "resource": "settings",
+      "allow": true
+    }
+  ]
+}

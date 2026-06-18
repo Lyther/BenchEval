@@ -1,0 +1,12 @@
+# SWE-rebench latest-window smoke (10 placeholder instance ids). Replace with official
+# decontaminated window export when harness is wired (P4.2 catalog slice).
+swe-rebench-py-00001
+swe-rebench-py-00002
+swe-rebench-py-00003
+swe-rebench-py-00004
+swe-rebench-py-00005
+swe-rebench-py-00006
+swe-rebench-py-00007
+swe-rebench-py-00008
+swe-rebench-py-00009
+swe-rebench-py-00010

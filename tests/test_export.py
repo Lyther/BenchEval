@@ -66,6 +66,27 @@ def test_export_duckdb_missing_raises_bencheval_error(
         export_evidence(evidence, fmt="duckdb", output_dir=tmp_path / "warehouse")
 
 
+def test_export_control_plane_record_without_task_contract(tmp_path: Path) -> None:
+    evidence = tmp_path / "evidence.jsonl"
+    row = _record(
+        task_id="django__django-11099",
+        benchmark_id="swe-bench-verified",
+        slice_id="swe-bench-verified-smoke-10",
+        adapter_id="swebench",
+        runtime_id="mini-swe-agent",
+        instance_id="django__django-11099",
+    )
+    JsonlEvidenceSink().append_jsonl(evidence, row)
+    try:
+        import pyarrow  # noqa: F401
+    except ImportError:
+        pytest.skip("analytics extra not installed")
+    out = export_evidence(evidence, fmt="parquet", output_dir=tmp_path / "wh")
+    assert (out / "attempts.parquet").is_file()
+    assert (out / "runtime.parquet").is_file()
+    assert (out / "model.parquet").is_file()
+
+
 def test_export_all_pass_duckdb_succeeds(tmp_path: Path) -> None:
     evidence = tmp_path / "evidence.jsonl"
     JsonlEvidenceSink().append_jsonl(evidence, _record())

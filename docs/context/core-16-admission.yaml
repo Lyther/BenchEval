@@ -7,7 +7,7 @@ notes: >
   Human sign-off is pending maintainer review for all eight expansion tasks.
 tasks:
   be-core-t3-tool-necessity-gate:
-    workspace: config/tasks/core-16/workspaces/be-core-t3-tool-necessity-gate
+    workspace: config/selftest/core-16/workspaces/be-core-t3-tool-necessity-gate
     reference_solution: reference.json
     negative_control: negative.json
     required_artifacts:
@@ -20,7 +20,7 @@ tasks:
     no_llm_judge_primary: true
     replay_runs: 2
   be-core-s3-alert-triage-evidence-json:
-    workspace: config/tasks/core-16/workspaces/be-core-s3-alert-triage-evidence-json
+    workspace: config/selftest/core-16/workspaces/be-core-s3-alert-triage-evidence-json
     reference_solution: reference.json
     negative_control: negative.json
     required_artifacts:
@@ -32,7 +32,7 @@ tasks:
     no_llm_judge_primary: true
     replay_runs: 2
   be-core-t4-stateful-policy-workflow:
-    workspace: config/tasks/core-16/workspaces/be-core-t4-stateful-policy-workflow
+    workspace: config/selftest/core-16/workspaces/be-core-t4-stateful-policy-workflow
     reference_solution: reference.json
     negative_control: negative.json
     required_artifacts:
@@ -44,7 +44,7 @@ tasks:
     no_llm_judge_primary: true
     replay_runs: 2
   be-core-c3-backward-compatible-config-migration:
-    workspace: config/tasks/core-16/workspaces/be-core-c3-backward-compatible-config-migration
+    workspace: config/selftest/core-16/workspaces/be-core-c3-backward-compatible-config-migration
     reference_solution: reference.patch.json
     negative_control: negative.patch.json
     required_artifacts:
@@ -55,7 +55,7 @@ tasks:
     no_llm_judge_primary: true
     replay_runs: 2
   be-core-c4-minimal-refactor-under-invariants:
-    workspace: config/tasks/core-16/workspaces/be-core-c4-minimal-refactor-under-invariants
+    workspace: config/selftest/core-16/workspaces/be-core-c4-minimal-refactor-under-invariants
     reference_solution: reference.patch.json
     negative_control: negative.patch.json
     required_artifacts:
@@ -66,7 +66,7 @@ tasks:
     no_llm_judge_primary: true
     replay_runs: 2
   be-core-s2-authorization-matrix-regression:
-    workspace: config/tasks/core-16/workspaces/be-core-s2-authorization-matrix-regression
+    workspace: config/selftest/core-16/workspaces/be-core-s2-authorization-matrix-regression
     reference_solution: reference.patch.json
     negative_control: negative.patch.json
     required_artifacts:
@@ -77,7 +77,7 @@ tasks:
     no_llm_judge_primary: true
     replay_runs: 2
   be-core-a3-dependency-api-bump:
-    workspace: config/tasks/core-16/workspaces/be-core-a3-dependency-api-bump
+    workspace: config/selftest/core-16/workspaces/be-core-a3-dependency-api-bump
     reference_solution: reference.patch.json
     negative_control: negative.patch.json
     required_artifacts:
@@ -88,7 +88,7 @@ tasks:
     no_llm_judge_primary: true
     replay_runs: 2
   be-core-a4-feature-with-invariants:
-    workspace: config/tasks/core-16/workspaces/be-core-a4-feature-with-invariants
+    workspace: config/selftest/core-16/workspaces/be-core-a4-feature-with-invariants
     reference_solution: reference.patch.json
     negative_control: negative.patch.json
     required_artifacts:

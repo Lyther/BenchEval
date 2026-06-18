@@ -40,7 +40,7 @@ flowchart LR
 ```mermaid
 flowchart LR
     subgraph Tasks["Task contract"]
-        TC[config/tasks/core-8/*.yaml]
+        TC[config/selftest/core-8/*.yaml]
         WS[workspaces + verify.py]
     end
 
@@ -84,7 +84,7 @@ flowchart LR
 
 ### vNext (current)
 
-- **task contract + registry**: YAML v0.2 under `config/tasks/`; `bencheval task lint|validate|audit`.
+- **task contract + registry**: YAML v0.2 under `config/selftest/` (legacy `config/tasks/` fallback); `bencheval task lint|validate|audit`.
 - **executor**: `local/harness` offline reference path; Inspect/Harbor adapters for live runs.
 - **mockllm/model**: Deterministic Inspect E0 stand-in (no `inspect_ai` required); not live provider proof.
 - **doctor**: Preflight JSON for Inspect/Harbor; `--profile E0|E1|E2`.

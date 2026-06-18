@@ -1,14 +1,35 @@
 # BenchEval
 
-Private-first, evidence-based evaluation for coding, tool use, agentic coding, and defensive security. Product intent and vNext HLD: [`concept-zero.md`](concept-zero.md) → [`docs/context/concept-zero.md`](docs/context/concept-zero.md) (v0.2, 2026-05-29).
+Private-first, evidence-based evaluation for coding, tool use, agentic coding, and defensive security. Product intent and vNext HLD: [`docs/context/concept-hld.md`](docs/context/concept-hld.md) (v0.3). Legacy v0.2: [`docs/context/concept-zero.md`](docs/context/concept-zero.md).
+
+**Production v1 (executable):** ~50 benchmarks cataloged; **three** have native control-plane adapters: `terminal-bench`, `swe-bench-verified`, `bfcl-v4`. Everything else is `metadata_only` or `manifest_only` until a real adapter and live proof exist.
+
+## Control-plane quickstart (four axes)
+
+```bash
+uv run bencheval benchmark list --execution-support executable_adapter --format json
+uv run bencheval runtime list
+uv run bencheval run \
+  --benchmark terminal-bench \
+  --slice smoke-5 \
+  --runtime claude-code \
+  --model <model-id> \
+  --output results/evidence/tb.jsonl \
+  --artifacts-dir results/raw/tb
+```
+
+Non-executable benchmarks (e.g. CyBench) fail on `run` before subprocess dispatch; use `run --dry-run` to plan slices and see `execution_support` caveats.
+
+**Internal selftest (not the public product narrative):** Core-8 / Core-16 and `bencheval task audit` — see [vNext CLI](#vnext-cli) below.
 
 ## Layout
 
-- `config/tasks/` — vNext task contracts (`core-8/`, `core-16/`)
+- `config/selftest/` — selftest lane task contracts (`core-8/`, `core-16/`); legacy `config/tasks/` fallback in registry
+- `BENCHEVAL_HOME` — wheel-only bundle root: `config/benchmarks.yaml`, `config/models.yaml`, `config/suites.yaml`, `config/runtimes/`, `config/slices/`, `config/manifests/` (see `scripts/export-config-bundle.sh`); `config/pricing/` stays editable-checkout only unless you extend the export script
 - `config/suites.yaml` — suite membership (core-8, core-16, smoke, calibration, stretch)
 - `config/` — legacy manifests, pricing YAML, models YAML (no secrets)
 - `src/bencheval/` — library: task contract, registry, planner, evidence JSONL, report/export/compare, legacy summary/compare
-- `scripts/` — `compare.py`, `extract_summary.py`, `preflight_disk.sh`, `verify_auth.sh`, `run_provider_smoke.sh`
+- `scripts/` — `check-production-v1.sh`, `run-live-pilot-matrix.sh`, `write_preflight.py`, `compare.py`, `extract_summary.py`, `export-config-bundle.sh`, `check-domain-coverage.sh`, `verify-performance.sh`, `preflight_disk.sh`, `verify_auth.sh`, `run_provider_smoke.sh` (see `scripts/README.md`)
 - `tests/` — pytest suite
 - `results/` — run artifacts (gitignored where noted)
 - `docs/` — architecture, roadmap, concept-zero context, external benchmark catalog
@@ -21,6 +42,8 @@ uv sync
 
 Use `uv sync --extra eval` only when running real Inspect / Harbor evals.
 
+Internal pilot gates and live matrix: [`docs/context/production-v1-pilot.md`](docs/context/production-v1-pilot.md) (`make check-production-v1`).
+
 ## vNext CLI
 
 ```bash
@@ -28,6 +51,11 @@ Use `uv sync --extra eval` only when running real Inspect / Harbor evals.
 uv run bencheval task validate be-core-c1-small-logic-patch
 uv run bencheval task audit be-core-t1-single-structured-call
 uv run bencheval task audit core-8
+
+# External benchmark catalog (support metadata, not Core scoring)
+uv run bencheval benchmark list --format json
+uv run bencheval benchmark show exploitgym
+uv run bencheval benchmark show DeepSWE
 
 # Dry-run cost/envelope estimate (no network, no model calls)
 uv run bencheval run --dry-run --suite smoke --model anthropic/claude-test
@@ -38,6 +66,19 @@ uv run bencheval run \
   --model local/harness \
   --output results/evidence/run-001.jsonl \
   --artifacts-dir results/raw/run-001
+
+# Manifest-driven single lifecycle: one task at a time, append evidence, clean transient staging
+printf '%s\n' \
+  be-core-t1-single-structured-call \
+  be-core-t2-multi-tool-join \
+  > /tmp/bencheval-native-smoke.txt
+uv run bencheval run \
+  --manifest /tmp/bencheval-native-smoke.txt \
+  --mode single \
+  --cleanup always \
+  --model local/harness \
+  --output results/evidence/native-smoke.jsonl \
+  --artifacts-dir results/raw/native-smoke
 
 uv run bencheval task audit core-8
 uv run bencheval task audit core-16  # 16 tasks; exits 1 until expansion sign-off
@@ -126,6 +167,20 @@ Public exports include legacy summary/compare types and vNext evidence/task-cont
 ## External benchmarks
 
 Candidate third-party suites for Calibration/Stretch adapters: [`docs/context/external-benchmark-catalog.md`](docs/context/external-benchmark-catalog.md).
+Machine-readable support metadata lives in [`config/benchmarks.yaml`](config/benchmarks.yaml) and is exposed via `bencheval benchmark list|show`. The catalog intentionally distinguishes:
+
+- `manifest_available` — BenchEval has at least a committed manifest/control-plane slice.
+- `cataloged` — recognized as an integration candidate, adapter still pending.
+- `adapter_pending` — high-priority known target, no runnable adapter yet.
+- `unverified` — requested name or alias with no distinct canonical benchmark source verified yet.
+
+Use manifest-driven single mode for large public suites: `--manifest` reads one
+task id per line, `--mode single` runs tasks sequentially, and `--cleanup
+always|on-success` removes BenchEval-owned transient directories such as
+`agent-workspace`, `harbor-package`, and `materialized-workspace` after each
+attempt. Evidence JSONL, candidate artifacts, and verifier logs are preserved.
+The current cleanup policy deliberately does not run Docker image pruning;
+external adapters must own and document image cleanup before enabling that.
 
 ## Development
 

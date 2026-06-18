@@ -5,6 +5,8 @@
 
 Third-party suites popular in coding-agent, tool-use, and security evaluation. Prefer Inspect/Harbor-packaged variants where available (`inspect-evals`, Harbor datasets).
 
+Machine-readable support metadata now lives in [`config/benchmarks.yaml`](../../config/benchmarks.yaml) and is exposed through `bencheval benchmark list|show`. This document is a human planning view; the YAML registry is the validation target for catalog count, aliases, safety lane, and adapter status.
+
 ## Coding & repository repair
 
 | Benchmark | Scale | Focus | Notes / source |
@@ -29,7 +31,7 @@ Third-party suites popular in coding-agent, tool-use, and security evaluation. P
 
 | Benchmark | Scale | Focus | Notes |
 |-----------|------:|-------|-------|
-| **Terminal-Bench** | 80+ | Shell/CLI agents | Terminal execution in container; popular 2025–2026 agent leaderboard staple. |
+| **Terminal-Bench** | 89 (v2.0) | Shell/CLI agents | Terminal execution in Harbor-native format; v2.0 = 89 tasks (v1.0 = 80); official harness is Harbor (Claude Code, OpenHands, Codex CLI). [tbench.ai](https://www.tbench.ai/) |
 | **SWE-smith** | generated | Trainable SWE tasks | Synthetic/issue-mining pipeline from SWE-bench team. [swesmith.com](https://swesmith.com) |
 | **RepoBench** | varies | Cross-file context | Long-context repository understanding + completion. |
 | **DS-1000** | 1,000 | Data-science code | Pandas/NumPy/Sklearn snippets. |
@@ -38,7 +40,7 @@ Third-party suites popular in coding-agent, tool-use, and security evaluation. P
 
 | Benchmark | Scale | Focus | Notes |
 |-----------|------:|-------|-------|
-| **BFCL (Berkeley Function Calling Leaderboard)** | multi-suite | Tool/API invocation | Gorilla project; AST + executable eval. [gorilla.cs.berkeley.edu](https://gorilla.cs.berkeley.edu/leaderboard.html) |
+| **BFCL (Berkeley Function Calling Leaderboard)** | multi-suite | Tool/API invocation | Gorilla project; AST + executable eval; current registry entry tracks V4. [gorilla.cs.berkeley.edu](https://gorilla.cs.berkeley.edu/leaderboard.html) |
 | **τ-bench (tau-bench)** | retail/airline | Stateful tool agents | Sierra; multi-turn customer-service sim. [github.com/sierra-research/tau-bench](https://github.com/sierra-research/tau-bench) |
 | **API-Bank** | 73 APIs | Tool planning | Early comprehensive tool-use benchmark. |
 
@@ -54,12 +56,18 @@ Third-party suites popular in coding-agent, tool-use, and security evaluation. P
 
 ## Cybersecurity & defensive
 
-| Benchmark | Scale | Focus | Notes |
-|-----------|------:|-------|-------|
+| Benchmark | Scale | Focus | Notes / source |
+|-----------|------:|-------|----------------|
 | **Cybench** | 40 CTF | Professional CTF tasks | Inspect-eval packaged; UK AISI standard. [cybench.github.io](https://cybench.github.io/) |
-| **CyberGym** | 1,507 vulns | Exploit generation / patching | Berkeley RDI; agentic cyber gym. [rdi.berkeley.edu/blog/cybergym](https://rdi.berkeley.edu/blog/cybergym/) |
-| **BountyBench** | real bounties | Vuln find/exploit/patch | Cybench team's dollar-impact successor. [bountybench.github.io](https://bountybench.github.io/) |
+| **CyberGym** | 1,507 vulns / 188 projects | Vulnerability **reproduction** (PoC vs pre-patch code) | UC Berkeley; arXiv 2506.02548 (v3 2026-03); ~7.5× larger than prior cyber agent benches; used in Claude-Sonnet-4.5 system card; agents found 34 zero-days + 18 incomplete patches during eval. [rdi.berkeley.edu/blog/cybergym](https://rdi.berkeley.edu/blog/cybergym/) |
+| **ExploitGym** | 869 / 3 domains | Full **exploit generation** (userspace, browser, Linux kernel) | Berkeley RDI; **offensive-restricted Stretch only**; never Core-weighted; explicit safety review required. [cybergym.io](https://www.cybergym.io/) |
+| **CyberGym-E2E** | pending | End-to-end vulnerability lifecycle | Berkeley RDI; paper 2026, full release pending — not yet a runnable public task set. [cybergym.io](https://www.cybergym.io/) |
+| **BountyBench** | 25 systems / 40 bounties ($10–$30,485) | Detect / Exploit / Patch; 9-of-10 OWASP Top 10 | Stanford CRFM; arXiv 2505.15216; uses Detect + Patch in normal lanes, Exploit tasks are Stretch-gated. [bountybench.github.io](https://bountybench.github.io/) |
 | **SECURE** | varies | Secure code generation | Security-aware codegen eval. |
+
+## Naming note: DeepSWE
+
+As of 2026-06-17, "DeepSWE" (e.g. `DeepSWE-32B`) is an **RL-trained agent/model** built by All Hands on top of SWE-bench-style tasks, not a verified standalone public benchmark with a canonical task set. BenchEval tracks `deepswe` as `adapter_status: unverified` / `tier: reference_only` in `config/benchmarks.yaml` so requests by that name resolve explicitly without claiming executable support. If a canonical DeepSWE task source appears (verified arXiv ID + public dataset + runnable harness), promote it from `reference_only` to Calibration/Stretch with source URL, manifest policy, and adapter plan.
 
 ## Naming note: DeepBench
 
@@ -72,7 +80,7 @@ Priority order for BenchEval Stretch (non–Core-weighted), credential-gated:
 1. SWE-bench Verified Mini or Lite — cheap SWE regression
 2. Cybench (5–10 task smoke) — security appendix
 3. τ-bench — stateful tool E0/E1 pattern alignment
-4. BFCL v3 slice — tool-calling regression
+4. BFCL v4 slice — tool-calling regression
 5. Terminal-Bench smoke — Harbor/Inspect terminal profile POC
 
 ## Inspect / Harbor integration hints
@@ -80,10 +88,16 @@ Priority order for BenchEval Stretch (non–Core-weighted), credential-gated:
 - `inspect-evals` ships SWE-bench, Cybench, and other tasks — align with `bencheval doctor --backend inspect`.
 - Harbor datasets (e.g., SWE-bench Pro packaging) align with `harbor_adapter.py` S4 slice pattern.
 - All external suites should land as **E3 Calibration** or **E4 Stretch** per concept-zero §18 — never mixed into Core weighted totals without explicit migration.
+- For disk-heavy suites, use `bencheval run --manifest … --mode single --cleanup always` so adapters materialize one instance, append evidence, and remove BenchEval-owned transient workspaces before the next instance. Generic cleanup does not prune Docker images; adapter-specific image cleanup must be explicit.
 
 ## References
 
-- SWE-bench family: https://www.swebench.com/
-- Cybench (ICLR 2025): https://arxiv.org/abs/2408.08926
-- CyberGym: Berkeley RDI blog (2025)
+- SWE-bench family: <https://www.swebench.com/>
+- SWE-rebench (NeurIPS 2025): <https://arxiv.org/abs/2505.20411>
+- Cybench (ICLR 2025): <https://arxiv.org/abs/2408.08926>
+- CyberGym (arXiv 2506.02548): <https://arxiv.org/abs/2506.02548> and Berkeley RDI blog: <https://rdi.berkeley.edu/blog/cybergym/>
+- ExploitGym / CyberGym-E2E (Berkeley RDI observatory): <https://www.cybergym.io/>
+- BountyBench (arXiv 2505.15216, Stanford CRFM): <https://arxiv.org/abs/2505.15216>
+- Terminal-Bench 2.0 (89 tasks, Harbor-native): <https://www.tbench.ai/> and repo <https://github.com/laude-institute/terminal-bench-2>
+- Harbor (official TB 2.0 harness, Apache-2.0): <https://github.com/harbor-framework/harbor>
 - Agent benchmark survey: industry leaderboards (HAL, LiveBench, BFCL, GAIA)

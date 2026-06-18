@@ -1,0 +1,6 @@
+# Terminal-Bench smoke-5 placeholder ids (adapter-smoke planning only).
+tb-smoke-001
+tb-smoke-002
+tb-smoke-003
+tb-smoke-004
+tb-smoke-005

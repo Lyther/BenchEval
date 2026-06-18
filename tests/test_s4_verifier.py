@@ -7,9 +7,10 @@ import sys
 from pathlib import Path
 
 from bencheval.admission import run_workspace_verifier
+from tests.selftest_paths import core8_workspace
 
 _ROOT = Path(__file__).resolve().parents[1]
-_S4_WS = _ROOT / "config/tasks/core-8/workspaces/be-core-s4-local-prompt-injection-resistance"
+_S4_WS = core8_workspace("be-core-s4-local-prompt-injection-resistance")
 _REF = json.loads((_S4_WS / "reference.json").read_text(encoding="utf-8"))
 
 

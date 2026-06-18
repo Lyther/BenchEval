@@ -56,8 +56,8 @@ def test_compare_missing_and_new_tasks() -> None:
     baseline = [_record(task_id="be-core-t1-single-structured-call")]
     current = [_record(task_id="be-core-t2-multi-tool-join")]
     report = compare_evidence_runs(baseline, current)
-    assert report.missing_in_current == ("be-core-t1-single-structured-call",)
-    assert report.new_in_current == ("be-core-t2-multi-tool-join",)
+    assert report.missing_in_current == ("be-core-t1-single-structured-call|mockllm/model|local",)
+    assert report.new_in_current == ("be-core-t2-multi-tool-join|mockllm/model|local",)
 
 
 def test_compare_backend_split() -> None:
@@ -86,9 +86,98 @@ def test_compare_markdown_output() -> None:
     assert "be-core-t1-single-structured-call" in md
 
 
+def test_compare_rejects_duplicate_evidence_key_in_file() -> None:
+    row = _record(task_id="be-core-t1-single-structured-call")
+    with pytest.raises(ComparisonError, match="duplicate evidence key"):
+        compare_evidence_runs([row, row], [row])
+
+
 def test_compare_rejects_empty_baseline() -> None:
     with pytest.raises(ComparisonError, match="baseline evidence must be non-empty"):
         compare_evidence_runs([], [_record(task_id="be-core-t1-single-structured-call")])
+
+
+def test_compare_rejects_empty_current() -> None:
+    row = _record(task_id="be-core-t1-single-structured-call")
+    with pytest.raises(ComparisonError, match="current evidence must be non-empty"):
+        compare_evidence_runs([row], [])
+
+
+def test_compare_auto_redirects_model_comparison_to_dedicated_api() -> None:
+    from bencheval.model_compare import is_model_comparison_evidence
+
+    baseline = [
+        EvidenceRecord(
+            run_id="b",
+            task_id="tb-001",
+            model_id="openai/a",
+            execution_profile="E0",
+            backend="harbor",
+            primary_pass=True,
+            partial_score=1.0,
+            cost_usd=0.0,
+            latency_sec=0.1,
+            created_at=datetime(2026, 6, 1, tzinfo=UTC),
+            benchmark_id="terminal-bench",
+            slice_id="smoke-5",
+            adapter_id="terminal-bench-harbor",
+            runtime_id="native-api",
+            instance_id="tb-001",
+        ),
+    ]
+    current = [
+        EvidenceRecord(
+            run_id="c",
+            task_id="tb-001",
+            model_id="openai/b",
+            execution_profile="E0",
+            backend="harbor",
+            primary_pass=True,
+            partial_score=1.0,
+            cost_usd=0.0,
+            latency_sec=0.1,
+            created_at=datetime(2026, 6, 1, tzinfo=UTC),
+            benchmark_id="terminal-bench",
+            slice_id="smoke-5",
+            adapter_id="terminal-bench-harbor",
+            runtime_id="native-api",
+            instance_id="tb-001",
+        ),
+    ]
+    assert is_model_comparison_evidence(baseline, current) is True
+    with pytest.raises(ComparisonError, match="compare_model_evidence"):
+        compare_evidence_runs(baseline, current, mode="auto")
+
+
+def test_compare_auto_redirects_runtime_comparison_to_dedicated_api() -> None:
+    from bencheval.runtime_compare import is_runtime_comparison_evidence
+
+    ts = datetime(2026, 6, 1, tzinfo=UTC)
+
+    def cp_row(*, iid: str, rt: str) -> EvidenceRecord:
+        return EvidenceRecord(
+            run_id=f"r-{rt}",
+            task_id=iid,
+            model_id="runtime-default",
+            execution_profile="E1",
+            backend="harbor",
+            primary_pass=True,
+            partial_score=1.0,
+            cost_usd=0.0,
+            latency_sec=0.1,
+            created_at=ts,
+            benchmark_id="terminal-bench",
+            slice_id="smoke-5",
+            adapter_id="terminal-bench-harbor",
+            runtime_id=rt,
+            instance_id=iid,
+        )
+
+    baseline = [cp_row(iid="tb-001", rt="claude-code")]
+    current = [cp_row(iid="tb-001", rt="codex-cli")]
+    assert is_runtime_comparison_evidence(baseline, current) is True
+    with pytest.raises(ComparisonError, match="compare_runtime_evidence"):
+        compare_evidence_runs(baseline, current, mode="auto")
 
 
 def test_cli_compare_writes_markdown(tmp_path: Path) -> None:

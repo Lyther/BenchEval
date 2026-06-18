@@ -12,8 +12,7 @@ from pydantic import JsonValue, ValidationError
 
 from bencheval.exceptions import SummaryValidationError
 from bencheval.models import ManifestDigest, ModelFamily, RunStamp, SummaryRow
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
+from bencheval.paths import repo_root as _repo_root
 
 _REQUIRED_HEADER_KEYS: tuple[str, ...] = (
     "model",
@@ -87,7 +86,7 @@ def _parse_decimal(value: JsonValue) -> Decimal | None:
 
 
 def _derive_log_file(path: Path) -> str:
-    repo = _REPO_ROOT.resolve()
+    repo = _repo_root()
     resolved = path.resolve()
     raw_dir = (repo / "results" / "raw").resolve()
     try:

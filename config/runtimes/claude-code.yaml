@@ -1,0 +1,36 @@
+schema_version: "0.1"
+runtime:
+  id: "claude-code"
+  kind: "cli_agent"
+  display_name: "Claude Code"
+  lifecycle: "external_process"
+  supported_platforms: ["macos", "linux"]
+  supported_harnesses: ["harbor", "local-harness", "selftest-local"]
+  model_binding: "runtime_configured"
+launch:
+  command_template:
+    ["claude", "--permission-mode", "plan", "--output-format", "json"]
+  working_dir_policy: "ephemeral_workspace"
+  env_vars_required: ["ANTHROPIC_API_KEY"]
+  env_vars_optional: []
+  timeout_sec_default: 300
+capabilities:
+  reads_files: true
+  edits_files: true
+  runs_shell: true
+  supports_mcp: true
+  supports_subagents: true
+  supports_hooks: true
+  supports_noninteractive: true
+  supports_json_output: "partial"
+safety:
+  network_default: "deny"
+  workspace_boundary: "ephemeral_only"
+  requires_user_approval: false
+  forbidden_features_for_eval:
+    - "external_network_unless_benchmark_requires"
+    - "persistent_global_config_mutation"
+versioning:
+  version_command: ["claude", "--version"]
+  config_hash_inputs: [".claude", "CLAUDE.md"]
+admission: "draft"

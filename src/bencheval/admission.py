@@ -13,6 +13,8 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError, field_validator
 
 from bencheval.exceptions import BenchEvalError, TaskContractError
+from bencheval.path_safety import ensure_resolved_under_root
+from bencheval.paths import repo_root as _repo_root
 from bencheval.task_registry import (
     lint_task_path,
     load_suites,
@@ -120,10 +122,6 @@ class SuiteAdmissionReport:
             "pending_count": self.pending_count,
             "tasks": [t.to_dict() for t in self.tasks],
         }
-
-
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[2]
 
 
 def default_admission_path() -> Path:
@@ -255,7 +253,11 @@ def audit_task_admission(
         raise TaskContractError(f"task {task_id} missing from admission document")
     entry = doc.tasks[task_id]
     root = _repo_root()
-    workspace = (root / entry.workspace).resolve()
+    workspace = ensure_resolved_under_root(
+        (root / entry.workspace).resolve(),
+        root,
+        what="admission workspace",
+    )
     suites = load_suites(root / "config" / "suites.yaml")
     task_path = resolve_task_path(task_id)
     contract_report = lint_task_path(task_path, suites=suites)

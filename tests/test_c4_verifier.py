@@ -9,9 +9,10 @@ import tempfile
 from pathlib import Path
 
 from bencheval.admission import run_workspace_verifier
+from tests.selftest_paths import core16_workspace
 
 _ROOT = Path(__file__).resolve().parents[1]
-_C4_WS = _ROOT / "config/tasks/core-16/workspaces/be-core-c4-minimal-refactor-under-invariants"
+_C4_WS = core16_workspace("be-core-c4-minimal-refactor-under-invariants")
 _REF = json.loads((_C4_WS / "reference.patch.json").read_text(encoding="utf-8"))
 
 

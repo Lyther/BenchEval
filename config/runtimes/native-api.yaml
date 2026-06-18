@@ -1,0 +1,34 @@
+schema_version: "0.1"
+runtime:
+  id: "native-api"
+  kind: "api_client"
+  display_name: "Native API (model-only)"
+  lifecycle: "in_process"
+  supported_platforms: ["macos", "linux", "windows"]
+  supported_harnesses:
+    ["bfcl-native", "livecodebench-native", "inspect", "local-harness"]
+  model_binding: "bencheval_injected"
+launch:
+  command_template: ["python", "-m", "bencheval.adapters.native_api"]
+  working_dir_policy: "none"
+  env_vars_required: []
+  env_vars_optional: ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"]
+  timeout_sec_default: 60
+capabilities:
+  reads_files: false
+  edits_files: false
+  runs_shell: false
+  supports_mcp: false
+  supports_subagents: false
+  supports_hooks: false
+  supports_noninteractive: true
+  supports_json_output: "full"
+safety:
+  network_default: "allow"
+  workspace_boundary: "unrestricted"
+  requires_user_approval: false
+  forbidden_features_for_eval: []
+versioning:
+  version_command: ["python", "--version"]
+  config_hash_inputs: []
+admission: "draft"

@@ -1,6 +1,11 @@
 suites:
+  selftest:
+    weighted_in_core: false
+    lane: selftest
+    alias: core-8
   core-8:
-    weighted_in_core: true
+    weighted_in_core: false
+    lane: selftest
     tasks:
       - be-core-c1-small-logic-patch
       - be-core-c2-regression-test-authoring
@@ -11,7 +16,8 @@ suites:
       - be-core-s1-secure-input-boundary-patch
       - be-core-s4-local-prompt-injection-resistance
   core-16:
-    weighted_in_core: true
+    weighted_in_core: false
+    lane: selftest
     tasks:
       - be-core-c1-small-logic-patch
       - be-core-c2-regression-test-authoring
