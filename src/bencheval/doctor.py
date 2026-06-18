@@ -15,6 +15,10 @@ from bencheval.task_contract import ExecutionProfile
 
 CheckStatus = Literal["pass", "fail", "skip"]
 
+# Scope label for the aggregated pilot host-dependency report. Not an
+# ExecutionBackend: pilot spans harbor/docker/bfcl-eval/mini-extra gates.
+PILOT_DOCTOR_BACKEND = "pilot"
+
 
 @dataclass(frozen=True, slots=True)
 class DoctorCheck:
@@ -25,7 +29,7 @@ class DoctorCheck:
 
 @dataclass(frozen=True, slots=True)
 class DoctorReport:
-    backend: ExecutionBackend
+    backend: str
     ok: bool
     checks: tuple[DoctorCheck, ...]
 
@@ -120,6 +124,60 @@ def harbor_revision() -> str | None:
     if proc.returncode != 0:
         return None
     return proc.stdout.strip() or proc.stderr.strip() or None
+
+
+def binary_on_path(name: str) -> bool:
+    return shutil.which(name) is not None
+
+
+def _version_line(binary: str) -> str | None:
+    try:
+        proc = subprocess.run(
+            [binary, "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if proc.returncode != 0:
+        return None
+    text = (proc.stdout or proc.stderr or "").strip()
+    if not text:
+        return None
+    return text.splitlines()[0][:200]
+
+
+def _binary_check(check_name: str, binary: str, install_hint: str) -> DoctorCheck:
+    if not binary_on_path(binary):
+        return DoctorCheck(check_name, "fail", f"{binary} not on PATH; {install_hint}")
+    version = _version_line(binary)
+    if version is not None:
+        return DoctorCheck(check_name, "pass", f"{binary} {version} available")
+    return DoctorCheck(check_name, "pass", f"{binary} on PATH (version unavailable)")
+
+
+def _provider_credentials_check(model_id: str) -> DoctorCheck:
+    env_names = provider_env_vars_for_model(model_id)
+    if not env_names:
+        return DoctorCheck(
+            "provider_credentials",
+            "pass",
+            f"model {model_id!r} does not require provider credentials",
+        )
+    present = [name for name in env_names if env_var_present(name)]
+    if present:
+        return DoctorCheck(
+            "provider_credentials",
+            "pass",
+            f"provider env present: {', '.join(present)}",
+        )
+    return DoctorCheck(
+        "provider_credentials",
+        "fail",
+        f"missing provider env for {model_id!r}; expected one of: {', '.join(env_names)}",
+    )
 
 
 def run_doctor(
@@ -217,39 +275,42 @@ def run_doctor(
         raise BenchEvalError(f"doctor does not support backend {backend!r}")
 
     if model_id is not None:
-        env_names = provider_env_vars_for_model(model_id)
-        if not env_names:
-            checks.append(
-                DoctorCheck(
-                    "provider_credentials",
-                    "pass",
-                    f"model {model_id!r} does not require provider credentials",
-                ),
-            )
-        else:
-            present = [name for name in env_names if env_var_present(name)]
-            if present:
-                checks.append(
-                    DoctorCheck(
-                        "provider_credentials",
-                        "pass",
-                        f"provider env present: {', '.join(present)}",
-                    ),
-                )
-            else:
-                checks.append(
-                    DoctorCheck(
-                        "provider_credentials",
-                        "fail",
-                        (
-                            f"missing provider env for {model_id!r}; "
-                            f"expected one of: {', '.join(env_names)}"
-                        ),
-                    ),
-                )
+        checks.append(_provider_credentials_check(model_id))
 
     ok = all(check.status != "fail" for check in checks)
     return DoctorReport(backend=backend, ok=ok, checks=tuple(checks))
+
+
+def run_pilot_doctor(*, model_id: str | None = None) -> DoctorReport:
+    """Aggregate pilot host-dependency preflight checks.
+
+    Mirrors the PATH/Docker gates in ``scripts/run-live-pilot-matrix.sh``:
+    ``harbor``, ``docker info``, ``bfcl-eval``, and ``mini-extra``. When a model
+    id is supplied, provider credential env vars are also checked.
+    """
+    checks: list[DoctorCheck] = [
+        _binary_check("harbor_cli", "harbor", "run `uv sync --extra eval`"),
+    ]
+    docker_ok = docker_available()
+    checks.append(
+        DoctorCheck(
+            "docker",
+            "pass" if docker_ok else "fail",
+            "docker daemon reachable"
+            if docker_ok
+            else "docker daemon unreachable; required for pilot runs",
+        ),
+    )
+    checks.extend(
+        (
+            _binary_check("bfcl_eval", "bfcl-eval", "install the bfcl-eval package"),
+            _binary_check("mini_extra", "mini-extra", "install mini-SWE-agent"),
+        ),
+    )
+    if model_id is not None:
+        checks.append(_provider_credentials_check(model_id))
+    ok = all(check.status != "fail" for check in checks)
+    return DoctorReport(backend=PILOT_DOCTOR_BACKEND, ok=ok, checks=tuple(checks))
 
 
 def require_doctor_ok(report: DoctorReport) -> None:

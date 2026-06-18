@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import socket
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast, get_args
 
@@ -36,11 +38,17 @@ from bencheval.control_plane_executor import (
     control_plane_interpretation_label,
     execute_control_plane_run,
 )
-from bencheval.doctor import run_doctor
+from bencheval.doctor import run_doctor, run_pilot_doctor
 from bencheval.evidence import read_evidence_jsonl
 from bencheval.exceptions import BenchEvalError, TaskContractError
 from bencheval.executor import execute_task
 from bencheval.lifecycle import CleanupPolicy, RunMode, cleanup_transient_artifacts
+from bencheval.live_run_manifest import (
+    LiveRunRecord,
+    LiveRunStatus,
+    append_live_run,
+    default_runs_manifest_path,
+)
 from bencheval.manifest import load_manifest, read_manifest_task_ids
 from bencheval.model_registry import load_model_registry
 from bencheval.paths import repo_root as _repo_root
@@ -530,11 +538,17 @@ def _run_execute(args: argparse.Namespace) -> int:
 
 
 def _doctor_run(args: argparse.Namespace) -> int:
-    report = run_doctor(
-        args.backend,
-        model_id=args.model,
-        execution_profile=args.profile,
-    )
+    if args.profile == "pilot":
+        report = run_pilot_doctor(model_id=args.model)
+    else:
+        if args.backend is None:
+            sys.stderr.write("error: --backend is required unless --profile pilot is used\n")
+            return 2
+        report = run_doctor(
+            args.backend,
+            model_id=args.model,
+            execution_profile=args.profile,
+        )
     sys.stdout.write(json.dumps(report.to_dict(), indent=2) + "\n")
     return 0 if report.ok else 1
 
@@ -688,6 +702,46 @@ def _run_handler(args: argparse.Namespace) -> int:
     if args.dry_run:
         return _run_dry(args)
     return _run_execute(args)
+
+
+def _resolve_optional_path(value: object) -> str | None:
+    if value is None:
+        return None
+    return str(Path(str(value)).resolve())
+
+
+def _evidence_register(args: argparse.Namespace) -> int:
+    manifest_path = Path(args.manifest_path) if args.manifest_path else default_runs_manifest_path()
+    host = args.host or socket.gethostname()
+    record = LiveRunRecord(
+        run_id=args.run_id,
+        host=host,
+        benchmark=args.benchmark,
+        slice_id=args.slice,
+        runtime=args.runtime,
+        model_id=args.model,
+        evidence_path=_resolve_optional_path(args.evidence),
+        report_path=_resolve_optional_path(args.report),
+        bundle_path=_resolve_optional_path(args.bundle),
+        status=args.status,
+        notes=args.notes,
+        generated_at=datetime.now(tz=UTC),
+    )
+    target = append_live_run(manifest_path, record)
+    payload = {
+        "schema_version": record.schema_version,
+        "run_id": record.run_id,
+        "host": record.host,
+        "benchmark": record.benchmark,
+        "slice_id": record.slice_id,
+        "runtime": record.runtime,
+        "model_id": record.model_id,
+        "status": record.status,
+        "manifest_path": str(target),
+        "generated_at": record.generated_at.isoformat(),
+    }
+    sys.stdout.write(json.dumps(payload, indent=2) + "\n")
+    return 0
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -872,8 +926,8 @@ def _build_parser() -> argparse.ArgumentParser:
     doctor.add_argument(
         "--backend",
         choices=(INSPECT_BACKEND, HARBOR_BACKEND),
-        required=True,
-        help="Backend to check",
+        default=None,
+        help="Backend to check (required unless --profile pilot is used)",
     )
     doctor.add_argument(
         "--model",
@@ -882,9 +936,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     doctor.add_argument(
         "--profile",
-        choices=("E0", "E1", "E2"),
+        choices=("E0", "E1", "E2", "pilot"),
         default=None,
-        help="Execution profile for profile-specific checks (Inspect E1/Harbor require Docker)",
+        help=(
+            "Execution profile for profile-specific checks (Inspect E1/Harbor require Docker); "
+            "'pilot' aggregates harbor/docker/bfcl-eval/mini-extra host deps"
+        ),
     )
     doctor.set_defaults(handler=_doctor_run)
 
@@ -904,6 +961,64 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Comparison report output path",
     )
     compare.set_defaults(handler=_compare_run)
+
+    evidence = sub.add_parser("evidence", help="Live run registry operations")
+    evidence_sub = evidence.add_subparsers(dest="evidence_command", required=True)
+
+    evidence_register = evidence_sub.add_parser(
+        "register",
+        help="Append a live run record to the runs manifest JSONL",
+    )
+    evidence_register.add_argument("--run-id", required=True, help="Run identifier")
+    evidence_register.add_argument(
+        "--model",
+        required=True,
+        help="Model identifier (non-secret metadata only)",
+    )
+    evidence_register.add_argument("--benchmark", default=None, help="Benchmark id")
+    evidence_register.add_argument("--slice", default=None, help="Slice id")
+    evidence_register.add_argument("--runtime", default=None, help="Runtime id")
+    evidence_register.add_argument(
+        "--evidence",
+        type=Path,
+        default=None,
+        help="Evidence JSONL path (resolved and stored as evidence_path)",
+    )
+    evidence_register.add_argument(
+        "--report",
+        type=Path,
+        default=None,
+        help="Report path (resolved and stored as report_path)",
+    )
+    evidence_register.add_argument(
+        "--bundle",
+        type=Path,
+        default=None,
+        help="Bundle archive path (resolved and stored as bundle_path)",
+    )
+    evidence_register.add_argument(
+        "--status",
+        choices=get_args(LiveRunStatus),
+        default="registered",
+        help="Run status (default: registered)",
+    )
+    evidence_register.add_argument(
+        "--notes",
+        default="",
+        help="Free-form notes (no secrets; secret-like content is rejected)",
+    )
+    evidence_register.add_argument(
+        "--host",
+        default=None,
+        help="Host name (default: auto-detected via socket.gethostname)",
+    )
+    evidence_register.add_argument(
+        "--manifest-path",
+        type=Path,
+        default=None,
+        help="Runs manifest JSONL path (default: results/manifests/runs.jsonl)",
+    )
+    evidence_register.set_defaults(handler=_evidence_register)
 
     export = sub.add_parser("export", help="Export evidence JSONL to analytics tables")
     export.add_argument("evidence", type=Path, help="Evidence JSONL input path")

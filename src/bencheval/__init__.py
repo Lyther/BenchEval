@@ -21,9 +21,17 @@ from bencheval.exceptions import (
     ComparisonError,
     EvalLogError,
     EvidenceValidationError,
+    LiveRunManifestError,
     ManifestError,
     SummaryValidationError,
     TaskContractError,
+)
+from bencheval.live_run_manifest import (
+    LIVE_RUN_SCHEMA_VERSION,
+    LiveRunRecord,
+    append_live_run,
+    default_runs_manifest_path,
+    read_live_runs,
 )
 from bencheval.loader import read_summary_jsonl
 from bencheval.models import (
@@ -55,6 +63,9 @@ __all__ = [
     "EvidenceValidationError",
     "GuardedComparisonReporter",
     "JsonlSummarySink",
+    "LIVE_RUN_SCHEMA_VERSION",
+    "LiveRunManifestError",
+    "LiveRunRecord",
     "ManifestDigest",
     "ManifestError",
     "ModelFamily",
@@ -76,6 +87,9 @@ __all__ = [
     "load_runtime_catalog",
     "load_runtime_profile",
     "load_slice_manifest",
+    "append_live_run",
+    "default_runs_manifest_path",
     "read_evidence_jsonl",
+    "read_live_runs",
     "read_summary_jsonl",
 ]

@@ -1,7 +1,7 @@
 # Execution Roadmap (vNext v0.3)
 
 > **Source:** [`docs/context/concept-hld.md`](context/concept-hld.md) §11.2, §14 + [`docs/architecture.md`](architecture.md) §17
-> **Status (2026-06-18):** v0.2 selftest + v0.3 control-plane P1–P6/P5.1/P5.3/P9.2 implemented (**511** tests green). Remaining: P5.2 LiveCodeBench, P7–P8 security/GUI, Phase 0 live spikes — see §Live blockers.
+> **Status (2026-06-18):** v0.2 selftest + v0.3 control-plane P1–P6/P5.1/P5.3/P9.2 implemented (**605** tests green, verified `uv run pytest -q`). Remaining: P5.2 LiveCodeBench, P7–P8 security/GUI, Phase 0 live spikes — see §Live blockers.
 > **Principle:** additive only. Never break the v0.2 `EvidenceRecord` flat contract. Never delete working coverage to reach a new shape.
 
 ## Phase 0 — Validation (research spikes, no code)

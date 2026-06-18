@@ -26,6 +26,10 @@ class EvidenceValidationError(BenchEvalError):
     """Raised when an evidence JSONL row fails schema or business rules."""
 
 
+class LiveRunManifestError(BenchEvalError):
+    """Raised when a live run manifest record fails schema or business rules."""
+
+
 class AdapterFailureError(BenchEvalError):
     """Adapter produced no scorable candidate; maps to evidence failure_labels."""
 

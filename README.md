@@ -2,7 +2,38 @@
 
 Private-first, evidence-based evaluation for coding, tool use, agentic coding, and defensive security. Product intent and vNext HLD: [`docs/context/concept-hld.md`](docs/context/concept-hld.md) (v0.3). Legacy v0.2: [`docs/context/concept-zero.md`](docs/context/concept-zero.md).
 
-**Production v1 (executable):** ~50 benchmarks cataloged; **three** have native control-plane adapters: `terminal-bench`, `swe-bench-verified`, `bfcl-v4`. Everything else is `metadata_only` or `manifest_only` until a real adapter and live proof exist.
+**Production v1 (executable):** ~50 benchmarks cataloged; **three** have native control-plane adapters: `terminal-bench`, `swe-bench-verified`, `bfcl-v4`. Everything else is `metadata_only` or `manifest_only` until a real adapter and live proof exist. See the tier definitions in [`docs/context/production-readiness.md`](docs/context/production-readiness.md).
+
+> **Scope note:** Core-8 / Core-16 and `bencheval task audit` are an **internal selftest** lane — regression coverage for the control plane itself, **not** the public product narrative. They live in the collapsed [Internal selftest only](#internal-selftest-only-appendix) appendix below.
+
+## 5-minute control plane
+
+The fastest path from clone to a real four-axis execution plan. No credentials, no Docker required for steps 1–4.
+
+```bash
+# 1. Install
+uv sync
+
+# 2. See which benchmarks actually have a runnable adapter (expect exactly 3)
+uv run bencheval benchmark list --execution-support executable_adapter --format json
+
+# 3. Inspect the four axes you can combine
+uv run bencheval benchmark show terminal-bench
+uv run bencheval runtime list
+
+# 4. Dry-run: get the cost / envelope / caveats plan with no model calls
+uv run bencheval run --dry-run \
+  --benchmark terminal-bench --slice smoke-5 \
+  --runtime claude-code --model <model-id>
+
+# 5. Live run (needs provider creds + Docker + Harbor; see production-readiness tiers)
+uv run bencheval run \
+  --benchmark terminal-bench --slice smoke-5 \
+  --runtime claude-code --model <model-id> \
+  --output results/evidence/tb.jsonl --artifacts-dir results/raw/tb
+```
+
+Next: [Control-plane quickstart](#control-plane-quickstart-four-axes) · [External benchmarks](#external-benchmarks) · [Production readiness tiers](docs/context/production-readiness.md).
 
 ## Control-plane quickstart (four axes)
 
@@ -19,8 +50,6 @@ uv run bencheval run \
 ```
 
 Non-executable benchmarks (e.g. CyBench) fail on `run` before subprocess dispatch; use `run --dry-run` to plan slices and see `execution_support` caveats.
-
-**Internal selftest (not the public product narrative):** Core-8 / Core-16 and `bencheval task audit` — see [vNext CLI](#vnext-cli) below.
 
 ## Layout
 
@@ -44,14 +73,11 @@ Use `uv sync --extra eval` only when running real Inspect / Harbor evals.
 
 Internal pilot gates and live matrix: [`docs/context/production-v1-pilot.md`](docs/context/production-v1-pilot.md) (`make check-production-v1`).
 
-## vNext CLI
+## Control-plane commands
+
+Public control-plane surface: catalog, plan, run, report, compare, export. (Selftest-only commands live in the [Internal selftest only](#internal-selftest-only-appendix) appendix.)
 
 ```bash
-# Lint / validate / audit a task contract
-uv run bencheval task validate be-core-c1-small-logic-patch
-uv run bencheval task audit be-core-t1-single-structured-call
-uv run bencheval task audit core-8
-
 # External benchmark catalog (support metadata, not Core scoring)
 uv run bencheval benchmark list --format json
 uv run bencheval benchmark show exploitgym
@@ -60,45 +86,26 @@ uv run bencheval benchmark show DeepSWE
 # Dry-run cost/envelope estimate (no network, no model calls)
 uv run bencheval run --dry-run --suite smoke --model anthropic/claude-test
 
-# Offline local/harness smoke (reference path; not a live model call)
-uv run bencheval run \
-  --task be-core-t1-single-structured-call \
-  --model local/harness \
-  --output results/evidence/run-001.jsonl \
-  --artifacts-dir results/raw/run-001
-
-# Manifest-driven single lifecycle: one task at a time, append evidence, clean transient staging
-printf '%s\n' \
-  be-core-t1-single-structured-call \
-  be-core-t2-multi-tool-join \
-  > /tmp/bencheval-native-smoke.txt
+# Manifest-driven single lifecycle: one task at a time, append evidence, clean transient staging.
+# Works for large public suites (one task id per line); --cleanup always|on-success removes
+# BenchEval-owned transient dirs without deleting evidence.
+printf '%s\n' terminal-bench/some-task another-task > /tmp/bencheval-native-smoke.txt
 uv run bencheval run \
   --manifest /tmp/bencheval-native-smoke.txt \
   --mode single \
   --cleanup always \
-  --model local/harness \
+  --model <model-id> \
   --output results/evidence/native-smoke.jsonl \
   --artifacts-dir results/raw/native-smoke
-
-uv run bencheval task audit core-8
-uv run bencheval task audit core-16  # 16 tasks; exits 1 until expansion sign-off
 
 # Preflight for live Inspect/Harbor backends (never prints secret values)
 uv sync --extra eval
 uv run bencheval doctor --backend inspect --model openai/gpt-test --profile E0
 uv run bencheval doctor --backend inspect --model openai/gpt-test --profile E1
 
-# Inspect E0 with mockllm (deterministic reference stand-in; no inspect_ai import or generate() call)
+# Live provider run (requires credentials + eval extra)
 uv run bencheval run \
-  --task be-core-t1-single-structured-call \
-  --model mockllm/model \
-  --backend inspect \
-  --output results/evidence/run-mockllm-001.jsonl \
-  --artifacts-dir results/raw/run-mockllm-001
-
-# Live provider run (requires credentials + eval extra; distinct from local/harness and mockllm)
-uv run bencheval run \
-  --task be-core-t1-single-structured-call \
+  --task <task-id> \
   --model openai/gpt-test \
   --backend inspect \
   --output results/evidence/run-inspect-001.jsonl \
@@ -119,6 +126,51 @@ uv run bencheval compare results/evidence/baseline.jsonl results/evidence/curren
   --format md \
   --output results/reports/delta.md
 ```
+
+## Internal selftest only (appendix)
+
+> Core-8 / Core-16 and `task audit` are an **internal regression lane** for the control-plane plumbing (see [`docs/context/production-readiness.md`](docs/context/production-readiness.md) Tier 0). They are never weighted into public-benchmark comparisons and are **not** the product surface. Most readers can skip this section.
+
+<details>
+<summary>Selftest commands (click to expand)</summary>
+
+```bash
+# Lint / validate / audit a selftest task contract
+uv run bencheval task validate be-core-c1-small-logic-patch
+uv run bencheval task audit be-core-t1-single-structured-call
+uv run bencheval task audit core-8
+uv run bencheval task audit core-16  # 16 tasks; exits 1 until expansion sign-off
+
+# Offline local/harness smoke (reference path; not a live model call)
+uv run bencheval run \
+  --task be-core-t1-single-structured-call \
+  --model local/harness \
+  --output results/evidence/run-001.jsonl \
+  --artifacts-dir results/raw/run-001
+
+# Manifest-driven single lifecycle against selftest tasks
+printf '%s\n' \
+  be-core-t1-single-structured-call \
+  be-core-t2-multi-tool-join \
+  > /tmp/bencheval-native-smoke.txt
+uv run bencheval run \
+  --manifest /tmp/bencheval-native-smoke.txt \
+  --mode single \
+  --cleanup always \
+  --model local/harness \
+  --output results/evidence/native-smoke.jsonl \
+  --artifacts-dir results/raw/native-smoke
+
+# Inspect E0 with mockllm (deterministic reference stand-in; no inspect_ai import or generate() call)
+uv run bencheval run \
+  --task be-core-t1-single-structured-call \
+  --model mockllm/model \
+  --backend inspect \
+  --output results/evidence/run-mockllm-001.jsonl \
+  --artifacts-dir results/raw/run-mockllm-001
+```
+
+</details>
 
 ## Provider smoke (live, credential-gated)
 

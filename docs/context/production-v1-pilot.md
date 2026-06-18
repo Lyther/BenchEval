@@ -37,3 +37,20 @@ Produces under `results/`:
 2. **TB compare narrative:** Same `--model` for both Harbor runs; verify `model_id` in JSONL before claiming runtime-only delta.
 3. **Commits:** One control-plane PR is fine; keep live `results/` out of git.
 4. **Bundles:** `private` default; harden `public` before external share.
+
+## Production readiness tiers
+
+See [`production-readiness.md`](production-readiness.md) and ops runbook [`../ops/dev-box-pilot.md`](../ops/dev-box-pilot.md).
+
+## Register live runs (audit trail, no secrets in git)
+
+```bash
+uv run bencheval evidence register \
+  --run-id <id> --benchmark terminal-bench --slice smoke-5 \
+  --runtime claude-code --model <model-id> \
+  --evidence results/evidence/<id>.jsonl \
+  --report results/reports/<id>.md \
+  --status passed
+```
+
+Appends to `results/manifests/runs.jsonl` (gitignored except `results/manifests/README.md`).

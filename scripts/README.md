@@ -16,6 +16,8 @@
   Set `BENCHEVAL_CLAUDE_CODE_ALLOWED_TOOLS` when a router rejects advanced
   Claude Code tool schemas and only basic terminal/edit tools are needed.
 - `write_preflight.py` — JSON `preflight_v1` artifact helper.
+- `doctor-pilot.sh` — Phase B wrapper: `verify_auth.sh` (optional) + `bencheval doctor --profile pilot`
+  runs `verify_auth.sh`, then `bencheval doctor`. See `docs/ops/dev-box-pilot.md`.
 
 ## Legacy summary lane (non-primary scoring)
 
