@@ -11,6 +11,8 @@
   routers that require top-level `system` instead of `messages[].role=system`.
   Set `BENCHEVAL_CLAUDE_CODE_NPM_REGISTRY` when the default npm registry is
   slow from the task container.
+  Set `BENCHEVAL_PILOT_CLAUDE_MODEL` / `BENCHEVAL_PILOT_CODEX_MODEL` when
+  Anthropic and Responses routers need different model aliases.
 - `write_preflight.py` — JSON `preflight_v1` artifact helper.
 
 ## Legacy summary lane (non-primary scoring)

@@ -9,6 +9,10 @@ readonly REPO_ROOT
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 readonly STAMP
 readonly MODEL="${BENCHEVAL_PILOT_MODEL:-openai/gpt-test}"
+readonly TB_CLAUDE_MODEL="${BENCHEVAL_PILOT_CLAUDE_MODEL:-${MODEL}}"
+readonly TB_CODEX_MODEL="${BENCHEVAL_PILOT_CODEX_MODEL:-${MODEL}}"
+readonly BFCL_MODEL="${BENCHEVAL_PILOT_BFCL_MODEL:-${MODEL}}"
+readonly SWE_MODEL="${BENCHEVAL_PILOT_SWE_MODEL:-${MODEL}}"
 export BENCHEVAL_HARBOR_FORWARD_PROXY="${BENCHEVAL_HARBOR_FORWARD_PROXY:-1}"
 
 PASSED=0
@@ -83,20 +87,26 @@ emit_artifacts() {
 
 run_tb() {
     local runtime="$1"
+    local model="${MODEL}"
+    if [[ "${runtime}" == "claude-code" ]]; then
+        model="${TB_CLAUDE_MODEL}"
+    elif [[ "${runtime}" == "codex-cli" ]]; then
+        model="${TB_CODEX_MODEL}"
+    fi
     local tag="tb-${runtime}-${STAMP}"
     local evidence="results/evidence/${tag}.jsonl"
     local raw="results/raw/${tag}"
-    if ! uv run --no-sync bencheval doctor --backend harbor --model "${MODEL}" --profile E2; then
+    if ! uv run --no-sync bencheval doctor --backend harbor --model "${model}" --profile E2; then
         preflight "results/preflight/${tag}.json" \
             --benchmark terminal-bench --slice smoke-5 --runtime "${runtime}" \
-            --model "${MODEL}" --ok false --doctor-backend harbor \
+            --model "${model}" --ok false --doctor-backend harbor \
             --reason "harbor doctor failed"
         FAILED=$((FAILED + 1))
         return 1
     fi
     if ! uv run --no-sync bencheval run \
         --benchmark terminal-bench --slice smoke-5 --runtime "${runtime}" \
-        --model "${MODEL}" --output "${evidence}" --artifacts-dir "${raw}"; then
+        --model "${model}" --output "${evidence}" --artifacts-dir "${raw}"; then
         emit_artifacts "${tag}" "${evidence}" "${raw}" || true
         FAILED=$((FAILED + 1))
         return 1
@@ -112,12 +122,12 @@ run_bfcl() {
     if ! command -v bfcl-eval >/dev/null 2>&1; then
         preflight "results/preflight/${tag}.json" \
             --benchmark bfcl-v4 --slice smoke-5 --runtime native-api \
-            --model "${MODEL}" --ok false --reason "bfcl-eval not on PATH"
+            --model "${BFCL_MODEL}" --ok false --reason "bfcl-eval not on PATH"
         return 1
     fi
     if ! uv run --no-sync bencheval run \
         --benchmark bfcl-v4 --slice smoke-5 --runtime native-api \
-        --model "${MODEL}" --output "${evidence}" --artifacts-dir "${raw}"; then
+        --model "${BFCL_MODEL}" --output "${evidence}" --artifacts-dir "${raw}"; then
         FAILED=$((FAILED + 1))
         return 1
     fi
@@ -135,20 +145,20 @@ run_swe() {
     if ! command -v mini-extra >/dev/null 2>&1; then
         preflight "results/preflight/${tag}.json" \
             --benchmark swe-bench-verified --slice swe-bench-verified-smoke-10 \
-            --runtime mini-swe-agent --model "${MODEL}" --ok false \
+            --runtime mini-swe-agent --model "${SWE_MODEL}" --ok false \
             --reason "mini-extra not on PATH"
         return 1
     fi
     if ! docker info >/dev/null 2>&1; then
         preflight "results/preflight/${tag}.json" \
             --benchmark swe-bench-verified --slice swe-bench-verified-smoke-10 \
-            --runtime mini-swe-agent --model "${MODEL}" --ok false \
+            --runtime mini-swe-agent --model "${SWE_MODEL}" --ok false \
             --reason "docker not available"
         return 1
     fi
     if ! uv run --no-sync bencheval run \
         --benchmark swe-bench-verified --slice swe-bench-verified-smoke-10 \
-        --runtime mini-swe-agent --model "${MODEL}" \
+        --runtime mini-swe-agent --model "${SWE_MODEL}" \
         --output "${evidence}" --artifacts-dir "${raw}"; then
         FAILED=$((FAILED + 1))
         return 1
@@ -160,7 +170,8 @@ run_swe() {
     PASSED=$((PASSED + 1))
 }
 
-printf 'Pilot matrix stamp=%s model=%s\n' "${STAMP}" "${MODEL}"
+printf 'Pilot matrix stamp=%s default_model=%s tb_claude_model=%s tb_codex_model=%s\n' \
+    "${STAMP}" "${MODEL}" "${TB_CLAUDE_MODEL}" "${TB_CODEX_MODEL}"
 start_anthropic_role_shim
 
 TB_CC=0

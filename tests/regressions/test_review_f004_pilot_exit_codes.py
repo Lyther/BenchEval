@@ -53,3 +53,15 @@ def test_live_pilot_can_enable_anthropic_role_shim() -> None:
     assert "python -m bencheval.anthropic_role_shim" in content
     assert "BENCHEVAL_ANTHROPIC_UPSTREAM:-http://127.0.0.1:4000" in content
     assert "BENCHEVAL_DOCKER_HOST_GATEWAY:-172.17.0.1" in content
+
+
+def test_live_pilot_supports_per_runtime_model_aliases() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    script = repo_root / "scripts" / "run-live-pilot-matrix.sh"
+
+    content = script.read_text(encoding="utf-8")
+
+    assert "BENCHEVAL_PILOT_CLAUDE_MODEL" in content
+    assert "BENCHEVAL_PILOT_CODEX_MODEL" in content
+    assert 'model="${TB_CLAUDE_MODEL}"' in content
+    assert 'model="${TB_CODEX_MODEL}"' in content
