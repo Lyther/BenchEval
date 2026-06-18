@@ -23,3 +23,12 @@ def test_live_pilot_exits_nonzero_without_proof() -> None:
     )
     assert proc.returncode != 0
     assert "minimum live proof not met" in (proc.stderr + proc.stdout).lower()
+
+
+def test_live_pilot_uses_cli_supported_doctor_profile() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    script = repo_root / "scripts" / "run-live-pilot-matrix.sh"
+
+    content = script.read_text(encoding="utf-8")
+
+    assert "--profile E4" not in content

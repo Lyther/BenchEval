@@ -29,12 +29,52 @@ def test_build_harbor_run_command_claude_code() -> None:
     )
     cmd = build_harbor_run_command(
         plan=plan,
-        instance_id="tb-smoke-001",
+        instance_id="fix-git",
         artifacts_dir=Path("/tmp/out"),
     )
-    assert cmd[0:4] == ("harbor", "run", "--dataset", "terminal-bench@2.0")
+    assert cmd[0:5] == ("harbor", "run", "--yes", "--dataset", "terminal-bench@2.0")
     assert "--agent" in cmd and "claude-code" in cmd
-    assert "--task" in cmd and "tb-smoke-001" in cmd
+    assert "--task-name" in cmd and "fix-git" in cmd
+    assert "--jobs-dir" in cmd
+    assert "--n-concurrent" in cmd and "1" in cmd
+
+
+def test_harbor_agent_for_codex_cli_matches_harbor_020() -> None:
+    assert harbor_agent_for_runtime("codex-cli") == "codex"
+
+
+def test_build_harbor_run_command_forwards_proxy_with_env_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "no_proxy",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("BENCHEVAL_HARBOR_FORWARD_PROXY", "1")
+    monkeypatch.setenv("https_proxy", "http://proxy.example:8118")
+    plan = plan_control_plane(
+        benchmark_id="terminal-bench",
+        slice_id="smoke-5",
+        runtime_id="claude-code",
+        model_id="runtime-default",
+    )
+
+    cmd = build_harbor_run_command(
+        plan=plan,
+        instance_id="fix-git",
+        artifacts_dir=tmp_path,
+    )
+
+    assert "--env-file" in cmd
+    env_file = Path(cmd[cmd.index("--env-file") + 1])
+    assert env_file.read_text(encoding="utf-8") == "https_proxy=http://proxy.example:8118\n"
+    assert "http://proxy.example:8118" not in " ".join(cmd)
 
 
 def test_parse_success_from_result_json(tmp_path: Path) -> None:
@@ -63,6 +103,50 @@ def test_parse_success_from_result_json(tmp_path: Path) -> None:
     assert out.partial_score == 1.0
     assert out.cost_usd == 1.5
     assert out.native_score.get("resolved") is True
+
+
+def test_parse_exception_result_json_is_runtime_launch_failure(tmp_path: Path) -> None:
+    art = tmp_path / "inst"
+    art.mkdir()
+    (art / "result.json").write_text(
+        json.dumps({"exception_info": {"exception_type": "NonZeroAgentExitCodeError"}}),
+        encoding="utf-8",
+    )
+    cli = HarborCliResult(0, "", "", 0.1, ("harbor", "run"))
+
+    out = parse_harbor_instance_outcome(
+        instance_id="fix-git",
+        cli=cli,
+        artifacts_dir=art,
+        repo_root=tmp_path,
+        harness_version=None,
+    )
+
+    assert out.primary_pass is False
+    assert out.partial_score == 0.0
+    assert out.failure_class == "runtime_launch_failure"
+
+
+def test_parse_aggregate_result_errors_are_harness_failure(tmp_path: Path) -> None:
+    art = tmp_path / "inst"
+    art.mkdir()
+    (art / "result.json").write_text(
+        json.dumps({"stats": {"n_errors": 1}}),
+        encoding="utf-8",
+    )
+    cli = HarborCliResult(0, "", "", 0.1, ("harbor", "run"))
+
+    out = parse_harbor_instance_outcome(
+        instance_id="fix-git",
+        cli=cli,
+        artifacts_dir=art,
+        repo_root=tmp_path,
+        harness_version=None,
+    )
+
+    assert out.primary_pass is False
+    assert out.partial_score == 0.0
+    assert out.failure_class == "harness_failure"
 
 
 def test_parse_rc0_without_result_json_is_harness_failure(tmp_path: Path) -> None:
@@ -96,9 +180,15 @@ def test_execute_control_plane_smoke_writes_evidence(tmp_path: Path) -> None:
         timeout_sec: int,
     ) -> HarborCliResult:
         assert command[command.index("--agent") + 1] == harbor_agent_for_runtime("claude-code")
-        task_id = command[command.index("--task") + 1]
-        assert task_id.startswith("tb-smoke-")
-        out_dir = Path(command[command.index("--output-dir") + 1])
+        task_id = command[command.index("--task-name") + 1]
+        assert task_id in {
+            "fix-git",
+            "overfull-hbox",
+            "cobol-modernization",
+            "modernize-scientific-stack",
+            "log-summary-date-ranges",
+        }
+        out_dir = Path(command[command.index("--jobs-dir") + 1])
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "result.json").write_text(
             json.dumps({"resolved": True}),
@@ -143,7 +233,7 @@ def test_per_instance_timeout_derived_from_plan(tmp_path: Path) -> None:
 
     def capture_timeout(command, *, cwd, timeout_sec: int):
         seen_timeout.append(timeout_sec)
-        out_dir = Path(command[command.index("--output-dir") + 1])
+        out_dir = Path(command[command.index("--jobs-dir") + 1])
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "result.json").write_text('{"resolved": true}', encoding="utf-8")
         return HarborCliResult(0, "", "", 0.0, tuple(command))
@@ -199,7 +289,7 @@ def test_harbor_executor_adapter_failure_on_second_instance_writes_two_rows(
     def alternating_runner(command, *, cwd: Path | None, timeout_sec: int) -> HarborCliResult:
         nonlocal call_count
         call_count += 1
-        out_dir = Path(command[command.index("--output-dir") + 1])
+        out_dir = Path(command[command.index("--jobs-dir") + 1])
         out_dir.mkdir(parents=True, exist_ok=True)
         if call_count == 1:
             (out_dir / "result.json").write_text(
@@ -238,7 +328,7 @@ def test_run_instance_harness_failure(tmp_path: Path) -> None:
     )
 
     def fail_runner(command, *, cwd, timeout_sec):
-        out_dir = Path(command[command.index("--output-dir") + 1])
+        out_dir = Path(command[command.index("--jobs-dir") + 1])
         out_dir.mkdir(parents=True, exist_ok=True)
         return HarborCliResult(
             returncode=1,

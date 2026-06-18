@@ -25,6 +25,13 @@ secrets/
 
 results/raw/*
 !results/raw/.gitkeep
+results/evidence/*
+results/preflight/*
+results/compare/*
+results/bundles/*
+results/archives/*
+results/reports/*
+!results/reports/.gitkeep
 config/selftest/**/runs/
 config/tasks/**/runs/
 

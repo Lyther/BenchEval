@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import time
 from collections.abc import Sequence
@@ -20,9 +21,18 @@ TERMINAL_BENCH_ADAPTER_ID = "terminal-bench-harbor"
 
 _RUNTIME_TO_HARBOR_AGENT: dict[str, str] = {
     "claude-code": "claude-code",
-    "codex-cli": "codex-cli",
+    "codex-cli": "codex",
     "harbor-agent": "openhands",
 }
+_PROXY_FORWARD_FLAG = "BENCHEVAL_HARBOR_FORWARD_PROXY"
+_PROXY_ENV_NAMES = (
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +79,25 @@ def harbor_agent_for_runtime(runtime_id: str) -> str:
     return agent
 
 
+def _write_proxy_env_file(artifacts_dir: Path) -> Path | None:
+    if os.environ.get(_PROXY_FORWARD_FLAG) != "1":
+        return None
+
+    lines: list[str] = []
+    for name in _PROXY_ENV_NAMES:
+        value = os.environ.get(name)
+        if not value or "\n" in value:
+            continue
+        lines.append(f"{name}={value}")
+    if not lines:
+        return None
+
+    env_file = artifacts_dir / ".bencheval-harbor-proxy.env"
+    env_file.parent.mkdir(parents=True, exist_ok=True)
+    env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return env_file
+
+
 def build_harbor_run_command(
     *,
     plan: RunPlan,
@@ -81,16 +110,26 @@ def build_harbor_run_command(
     cmd: list[str] = [
         "harbor",
         "run",
-        "--dataset",
-        HARBOR_DATASET,
-        "--agent",
-        agent,
-        "--task",
-        instance_id,
-        "--output-dir",
-        str(artifacts_dir.resolve()),
+        "--yes",
     ]
-    if plan.model_binding == "bencheval_injected" and model != "runtime-default":
+    proxy_env_file = _write_proxy_env_file(artifacts_dir)
+    if proxy_env_file is not None:
+        cmd.extend(["--env-file", str(proxy_env_file.resolve())])
+    cmd.extend(
+        [
+            "--dataset",
+            HARBOR_DATASET,
+            "--agent",
+            agent,
+            "--task-name",
+            instance_id,
+            "--jobs-dir",
+            str(artifacts_dir.resolve()),
+            "--n-concurrent",
+            "1",
+        ],
+    )
+    if model != "runtime-default":
         cmd.extend(["--model", model])
     return tuple(cmd)
 
@@ -157,6 +196,34 @@ def _locate_native_result(artifacts_dir: Path) -> Path | None:
     return None
 
 
+def _numeric_gt_zero(value: object) -> bool:
+    return isinstance(value, (int, float)) and value > 0
+
+
+def _harbor_result_has_errors(parsed: dict[str, object]) -> bool:
+    if isinstance(parsed.get("exception_info"), dict):
+        return True
+
+    stats = parsed.get("stats")
+    if not isinstance(stats, dict):
+        return False
+    if _numeric_gt_zero(stats.get("n_errors")):
+        return True
+
+    evals = stats.get("evals")
+    if not isinstance(evals, dict):
+        return False
+    for eval_summary in evals.values():
+        if not isinstance(eval_summary, dict):
+            continue
+        if _numeric_gt_zero(eval_summary.get("n_errors")):
+            return True
+        exception_stats = eval_summary.get("exception_stats")
+        if isinstance(exception_stats, dict) and exception_stats:
+            return True
+    return False
+
+
 def parse_harbor_instance_outcome(
     *,
     instance_id: str,
@@ -189,7 +256,15 @@ def parse_harbor_instance_outcome(
         else:
             if isinstance(parsed, dict):
                 native = {**native, **parsed}
-                if "resolved" in parsed:
+                if isinstance(parsed.get("exception_info"), dict):
+                    primary_pass = False
+                    partial_score = 0.0
+                    failure_class = "runtime_launch_failure"
+                elif _harbor_result_has_errors(parsed):
+                    primary_pass = False
+                    partial_score = 0.0
+                    failure_class = "harness_failure"
+                elif "resolved" in parsed:
                     primary_pass = bool(parsed["resolved"])
                     partial_score = 1.0 if primary_pass else 0.0
                 elif "success" in parsed:

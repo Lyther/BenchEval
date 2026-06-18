@@ -9,6 +9,7 @@ readonly REPO_ROOT
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 readonly STAMP
 readonly MODEL="${BENCHEVAL_PILOT_MODEL:-openai/gpt-test}"
+export BENCHEVAL_HARBOR_FORWARD_PROXY="${BENCHEVAL_HARBOR_FORWARD_PROXY:-1}"
 
 PASSED=0
 BLOCKED=0
@@ -29,7 +30,7 @@ run_tb() {
     local tag="tb-${runtime}-${STAMP}"
     local evidence="results/evidence/${tag}.jsonl"
     local raw="results/raw/${tag}"
-    if ! uv run --no-sync bencheval doctor --backend harbor --model "${MODEL}" --profile E4; then
+    if ! uv run --no-sync bencheval doctor --backend harbor --model "${MODEL}" --profile E2; then
         preflight "results/preflight/${tag}.json" \
             --benchmark terminal-bench --slice smoke-5 --runtime "${runtime}" \
             --model "${MODEL}" --ok false --doctor-backend harbor \
@@ -109,8 +110,12 @@ printf 'Pilot matrix stamp=%s model=%s\n' "${STAMP}" "${MODEL}"
 
 TB_CC=0
 TB_CX=0
-run_tb claude-code && TB_CC=1 || true
-run_tb codex-cli && TB_CX=1 || true
+if run_tb claude-code; then
+    TB_CC=1
+fi
+if run_tb codex-cli; then
+    TB_CX=1
+fi
 run_bfcl || true
 run_swe || true
 
