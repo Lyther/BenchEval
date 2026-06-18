@@ -90,11 +90,13 @@ Only treat `bencheval compare` as a **runtime_comparison** when both evidence fi
 A benchmark graduates to **Production v1** only when **all** of the following hold. This is the union of Tier 0 + Tier 1 + the architecture §13 gates, with no waivers.
 
 ### A. Catalog state
+
 - [ ] `execution_support` = `executable_adapter` in `config/benchmarks.yaml` (Tier 0 gate already asserts exactly 3 today).
 - [ ] `adapter_status` flipped to `manifest_available` (not `cataloged` / `adapter_pending` / `unverified`).
 - [ ] `safety_review` set correctly (`standard` / `dual_use` / `offensive_restricted`); offensive tasks Stretch-only behind `--allow-stretch`.
 
 ### B. Adapter admission (architecture §13.1)
+
 - [ ] Native harness invoked on ≥1 real instance (Phase B; for TB the Peer `fix-git` pass).
 - [ ] Version capture on every `EvidenceRecord`: benchmark, harness, adapter, runtime, model.
 - [ ] Evidence completeness: raw result, stdout, stderr, verifier logs, candidate artifacts, run config.
@@ -105,15 +107,18 @@ A benchmark graduates to **Production v1** only when **all** of the following ho
 - [ ] Caveat labels attached (e.g. `contaminated_or_legacy` for SWE-bench-family).
 
 ### C. Runtime admission (architecture §13.2) — when a runtime CLI is the scaffold
+
 - [ ] Noninteractive launch; version captured; ephemeral workspace + config isolation (no global mutation unless explicitly allowed).
 - [ ] Known/controllable network; budget enforcement; failure mapped to standard classes.
 
 ### D. Report validity (architecture §13.3)
+
 - [ ] Any model/runtime superiority claim is gated by identical benchmark/slice/adapter/harness version.
 - [ ] Failed/invalid attempts reported, not dropped.
 - [ ] Interpretation label present: `adapter_smoke` · `rough_regression` · `benchmark_native_claim` · `runtime_comparison` · `model_comparison` · `contaminated_or_legacy` · `defensive_security_only` · `offensive_restricted`.
 
 ### E. Honest-labelling floor (non-negotiable)
+
 - [ ] **No `benchmark_native_claim` label without a real Phase B run.** While live blockers hold, adapter-smoke with deterministic stand-ins (`local/harness`, `mockllm/model`) is acceptable for admission gates but must be labelled `adapter_smoke`.
 - [ ] No statistical-significance claim from smoke/lite slices alone (VETO, architecture §14).
 - [ ] No mixing of Calibration / Stretch / selftest tasks into weighted public-benchmark totals.

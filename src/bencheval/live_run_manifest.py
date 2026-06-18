@@ -21,7 +21,14 @@ from bencheval.paths import repo_root as _repo_root
 
 LIVE_RUN_SCHEMA_VERSION = "live_run_v1"
 
-LiveRunStatus = Literal["registered", "running", "completed", "failed", "archived"]
+LiveRunStatus = Literal[
+    "registered",
+    "running",
+    "completed",
+    "passed",
+    "failed",
+    "archived",
+]
 
 _DEFAULT_MANIFEST_REL = Path("results") / "manifests" / "runs.jsonl"
 

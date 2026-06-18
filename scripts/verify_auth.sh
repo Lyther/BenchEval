@@ -20,27 +20,41 @@ mask_tail() {
   fi
 }
 
+models_url_from_base() {
+  local base="${1:-}"
+  base="${base%/}"
+  if [[ "${base}" == */v1 ]]; then
+    printf '%s/models' "${base}"
+  else
+    printf '%s/v1/models' "${base}"
+  fi
+}
+
 if [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${MOONSHOT_API_KEY:-}" ]; then
   warn "no ANTHROPIC_API_KEY, OPENAI_API_KEY, or MOONSHOT_API_KEY set; nothing to probe"
   exit 0
 fi
 
 if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
-  warn "probing Anthropic (key $(mask_tail "${ANTHROPIC_API_KEY}"))"
+  anthropic_base="${ANTHROPIC_BASE_URL:-https://api.anthropic.com/v1}"
+  anthropic_url="$(models_url_from_base "${anthropic_base}")"
+  warn "probing Anthropic at ${anthropic_url} (key $(mask_tail "${ANTHROPIC_API_KEY}"))"
   if ! curl --fail --silent --show-error --max-time 10 \
     -H "x-api-key: ${ANTHROPIC_API_KEY}" \
     -H "anthropic-version: 2023-06-01" \
-    "https://api.anthropic.com/v1/models" >/dev/null; then
+    "${anthropic_url}" >/dev/null; then
     die "Anthropic credential probe failed (HTTP)"
   fi
 fi
 
 if [ -n "${OPENAI_API_KEY:-}" ]; then
-  warn "probing OpenAI (key $(mask_tail "${OPENAI_API_KEY}"))"
+  openai_base="${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+  openai_url="$(models_url_from_base "${openai_base}")"
+  warn "probing OpenAI at ${openai_url} (key $(mask_tail "${OPENAI_API_KEY}"))"
   if ! curl --fail --silent --show-error --max-time 10 \
     -H "Authorization: Bearer ${OPENAI_API_KEY}" \
     -H "Content-Type: application/json" \
-    "https://api.openai.com/v1/models" >/dev/null; then
+    "${openai_url}" >/dev/null; then
     die "OpenAI credential probe failed (HTTP)"
   fi
 fi

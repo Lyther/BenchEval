@@ -101,7 +101,6 @@ run_tb() {
             --benchmark terminal-bench --slice smoke-5 --runtime "${runtime}" \
             --model "${model}" --ok false --doctor-backend harbor \
             --reason "harbor doctor failed"
-        FAILED=$((FAILED + 1))
         return 1
     fi
     if ! uv run --no-sync bencheval run \

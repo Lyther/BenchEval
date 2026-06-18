@@ -174,7 +174,7 @@ Treat the exit code as the definition of done, then verify the files exist.
 
 The summary line tells you which row you hit:
 
-```
+```text
 Pilot summary: passed=<n> blocked_preflight=<n> failed=<n> tb_compare=<0|1>
 Live pilot minimum proof: OK (TB×2 + compare + BFCL)        # full
 Live pilot: TB proof OK; BFCL waived (...)                   # waived

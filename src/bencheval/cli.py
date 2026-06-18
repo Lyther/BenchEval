@@ -710,9 +710,50 @@ def _resolve_optional_path(value: object) -> str | None:
     return str(Path(str(value)).resolve())
 
 
+_TERMINAL_RUN_STATUSES: frozenset[LiveRunStatus] = frozenset(
+    {"completed", "passed", "failed", "archived"},
+)
+
+
+def _validate_register_artifact_paths(
+    *,
+    status: LiveRunStatus,
+    evidence: Path | None,
+    report: Path | None,
+    bundle: Path | None,
+    allow_missing: bool,
+) -> str | None:
+    if allow_missing:
+        return None
+    for label, path in (
+        ("evidence", evidence),
+        ("report", report),
+        ("bundle", bundle),
+    ):
+        if path is None:
+            continue
+        resolved = path.resolve()
+        if not resolved.is_file():
+            return f"error: {label} path is not a regular file: {resolved}"
+    if status in _TERMINAL_RUN_STATUSES and evidence is None:
+        return "error: terminal status requires --evidence (or --allow-missing-artifacts for dev)"
+    return None
+
+
 def _evidence_register(args: argparse.Namespace) -> int:
     manifest_path = Path(args.manifest_path) if args.manifest_path else default_runs_manifest_path()
     host = args.host or socket.gethostname()
+    allow_missing = bool(getattr(args, "allow_missing_artifacts", False))
+    artifact_err = _validate_register_artifact_paths(
+        status=cast("LiveRunStatus", args.status),
+        evidence=args.evidence,
+        report=args.report,
+        bundle=args.bundle,
+        allow_missing=allow_missing,
+    )
+    if artifact_err is not None:
+        sys.stderr.write(f"{artifact_err}\n")
+        return 1
     record = LiveRunRecord(
         run_id=args.run_id,
         host=host,
@@ -1017,6 +1058,11 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="Runs manifest JSONL path (default: results/manifests/runs.jsonl)",
+    )
+    evidence_register.add_argument(
+        "--allow-missing-artifacts",
+        action="store_true",
+        help="Skip artifact path existence checks (development only)",
     )
     evidence_register.set_defaults(handler=_evidence_register)
 

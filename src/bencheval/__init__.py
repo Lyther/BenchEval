@@ -50,6 +50,7 @@ from bencheval.summary import StrictSummaryBuilder
 from bencheval.task_contract import TaskContract
 
 __all__ = [
+    "LIVE_RUN_SCHEMA_VERSION",
     "AdapterFailureError",
     "AttemptSummaryDTO",
     "BenchEvalError",
@@ -63,7 +64,6 @@ __all__ = [
     "EvidenceValidationError",
     "GuardedComparisonReporter",
     "JsonlSummarySink",
-    "LIVE_RUN_SCHEMA_VERSION",
     "LiveRunManifestError",
     "LiveRunRecord",
     "ManifestDigest",
@@ -82,13 +82,13 @@ __all__ = [
     "TaskContract",
     "TaskContractError",
     "TokenUsage",
+    "append_live_run",
+    "default_runs_manifest_path",
     "load_benchmark_catalog",
     "load_pricing",
     "load_runtime_catalog",
     "load_runtime_profile",
     "load_slice_manifest",
-    "append_live_run",
-    "default_runs_manifest_path",
     "read_evidence_jsonl",
     "read_live_runs",
     "read_summary_jsonl",
