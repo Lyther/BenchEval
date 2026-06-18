@@ -13,6 +13,8 @@
   slow from the task container.
   Set `BENCHEVAL_PILOT_CLAUDE_MODEL` / `BENCHEVAL_PILOT_CODEX_MODEL` when
   Anthropic and Responses routers need different model aliases.
+  Set `BENCHEVAL_CLAUDE_CODE_ALLOWED_TOOLS` when a router rejects advanced
+  Claude Code tool schemas and only basic terminal/edit tools are needed.
 - `write_preflight.py` — JSON `preflight_v1` artifact helper.
 
 ## Legacy summary lane (non-primary scoring)

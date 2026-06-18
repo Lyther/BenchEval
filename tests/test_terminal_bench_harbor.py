@@ -24,6 +24,7 @@ from bencheval.terminal_bench_harbor import (
 def test_build_harbor_run_command_claude_code(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("NO_PROXY", raising=False)
     monkeypatch.delenv("no_proxy", raising=False)
+    monkeypatch.delenv("BENCHEVAL_CLAUDE_CODE_ALLOWED_TOOLS", raising=False)
     plan = plan_control_plane(
         benchmark_id="terminal-bench",
         slice_id="smoke-5",
@@ -40,11 +41,34 @@ def test_build_harbor_run_command_claude_code(monkeypatch: pytest.MonkeyPatch) -
     assert "--agent" not in cmd
     assert "--agent-import-path" in cmd
     assert cmd[cmd.index("--agent-import-path") + 1] == CLAUDE_CODE_NPM_IMPORT_PATH
+    assert "--agent-kwarg" not in cmd
     assert "--agent-setup-timeout-multiplier" in cmd
     assert cmd[cmd.index("--agent-setup-timeout-multiplier") + 1] == "8"
     assert "--task-name" in cmd and "fix-git" in cmd
     assert "--jobs-dir" in cmd
     assert "--n-concurrent" in cmd and "1" in cmd
+
+
+def test_build_harbor_run_command_claude_code_allowed_tools(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BENCHEVAL_CLAUDE_CODE_ALLOWED_TOOLS", "Bash,Read,Edit,Write")
+    plan = plan_control_plane(
+        benchmark_id="terminal-bench",
+        slice_id="smoke-5",
+        runtime_id="claude-code",
+        model_id="runtime-default",
+    )
+
+    cmd = build_harbor_run_command(
+        plan=plan,
+        instance_id="fix-git",
+        artifacts_dir=tmp_path,
+    )
+
+    assert "--agent-kwarg" in cmd
+    assert cmd[cmd.index("--agent-kwarg") + 1] == "allowed_tools=Bash,Read,Edit,Write"
 
 
 def test_harbor_agent_for_codex_cli_matches_harbor_020() -> None:

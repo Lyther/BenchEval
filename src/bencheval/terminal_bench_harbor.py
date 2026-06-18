@@ -37,6 +37,7 @@ _AGENT_NO_PROXY_ENV_NAMES = ("NO_PROXY", "no_proxy")
 _CODEX_PROVIDER_ID = "bytellm"
 _CODEX_CONFIG_TARGET = "/logs/agent/config.toml"
 _CLI_AGENT_SETUP_TIMEOUT_MULTIPLIER = "8"
+_CLAUDE_CODE_ALLOWED_TOOLS_ENV = "BENCHEVAL_CLAUDE_CODE_ALLOWED_TOOLS"
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,6 +178,9 @@ def build_harbor_run_command(
     cmd.extend(_agent_no_proxy_args())
     if plan.runtime_id == "claude-code":
         cmd.extend(["--agent-import-path", CLAUDE_CODE_NPM_IMPORT_PATH])
+        allowed_tools = os.environ.get(_CLAUDE_CODE_ALLOWED_TOOLS_ENV)
+        if allowed_tools and "\n" not in allowed_tools:
+            cmd.extend(["--agent-kwarg", f"allowed_tools={allowed_tools}"])
     else:
         cmd.extend(["--agent", agent])
     if plan.runtime_id in {"claude-code", "codex-cli"}:
