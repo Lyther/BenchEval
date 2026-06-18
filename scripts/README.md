@@ -7,6 +7,10 @@
 - `verify-performance.sh` — micro-benchmarks for planner/catalog/compare hot paths.
 - `check-production-v1.sh` — internal pilot CI gate (`make check-production-v1`).
 - `run-live-pilot-matrix.sh` — Phase B live TB/BFCL/SWE matrix; writes `results/preflight/` on blockers.
+  Set `BENCHEVAL_ANTHROPIC_SYSTEM_ROLE_SHIM=1` for Anthropic-compatible
+  routers that require top-level `system` instead of `messages[].role=system`.
+  Set `BENCHEVAL_CLAUDE_CODE_NPM_REGISTRY` when the default npm registry is
+  slow from the task container.
 - `write_preflight.py` — JSON `preflight_v1` artifact helper.
 
 ## Legacy summary lane (non-primary scoring)

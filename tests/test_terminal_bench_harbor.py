@@ -12,6 +12,7 @@ from bencheval.control_plane_executor import execute_control_plane_run
 from bencheval.evidence import read_evidence_jsonl
 from bencheval.exceptions import AdapterFailureError
 from bencheval.terminal_bench_harbor import (
+    CLAUDE_CODE_NPM_IMPORT_PATH,
     HarborCliResult,
     build_harbor_run_command,
     harbor_agent_for_runtime,
@@ -20,7 +21,9 @@ from bencheval.terminal_bench_harbor import (
 )
 
 
-def test_build_harbor_run_command_claude_code() -> None:
+def test_build_harbor_run_command_claude_code(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
     plan = plan_control_plane(
         benchmark_id="terminal-bench",
         slice_id="smoke-5",
@@ -32,8 +35,13 @@ def test_build_harbor_run_command_claude_code() -> None:
         instance_id="fix-git",
         artifacts_dir=Path("/tmp/out"),
     )
-    assert cmd[0:5] == ("harbor", "run", "--yes", "--dataset", "terminal-bench@2.0")
-    assert "--agent" in cmd and "claude-code" in cmd
+    assert cmd[0:3] == ("harbor", "run", "--yes")
+    assert "--dataset" in cmd and "terminal-bench@2.0" in cmd
+    assert "--agent" not in cmd
+    assert "--agent-import-path" in cmd
+    assert cmd[cmd.index("--agent-import-path") + 1] == CLAUDE_CODE_NPM_IMPORT_PATH
+    assert "--agent-setup-timeout-multiplier" in cmd
+    assert cmd[cmd.index("--agent-setup-timeout-multiplier") + 1] == "8"
     assert "--task-name" in cmd and "fix-git" in cmd
     assert "--jobs-dir" in cmd
     assert "--n-concurrent" in cmd and "1" in cmd
@@ -41,6 +49,48 @@ def test_build_harbor_run_command_claude_code() -> None:
 
 def test_harbor_agent_for_codex_cli_matches_harbor_020() -> None:
     assert harbor_agent_for_runtime("codex-cli") == "codex"
+
+
+def test_build_harbor_run_command_mounts_codex_provider_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://172.17.0.1:4000/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-in-command")
+    plan = plan_control_plane(
+        benchmark_id="terminal-bench",
+        slice_id="smoke-5",
+        runtime_id="codex-cli",
+        model_id="glm-5.1",
+    )
+
+    cmd = build_harbor_run_command(
+        plan=plan,
+        instance_id="fix-git",
+        artifacts_dir=tmp_path,
+    )
+
+    assert "--agent-setup-timeout-multiplier" in cmd
+    assert cmd[cmd.index("--agent-setup-timeout-multiplier") + 1] == "8"
+    assert "--mounts-json" in cmd
+    mounts = json.loads(cmd[cmd.index("--mounts-json") + 1])
+    assert mounts == [
+        {
+            "type": "bind",
+            "source": str((tmp_path / ".bencheval-codex-config.toml").resolve()),
+            "target": "/logs/agent/config.toml",
+            "read_only": True,
+            "bind": {"create_host_path": False},
+        },
+    ]
+    config = (tmp_path / ".bencheval-codex-config.toml").read_text(encoding="utf-8")
+    assert 'model_provider = "bytellm"' in config
+    assert 'base_url = "http://172.17.0.1:4000/v1"' in config
+    assert 'env_key = "OPENAI_API_KEY"' in config
+    assert "supports_websockets = false" in config
+    assert 'wire_api = "responses"' in config
+    assert "sk-test-not-in-command" not in " ".join(cmd)
+    assert "sk-test-not-in-command" not in config
 
 
 def test_build_harbor_run_command_forwards_proxy_with_env_file(
@@ -75,6 +125,30 @@ def test_build_harbor_run_command_forwards_proxy_with_env_file(
     env_file = Path(cmd[cmd.index("--env-file") + 1])
     assert env_file.read_text(encoding="utf-8") == "https_proxy=http://proxy.example:8118\n"
     assert "http://proxy.example:8118" not in " ".join(cmd)
+
+
+def test_build_harbor_run_command_forwards_agent_no_proxy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost,172.17.0.1")
+    monkeypatch.setenv("no_proxy", "127.0.0.1,localhost,172.17.0.1")
+    plan = plan_control_plane(
+        benchmark_id="terminal-bench",
+        slice_id="smoke-5",
+        runtime_id="codex-cli",
+        model_id="glm-5.1",
+    )
+
+    cmd = build_harbor_run_command(
+        plan=plan,
+        instance_id="fix-git",
+        artifacts_dir=tmp_path,
+    )
+
+    assert "--agent-env" in cmd
+    assert "NO_PROXY=127.0.0.1,localhost,172.17.0.1" in cmd
+    assert "no_proxy=127.0.0.1,localhost,172.17.0.1" in cmd
 
 
 def test_parse_success_from_result_json(tmp_path: Path) -> None:
@@ -179,7 +253,7 @@ def test_execute_control_plane_smoke_writes_evidence(tmp_path: Path) -> None:
         cwd: Path | None,
         timeout_sec: int,
     ) -> HarborCliResult:
-        assert command[command.index("--agent") + 1] == harbor_agent_for_runtime("claude-code")
+        assert command[command.index("--agent-import-path") + 1] == CLAUDE_CODE_NPM_IMPORT_PATH
         task_id = command[command.index("--task-name") + 1]
         assert task_id in {
             "fix-git",

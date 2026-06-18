@@ -18,9 +18,9 @@ from bencheval.path_safety import validate_control_plane_instance_id
 
 HARBOR_DATASET = "terminal-bench@2.0"
 TERMINAL_BENCH_ADAPTER_ID = "terminal-bench-harbor"
+CLAUDE_CODE_NPM_IMPORT_PATH = "bencheval.harbor_claude_code_npm:ClaudeCodeNpmInstall"
 
 _RUNTIME_TO_HARBOR_AGENT: dict[str, str] = {
-    "claude-code": "claude-code",
     "codex-cli": "codex",
     "harbor-agent": "openhands",
 }
@@ -33,6 +33,10 @@ _PROXY_ENV_NAMES = (
     "https_proxy",
     "no_proxy",
 )
+_AGENT_NO_PROXY_ENV_NAMES = ("NO_PROXY", "no_proxy")
+_CODEX_PROVIDER_ID = "bytellm"
+_CODEX_CONFIG_TARGET = "/logs/agent/config.toml"
+_CLI_AGENT_SETUP_TIMEOUT_MULTIPLIER = "8"
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,11 +74,13 @@ class HarborProcessRunner(Protocol):
 
 
 def harbor_agent_for_runtime(runtime_id: str) -> str:
+    if runtime_id == "claude-code":
+        return "claude-code"
     agent = _RUNTIME_TO_HARBOR_AGENT.get(runtime_id)
     if agent is None:
         raise BenchEvalError(
             f"runtime {runtime_id!r} has no Harbor --agent mapping; "
-            f"known: {sorted(_RUNTIME_TO_HARBOR_AGENT)}",
+            f"known: {sorted((*_RUNTIME_TO_HARBOR_AGENT, 'claude-code'))}",
         )
     return agent
 
@@ -98,6 +104,59 @@ def _write_proxy_env_file(artifacts_dir: Path) -> Path | None:
     return env_file
 
 
+def _agent_no_proxy_args() -> list[str]:
+    args: list[str] = []
+    for name in _AGENT_NO_PROXY_ENV_NAMES:
+        value = os.environ.get(name)
+        if value and "\n" not in value:
+            args.extend(["--agent-env", f"{name}={value}"])
+    return args
+
+
+def _toml_string(value: str) -> str:
+    return json.dumps(value)
+
+
+def _write_codex_provider_config(artifacts_dir: Path) -> Path | None:
+    base_url = os.environ.get("OPENAI_BASE_URL")
+    if not base_url:
+        return None
+
+    config_file = artifacts_dir / ".bencheval-codex-config.toml"
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config_file.write_text(
+        "\n".join(
+            [
+                f"model_provider = {_toml_string(_CODEX_PROVIDER_ID)}",
+                "",
+                f"[model_providers.{_CODEX_PROVIDER_ID}]",
+                f"name = {_toml_string('ByteLLM')}",
+                f"base_url = {_toml_string(base_url)}",
+                f"env_key = {_toml_string('OPENAI_API_KEY')}",
+                "supports_websockets = false",
+                f"wire_api = {_toml_string('responses')}",
+                "",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    return config_file
+
+
+def _codex_config_mounts_json(config_file: Path) -> str:
+    return json.dumps(
+        [
+            {
+                "type": "bind",
+                "source": str(config_file.resolve()),
+                "target": _CODEX_CONFIG_TARGET,
+                "read_only": True,
+                "bind": {"create_host_path": False},
+            },
+        ],
+    )
+
+
 def build_harbor_run_command(
     *,
     plan: RunPlan,
@@ -115,12 +174,26 @@ def build_harbor_run_command(
     proxy_env_file = _write_proxy_env_file(artifacts_dir)
     if proxy_env_file is not None:
         cmd.extend(["--env-file", str(proxy_env_file.resolve())])
+    cmd.extend(_agent_no_proxy_args())
+    if plan.runtime_id == "claude-code":
+        cmd.extend(["--agent-import-path", CLAUDE_CODE_NPM_IMPORT_PATH])
+    else:
+        cmd.extend(["--agent", agent])
+    if plan.runtime_id in {"claude-code", "codex-cli"}:
+        cmd.extend(
+            [
+                "--agent-setup-timeout-multiplier",
+                _CLI_AGENT_SETUP_TIMEOUT_MULTIPLIER,
+            ],
+        )
+    if plan.runtime_id == "codex-cli":
+        codex_config = _write_codex_provider_config(artifacts_dir)
+        if codex_config is not None:
+            cmd.extend(["--mounts-json", _codex_config_mounts_json(codex_config)])
     cmd.extend(
         [
             "--dataset",
             HARBOR_DATASET,
-            "--agent",
-            agent,
             "--task-name",
             instance_id,
             "--jobs-dir",
