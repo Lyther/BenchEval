@@ -1,6 +1,6 @@
 # Production v1 internal pilot
 
-**Scope:** ~50 benchmarks cataloged; **3 executable** (`terminal-bench`, `swe-bench-verified`, `bfcl-v4`). Not a public leaderboard.
+**Scope:** 81 benchmarks cataloged; **3 executable** (`terminal-bench`, `swe-bench-verified`, `bfcl-v4`). Not a public leaderboard.
 
 ## Phase A — ship gates (no live deps)
 
@@ -12,19 +12,13 @@ Includes: pytest, ruff, shellcheck, `uv lock --check`, executable catalog count 
 
 ## Phase B — live matrix (credentials + Docker)
 
-```bash
-export BENCHEVAL_PILOT_MODEL='openai/your-model'   # or anthropic/...
-./scripts/run-live-pilot-matrix.sh
-```
+**Procedure:** [`docs/ops/dev-box-pilot.md`](../ops/dev-box-pilot.md) (prerequisites, proxy, matrix exit codes, `evidence register`).
 
-Produces under `results/`:
+**Tier meaning:** Tier 1 = at least one real native-harness instance with a complete `EvidenceRecord`; minimum matrix proof = TB `smoke-5` × two Harbor runtimes + compare + BFCL (see runbook). Details: [`production-readiness.md`](production-readiness.md) §Tier 1–2.
 
-- `evidence/`, `reports/`, `bundles/` (private redaction default)
-- `preflight/*.json` when doctor, Docker, or `mini-extra` blocks a step (negative evidence, not fake pass)
+**Artifacts:** `results/evidence/`, `reports/`, `bundles/` (default `--redaction private`); `results/preflight/*.json` on blockers (negative evidence, not fake pass).
 
-**Terminal-Bench runtime compare:** Only treat `bencheval compare` as **runtime_comparison** when both evidence files share the same `model_id`. Harbor agents may bind models differently; if axes drift, compare exits with dual-axis error.
-
-**Host deps:** `harbor`, Docker, provider env vars; SWE: `mini-extra`; BFCL: `bfcl-eval` package.
+**Env:** copy `.env.example` → `.env`; pilot knobs (`BENCHEVAL_PILOT_*`, proxy/shim) are documented in `.env.example` and the runbook §4.
 
 ## export-run
 

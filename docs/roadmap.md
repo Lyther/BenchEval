@@ -1,7 +1,8 @@
 # Execution Roadmap (vNext v0.3)
 
 > **Source:** [`docs/context/concept-hld.md`](context/concept-hld.md) §11.2, §14 + [`docs/architecture.md`](architecture.md) §17
-> **Status (2026-06-18):** v0.2 selftest + v0.3 control-plane P1–P6/P5.1/P5.3/P9.2 implemented (**605** tests green, verified `uv run pytest -q`). Remaining: P5.2 LiveCodeBench, P7–P8 security/GUI, Phase 0 live spikes — see §Live blockers.
+> **Ledger:** Checked `- [x]` milestones below record completed phases (P1–P9). Current production v1 bar: [`production-readiness.md`](context/production-readiness.md) + `make check-production-v1`.
+> **Status (2026-06-19):** v0.3 control-plane P1–P6/P5.1/P5.3/P9.2 implemented. Remaining: P5.2 LiveCodeBench, P7–P8 security/GUI, Phase B live matrix on dev-box — see §Live blockers.
 > **Principle:** additive only. Never break the v0.2 `EvidenceRecord` flat contract. Never delete working coverage to reach a new shape.
 
 ## Phase 0 — Validation (research spikes, no code)
@@ -101,7 +102,7 @@
 
 - `docs/context/concept-hld.md` — product HLD (source of truth)
 - `docs/architecture.md` — this companion (decisions)
-- `config/benchmarks.yaml` (80 entries), `config/runtimes/*.yaml` (new), `config/manifests/*.txt` + `config/manifests/*.yaml` (typed wrappers)
+- `config/benchmarks.yaml` (81 entries), `config/runtimes/*.yaml` (new), `config/manifests/*.txt` + `config/manifests/*.yaml` (typed wrappers)
 - `src/bencheval/`: `benchmark_registry.py`, `manifest.py` (+`slice_manifest.py` new), `models.py`, `pricing.py`, `runtime_registry.py` (new), `planner.py`, `doctor.py`, `executor.py`, `backends.py`, `inspect_adapter.py`, `harbor_adapter.py`, `evidence.py`, `report.py`, `compare.py`, `evidence_compare.py`, `export.py`, `cli.py`, `lifecycle.py`, `workspace_staging.py`
 - `scripts/run_provider_smoke.sh`, `scripts/verify_auth.sh`
 - Tests: extend `test_evidence.py`, `test_planner.py`, `test_cli_task.py`, `test_cli_benchmark.py`; add `test_runtime_registry.py`, `test_slice_manifest.py`, `test_cli_runtime.py`, `test_harbor_adapter.py` (live-gated)

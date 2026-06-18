@@ -20,9 +20,27 @@ def test_benchmark_registry_exports_from_package() -> None:
     assert isinstance(catalog.benchmarks[0], BenchmarkEntry)
 
 
-def test_default_benchmark_catalog_has_at_least_fifty_entries() -> None:
+def test_default_benchmark_catalog_has_current_expected_count() -> None:
     catalog = load_benchmark_catalog()
-    assert len(catalog.benchmarks) >= 50
+    assert len(catalog.benchmarks) == 81
+
+
+def test_public_docs_match_current_catalog_count() -> None:
+    catalog_count = len(load_benchmark_catalog().benchmarks)
+    repo_root = Path(__file__).resolve().parents[1]
+    docs = (
+        repo_root / "README.md",
+        repo_root / "docs" / "architecture.md",
+        repo_root / "docs" / "roadmap.md",
+        repo_root / "docs" / "context" / "concept-hld.md",
+        repo_root / "docs" / "context" / "production-v1-pilot.md",
+    )
+    stale_markers = ("~50", "64 entries", "64-entry", "80 entries", "80-entry", "605")
+    for path in docs:
+        text = path.read_text(encoding="utf-8")
+        assert str(catalog_count) in text, f"{path} should mention {catalog_count}"
+        for marker in stale_markers:
+            assert marker not in text, f"{path} contains stale marker {marker!r}"
 
 
 def test_catalog_tracks_deepswe_as_unverified_alias() -> None:

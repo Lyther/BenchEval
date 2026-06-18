@@ -112,4 +112,4 @@ Evidence JSONL v0.3 additive fields may include `attempt_validity`, `invalid_rea
 
 - Canonical field definitions: [`docs/architecture.md`](../architecture.md)
 - Domain types (single source of truth): [`src/bencheval/domain.py`](../../src/bencheval/domain.py)
-- Diagrams: [`docs/diagrams/`](../diagrams/)
+- System shape: [`docs/architecture.md`](../architecture.md) §3

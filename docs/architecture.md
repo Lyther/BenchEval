@@ -1,6 +1,6 @@
 # Architecture & Decisions
 
-> **Status:** PROPOSED (vNext v0.3, 2026-06-17) — pending acceptance of [`docs/context/concept-hld.md`](context/concept-hld.md)
+> **Status:** ACCEPTED (vNext v0.3, 2026-06-19) — aligned with [`docs/context/concept-hld.md`](context/concept-hld.md) v0.3; implementation tracked in [`docs/roadmap.md`](roadmap.md)
 > **Supersedes:** vNext v0.2 (ACCEPTED 2026-05-29, Core-first) — preserved as `legacy_static` context only
 > **Source of truth for product:** [`docs/context/concept-hld.md`](context/concept-hld.md) §0–§16
 > **Scope:** Public-first, evidence-based benchmark × model × runtime evaluation control plane.
@@ -84,7 +84,7 @@ flowchart LR
 
 | Component | Responsibility | Status | Module(s) |
 |---|---|---|---|
-| Benchmark Registry | Catalog runnable benchmarks, adapters, source, license, native harness, metrics, caveats. | **Extend** existing `benchmark_registry.py` (catalog → executable contract) + `config/benchmarks.yaml` (80 entries). | `benchmark_registry.py` |
+| Benchmark Registry | Catalog runnable benchmarks, adapters, source, license, native harness, metrics, caveats. | **Extend** existing `benchmark_registry.py` (catalog -> executable contract) + `config/benchmarks.yaml` (81 entries). | `benchmark_registry.py` |
 | Slice Manifest Registry | Typed `smoke`/`lite`/`full`/`custom` instance lists with budget + labels. | **New typed layer** over existing `manifest.py` + `config/manifests/*.txt`. | `manifest.py` (+ new `slice_manifest.py`) |
 | Model Registry | Model identity, provider, pricing, context limits, version capture. | **Promote** existing `config/models.yaml` + `pricing/` + `models.py` (`ModelFamily`, `RunStamp`). | `models.py`, `pricing.py` |
 | Runtime Registry | CLI/API/scaffold runtime profiles + capability/safety metadata. | **New.** `runtime_registry.py` + `config/runtimes/*.yaml`. | new |
@@ -115,7 +115,7 @@ Dry-run planner sets `requires_harbor=true` when any selected task profile inclu
 
 ### 7.1 Benchmark Contract (`config/benchmarks.yaml`)
 
-Existing 80-entry YAML registry is the authoritative catalog. Schema: `BenchmarkCatalog`/`BenchmarkEntry` in `benchmark_registry.py` (Pydantic, `frozen=True, extra="forbid"`). Fields: id, name, aliases, category, tier (`calibration`/`stretch`/`reference_only`), adapter_status (`cataloged`/`adapter_pending`/`manifest_available`/`unverified`), recommended_backend, recommended_profile, task_count, public_indexed, contamination_risk, single_mode_required, safety_review (`standard`/`dual_use`/`offensive_restricted`), source_url, notes.
+Existing 81-entry YAML registry is the authoritative catalog. Schema: `BenchmarkCatalog`/`BenchmarkEntry` in `benchmark_registry.py` (Pydantic, `frozen=True, extra="forbid"`). Fields: id, name, aliases, category, tier (`calibration`/`stretch`/`reference_only`), adapter_status (`cataloged`/`adapter_pending`/`manifest_available`/`unverified`), recommended_backend, recommended_profile, task_count, public_indexed, contamination_risk, single_mode_required, safety_review (`standard`/`dual_use`/`offensive_restricted`), source_url, notes.
 
 ### 7.2 Slice Manifest (new typed layer)
 

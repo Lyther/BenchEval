@@ -87,7 +87,7 @@ Priority order for BenchEval Stretch (non–Core-weighted), credential-gated:
 
 - `inspect-evals` ships SWE-bench, Cybench, and other tasks — align with `bencheval doctor --backend inspect`.
 - Harbor datasets (e.g., SWE-bench Pro packaging) align with `harbor_adapter.py` S4 slice pattern.
-- All external suites should land as **E3 Calibration** or **E4 Stretch** per concept-zero §18 — never mixed into Core weighted totals without explicit migration.
+- All external suites should land as **E3 Calibration** or **E4 Stretch** per concept-hld §18 — never mixed into Core weighted totals without explicit migration.
 - For disk-heavy suites, use `bencheval run --manifest … --mode single --cleanup always` so adapters materialize one instance, append evidence, and remove BenchEval-owned transient workspaces before the next instance. Generic cleanup does not prune Docker images; adapter-specific image cleanup must be explicit.
 
 ## References

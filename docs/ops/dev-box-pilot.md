@@ -1,9 +1,10 @@
 # Phase B on dev-box-cpu — live pilot runbook
 
 Operational runbook for executing the Phase B live control-plane pilot on a
-`dev-box-cpu` (or equivalent VPS with Docker). This is **not** the concept/HLD;
-it is the hands-on procedure. See `docs/context/production-v1-pilot.md` for the
-short summary and `docs/context/concept-hld.md` for design context.
+`dev-box-cpu` (or equivalent VPS with Docker). Tier definitions:
+[`docs/context/production-readiness.md`](../context/production-readiness.md).
+Scope summary: [`docs/context/production-v1-pilot.md`](../context/production-v1-pilot.md).
+Design: [`docs/context/concept-hld.md`](../context/concept-hld.md).
 
 Phase B = live matrix with real credentials and Docker. It is gated and
 non-fatal to blockers: blocked steps produce **negative preflight evidence**
@@ -30,7 +31,7 @@ SWE (`swe-bench-verified` smoke-10 via `mini-swe-agent`) is exercised but is
 | Python 3.12+, `uv` | control plane | `uv --version` |
 | Docker daemon | Harbor containers, SWE | `docker info` |
 | `harbor` CLI | TB runtime | `harbor --version` (or `uv sync --extra eval`) |
-| `bfcl-eval` | BFCL lane | `command -v bfcl-eval` |
+| `bfcl` | BFCL lane (`bfcl-eval` package) | `command -v bfcl && bfcl --help` |
 | `mini-extra` | SWE lane | `command -v mini-extra` |
 | Provider env vars | live model calls | `verify_auth.sh` (below) |
 
@@ -38,6 +39,9 @@ SWE (`swe-bench-verified` smoke-10 via `mini-swe-agent`) is exercised but is
 uv sync
 uv sync --extra eval          # inspect_ai / harbor extras
 ```
+
+`bfcl` and `mini-extra` are host/runtime CLIs, not part of the `eval` extra.
+Install them separately before claiming a full Phase B matrix.
 
 Keep all artifacts under `results/` — it is gitignored. Do not commit live
 evidence, raw outputs, or bundles unless you explicitly intend to publish.
@@ -112,7 +116,7 @@ scripts/doctor-pilot.sh
 
 Runs `verify_auth.sh` (unless `--no-auth`), then
 `uv run bencheval doctor --profile pilot --model <model>` (harbor, docker,
-`bfcl-eval`, `mini-extra`, provider env). Equivalent to the native CLI:
+`bfcl`, `mini-extra`, provider env). Equivalent to the native CLI:
 
 ```bash
 uv run bencheval doctor --profile pilot --model "${BENCHEVAL_PILOT_MODEL}"
@@ -142,7 +146,7 @@ What it does, per step:
   --benchmark terminal-bench --slice smoke-5 --runtime <rt>`. On doctor fail
   → preflight record + step fails. On run fail → artifacts emitted, step
   fails.
-- `bfcl-v4` lane: skipped-with-preflight if `bfcl-eval` is not on `PATH`;
+- `bfcl-v4` lane: skipped-with-preflight if `bfcl` is not on `PATH`;
   otherwise `bencheval run --benchmark bfcl-v4 --slice smoke-5
   --runtime native-api`.
 - `swe-bench-verified` lane: skipped-with-preflight if `mini-extra` missing
@@ -279,6 +283,6 @@ Rules of thumb:
 | Harbor doctor `fail` | `harbor` CLI not installed | `uv sync --extra eval` |
 | Docker doctor `fail` | daemon down / socket perms | `docker info`; start daemon |
 | Compare exits with dual-axis error | TB runtimes used different `model_id` | set `BENCHEVAL_PILOT_CLAUDE_MODEL`/`_CODEX_MODEL` to the same alias |
-| BFCL lane preflighted | `bfcl-eval` not on `PATH` | install; or accept TB-only with the waiver flag |
+| BFCL lane preflighted | `bfcl` not on `PATH` or the `bfcl-eval` install is broken | install/repair `bfcl-eval`; or accept TB-only with the waiver flag |
 | Anthropic router rejects `messages[].role=system` | needs top-level `system` | `BENCHEVAL_ANTHROPIC_SYSTEM_ROLE_SHIM=1` |
 | npm slow inside TB container | default registry throttled | `BENCHEVAL_CLAUDE_CODE_NPM_REGISTRY` |

@@ -39,9 +39,9 @@ Runtime profile: `mini-swe-agent` (`config/runtimes/mini-swe-agent.yaml`).
 
 | Field | Contract |
 |-------|----------|
-| Package | **`bfcl-eval`** (not PyPI `bfcl`); pin e.g. `2025.12.17` per leaderboard |
-| Version | `bfcl-eval --version` or import metadata |
-| Command shape | Generation/eval commands implemented in `bfcl_native` adapter |
+| Package | **`bfcl-eval`**; it installs the `bfcl` console script |
+| Version | `bfcl version` or package metadata |
+| Command shape | `bfcl generate --test-category <category> --result-dir <artifacts> --model <model>` for smoke generation; official scoring needs the matching `bfcl evaluate` step before `benchmark_native_claim` |
 | Docker | Usually not required for smoke-5; full suite per Gorilla docs |
 | Env (names only) | Model API env vars for generation |
 | Outputs | BFCL result files → normalized evidence rows |

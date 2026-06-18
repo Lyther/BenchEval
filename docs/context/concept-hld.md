@@ -218,7 +218,7 @@ Core suite only as internal self-test/private regression
 
 ## 5. Benchmark Strategy
 
-BenchEval should classify benchmarks by execution role, not by marketing importance. The machine-readable catalog of recognized public benchmarks lives in `config/benchmarks.yaml` and is exposed via `bencheval benchmark list|show`; it currently holds 64 entries and is the validation target for adapter planning. This document lists representative examples; the YAML registry is authoritative for count, aliases, safety lane, and adapter status.
+BenchEval should classify benchmarks by execution role, not by marketing importance. The machine-readable catalog of recognized public benchmarks lives in `config/benchmarks.yaml` and is exposed via `bencheval benchmark list|show`; it currently holds 81 entries and is the validation target for adapter planning. This document lists representative examples; the YAML registry is authoritative for count, aliases, safety lane, and adapter status.
 
 ### 5.1 Benchmark Classes
 
@@ -912,5 +912,5 @@ Research-driven revision of this proposal after verifying named benchmarks again
 - **CyberGym-E2E (§2.1, [R20], §5.2):** Added as a pending roadmap item (paper 2026, public release not yet available).
 - **BountyBench (§2.1, [R21], §5.2):** Added. 25 real-world systems, 40 bug bounties ($10–$30,485), 9-of-10 OWASP Top 10, three task types (Detect/Exploit/Patch), Stanford CRFM. BenchEval uses Detect + Patch in normal lanes and keeps Exploit tasks behind the Stretch safety gate.
 - **DeepSWE (§2.1, [R22]):** Clarified it is an RL-trained agent/model (`DeepSWE-32B`, All Hands), not a verified standalone public benchmark task set. Registry must keep `deepswe` as `reference_only`/`unverified` until a canonical task source is verified.
-- **Benchmark catalog (§5):** Expanded §5.1 class taxonomy to ~10 classes and added a catalog-size note pointing to the existing 64-entry `config/benchmarks.yaml` registry (the authoritative machine-readable source). Expanded §5.2 initial-adapter table to 13 rows with verified scales and explicit safety-lane assignments.
+- **Benchmark catalog (§5):** Expanded §5.1 class taxonomy to ~10 classes and added a catalog-size note pointing to the machine-readable `config/benchmarks.yaml` registry (the authoritative source for current count, aliases, safety lane, and adapter status). Expanded §5.2 initial-adapter table to 13 rows with verified scales and explicit safety-lane assignments.
 - **Open issues for follow-up:** (a) verify `deepswe` against the correct arXiv ID / All Hands blog if it becomes reachable; (b) add CyberGym-E2E to `config/benchmarks.yaml` only after its public task release; (c) confirm exact ExploitGym source URL and license once the site stabilizes.

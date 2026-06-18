@@ -2,7 +2,7 @@
 
 > **Role:** Canonical definition of what "production-ready" means for BenchEval and how a benchmark adapter graduates from *software* to *live evidence* to *Production v1*.
 > **Source of truth:** [`docs/context/concept-hld.md`](concept-hld.md) §11.2 / §14, [`docs/architecture.md`](../architecture.md) §13 (verification gates), [`docs/context/production-v1-pilot.md`](production-v1-pilot.md).
-> **Do not edit:** `concept-hld.md`, `concept-zero.md`. This document is a companion, not a replacement for the HLD.
+> **Do not edit:** `concept-hld.md`. This document is a companion, not a replacement for the HLD.
 
 BenchEval is an evaluation **control plane**, not a benchmark author. "Production-ready" therefore has three tiers. A benchmark may sit at Tier 0 (software only) indefinitely; it is never promoted to Tier 2 (Production v1) without real live evidence. There is no partial credit.
 
@@ -41,25 +41,9 @@ make check-production-v1        # → ./scripts/check-production-v1.sh
 
 **Question answered:** *Did at least one real instance run end-to-end through the native harness and produce a valid `EvidenceRecord`?*
 
-Phase B lifts the Tier 0 live blockers. Gate inputs:
+Phase B lifts the Tier 0 live blockers. **Operator procedure** (commands, exit codes, proxy, registration): [`docs/ops/dev-box-pilot.md`](../ops/dev-box-pilot.md). **Host dependencies:** [`docs/roadmap.md`](../roadmap.md) §Live blockers (Docker, `harbor`, provider keys, `mini-extra`, `bfcl`).
 
-```bash
-export BENCHEVAL_PILOT_MODEL='openai/your-model'   # or anthropic/...
-./scripts/run-live-pilot-matrix.sh
-```
-
-Required host dependencies (see [`docs/roadmap.md`](../roadmap.md) §Live blockers):
-
-- Provider credentials: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …
-- Docker daemon (Harbor E1, SWE-bench E1)
-- `harbor` CLI installed and contract-stable (roadmap S0.1)
-- `claude-code` / `codex-cli` noninteractive launch + auth (roadmap S0.2)
-- SWE: `mini-extra`; BFCL: `bfcl-eval` package
-
-Produces under `results/` (gitignored except committed `.gitkeep` / registry READMEs):
-
-- `results/evidence/`, `results/reports/`, `results/bundles/` (default `--redaction private`)
-- `results/preflight/*.json` when doctor / Docker / a mini-extra blocks a step — this is **negative evidence** (a real, honest "blocked" record), not a fake pass.
+Outputs live under `results/` (gitignored): evidence, reports, bundles (`--redaction private` default), and `preflight/*.json` when a step is blocked — **negative evidence**, not a fake pass.
 
 ### Peer anchor: the Terminal-Bench `fix-git` pass
 
@@ -137,4 +121,4 @@ BenchEval 的"生产就绪"分三个层级，逐级递进，不可跳级：
 
 **关键红线：** 没有 Phase B 真实运行，绝不能打 `benchmark_native_claim` 标签。live blockers 期间可用 `local/harness`、`mockllm/model` 做适配器 smoke，但必须标注 `adapter_smoke`。smoke/lite 切片不得声称统计显著性；Calibration / Stretch / selftest 任务不得混入公开基准加权总分（architecture §14 VETO）。
 
-**不要编辑** `concept-hld.md` 与 `concept-zero.md`；本文档是它们的配套说明，非规格替代。
+**不要编辑** `concept-hld.md`；本文档是其配套说明，非规格替代。

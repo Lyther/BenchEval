@@ -870,7 +870,7 @@ benchmarks:
     single_mode_required: true
     safety_review: dual_use
     source_url: "https://cybench.github.io/"
-    notes: "Professional CTF benchmark; metadata_only until CyBench adapter (see docs/context/cybench-hard-39-run-difficulties.md)."
+    notes: "Professional CTF benchmark; metadata_only until executable CyBench adapter (concept-hld; adapter backlog)."
   - id: cybergym
     name: CyberGym
     aliases: ["CyberGym"]

@@ -1,8 +1,8 @@
 # BenchEval
 
-Private-first, evidence-based evaluation for coding, tool use, agentic coding, and defensive security. Product intent and vNext HLD: [`docs/context/concept-hld.md`](docs/context/concept-hld.md) (v0.3). Legacy v0.2: [`docs/context/concept-zero.md`](docs/context/concept-zero.md).
+Private-first, evidence-based evaluation for coding, tool use, agentic coding, and defensive security. Product intent and vNext HLD: [`docs/context/concept-hld.md`](docs/context/concept-hld.md) (v0.3).
 
-**Production v1 (executable):** ~50 benchmarks cataloged; **three** have native control-plane adapters: `terminal-bench`, `swe-bench-verified`, `bfcl-v4`. Everything else is `metadata_only` or `manifest_only` until a real adapter and live proof exist. See the tier definitions in [`docs/context/production-readiness.md`](docs/context/production-readiness.md).
+**Production v1 (executable):** 81 benchmarks cataloged; **three** have native control-plane adapters: `terminal-bench`, `swe-bench-verified`, `bfcl-v4`. Everything else is `metadata_only` or `manifest_only` until a real adapter and live proof exist. See the tier definitions in [`docs/context/production-readiness.md`](docs/context/production-readiness.md).
 
 > **Scope note:** Core-8 / Core-16 and `bencheval task audit` are an **internal selftest** lane — regression coverage for the control plane itself, **not** the public product narrative. They live in the collapsed [Internal selftest only](#internal-selftest-only-appendix) appendix below.
 
@@ -26,7 +26,7 @@ uv run bencheval run --dry-run \
   --benchmark terminal-bench --slice smoke-5 \
   --runtime claude-code --model <model-id>
 
-# 5. Live run (needs provider creds + Docker + Harbor; see production-readiness tiers)
+# 5. Live run (needs provider creds + Docker + Harbor; tiers in docs/context/production-readiness.md; procedure docs/ops/dev-box-pilot.md)
 uv run bencheval run \
   --benchmark terminal-bench --slice smoke-5 \
   --runtime claude-code --model <model-id> \
@@ -61,7 +61,7 @@ Non-executable benchmarks (e.g. CyBench) fail on `run` before subprocess dispatc
 - `scripts/` — `check-production-v1.sh`, `run-live-pilot-matrix.sh`, `write_preflight.py`, `compare.py`, `extract_summary.py`, `export-config-bundle.sh`, `check-domain-coverage.sh`, `verify-performance.sh`, `preflight_disk.sh`, `verify_auth.sh`, `run_provider_smoke.sh` (see `scripts/README.md`)
 - `tests/` — pytest suite
 - `results/` — run artifacts (gitignored where noted)
-- `docs/` — architecture, roadmap, concept-zero context, external benchmark catalog
+- `docs/` — architecture, roadmap, context specs, ops runbooks
 
 ## Setup
 
