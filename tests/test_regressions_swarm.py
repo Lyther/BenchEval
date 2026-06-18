@@ -45,7 +45,7 @@ def test_run_execute_payload_interpretation_not_comparison_validity_key(
     evidence_path = tmp_path / "evidence.jsonl"
 
     def fake_runner(command, *, cwd: Path | None, timeout_sec: int) -> BfclCliResult:
-        out_dir = Path(command[command.index("--output-dir") + 1])
+        out_dir = Path(command[command.index("--result-dir") + 1])
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "verdict.json").write_text(
             json.dumps({"primary_pass": True}),
@@ -73,7 +73,7 @@ def test_cli_run_stdout_includes_interpretation_and_comparison_validity(
     from bencheval.cli import main
 
     def fake_runner(command, *, cwd: Path | None, timeout_sec: int) -> BfclCliResult:
-        out_dir = Path(command[command.index("--output-dir") + 1])
+        out_dir = Path(command[command.index("--result-dir") + 1])
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "verdict.json").write_text(
             json.dumps({"primary_pass": True}),

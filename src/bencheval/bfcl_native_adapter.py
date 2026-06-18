@@ -16,6 +16,7 @@ from bencheval.exceptions import AdapterFailureError, BenchEvalError
 from bencheval.path_safety import validate_control_plane_instance_id
 
 BFCL_ADAPTER_ID = "bfcl"
+BFCL_COMMAND = "bfcl"
 _HARNESS_VERSION_FALLBACK = "bfcl-native-smoke"
 
 
@@ -65,12 +66,13 @@ def build_bfcl_run_command(
             f"bfcl adapter expects runtime native-api or inspect-api, got {plan.runtime_id!r}",
         )
     cmd: list[str] = [
-        "bfcl-eval",
-        "run",
-        "--instance-id",
+        BFCL_COMMAND,
+        "generate",
+        "--test-category",
         instance_id,
-        "--output-dir",
+        "--result-dir",
         str(artifacts_dir.resolve()),
+        "--allow-overwrite",
     ]
     if plan.model_id != "runtime-default":
         cmd.extend(["--model", plan.model_id])
@@ -241,6 +243,7 @@ def run_bfcl_instance(
 
 __all__ = [
     "BFCL_ADAPTER_ID",
+    "BFCL_COMMAND",
     "BfclCliResult",
     "BfclInstanceOutcome",
     "BfclProcessRunner",

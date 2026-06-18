@@ -1,5 +1,5 @@
-bfcl_smoke_001
-bfcl_smoke_002
-bfcl_smoke_003
-bfcl_smoke_004
-bfcl_smoke_005
+simple
+irrelevance
+parallel
+multiple
+parallel_multiple

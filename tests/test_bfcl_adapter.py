@@ -32,11 +32,13 @@ def test_build_bfcl_run_command() -> None:
     )
     cmd = build_bfcl_run_command(
         plan=plan,
-        instance_id="bfcl_smoke_001",
+        instance_id="simple",
         artifacts_dir=Path("/tmp/out"),
     )
-    assert cmd[0] == "bfcl-eval"
-    assert "bfcl_smoke_001" in cmd
+    assert cmd[:2] == ("bfcl", "generate")
+    assert "--test-category" in cmd
+    assert "simple" in cmd
+    assert "--result-dir" in cmd
 
 
 def test_parse_verdict_json(tmp_path: Path) -> None:
@@ -46,7 +48,7 @@ def test_parse_verdict_json(tmp_path: Path) -> None:
         json.dumps({"correct": True, "cost_usd": 0.01}),
         encoding="utf-8",
     )
-    cli = BfclCliResult(0, "", "", 0.2, ("bfcl-eval",))
+    cli = BfclCliResult(0, "", "", 0.2, ("bfcl", "generate"))
     out = parse_bfcl_instance_outcome(
         instance_id="bfcl_smoke_001",
         cli=cli,
@@ -68,7 +70,7 @@ def test_execute_bfcl_smoke_writes_evidence(tmp_path: Path) -> None:
     evidence_path = tmp_path / "evidence.jsonl"
 
     def fake_runner(command, *, cwd: Path | None, timeout_sec: int) -> BfclCliResult:
-        out_dir = Path(command[command.index("--output-dir") + 1])
+        out_dir = Path(command[command.index("--result-dir") + 1])
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "verdict.json").write_text(
             json.dumps({"primary_pass": True}),
