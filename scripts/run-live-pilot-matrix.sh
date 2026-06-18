@@ -71,6 +71,11 @@ preflight() {
     BLOCKED=$((BLOCKED + 1))
 }
 
+bfcl_model_supported() {
+    local model="$1"
+    bfcl models 2>/dev/null | grep -Fx -- "${model}" >/dev/null
+}
+
 emit_artifacts() {
     local tag="$1"
     local evidence="$2"
@@ -118,10 +123,23 @@ run_bfcl() {
     local tag="bfcl-smoke5-${STAMP}"
     local evidence="results/evidence/${tag}.jsonl"
     local raw="results/raw/${tag}"
-    if ! command -v bfcl-eval >/dev/null 2>&1; then
+    if ! command -v bfcl >/dev/null 2>&1; then
         preflight "results/preflight/${tag}.json" \
             --benchmark bfcl-v4 --slice smoke-5 --runtime native-api \
-            --model "${BFCL_MODEL}" --ok false --reason "bfcl-eval not on PATH"
+            --model "${BFCL_MODEL}" --ok false --reason "bfcl not on PATH (install bfcl-eval)"
+        return 1
+    fi
+    if ! bfcl --help >/dev/null 2>&1; then
+        preflight "results/preflight/${tag}.json" \
+            --benchmark bfcl-v4 --slice smoke-5 --runtime native-api \
+            --model "${BFCL_MODEL}" --ok false --reason "bfcl command failed (repair bfcl-eval)"
+        return 1
+    fi
+    if ! bfcl_model_supported "${BFCL_MODEL}"; then
+        preflight "results/preflight/${tag}.json" \
+            --benchmark bfcl-v4 --slice smoke-5 --runtime native-api \
+            --model "${BFCL_MODEL}" --ok false \
+            --reason "bfcl model is not supported by bfcl models; set BENCHEVAL_PILOT_BFCL_MODEL"
         return 1
     fi
     if ! uv run --no-sync bencheval run \

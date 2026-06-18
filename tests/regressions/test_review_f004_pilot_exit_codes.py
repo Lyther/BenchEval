@@ -43,6 +43,18 @@ def test_live_pilot_exports_failed_terminal_bench_evidence() -> None:
     assert 'emit_artifacts "${tag}" "${evidence}" "${raw}" || true' in content
 
 
+def test_live_pilot_preflights_unsupported_bfcl_model() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    script = repo_root / "scripts" / "run-live-pilot-matrix.sh"
+
+    content = script.read_text(encoding="utf-8")
+
+    assert "bfcl_model_supported" in content
+    assert "bfcl models" in content
+    assert "BENCHEVAL_PILOT_BFCL_MODEL" in content
+    assert "bfcl model is not supported" in content
+
+
 def test_live_pilot_can_enable_anthropic_role_shim() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     script = repo_root / "scripts" / "run-live-pilot-matrix.sh"

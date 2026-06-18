@@ -5,10 +5,12 @@ from __future__ import annotations
 import os
 import subprocess
 import threading
+from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 from bencheval.cli import main
+from bencheval.evidence import EvidenceRecord
 from bencheval.live_run_manifest import read_live_runs
 
 
@@ -42,6 +44,21 @@ def _run_verify_auth(
     )
 
 
+def _write_valid_evidence(path: Path, *, run_id: str = "run-passed") -> None:
+    record = EvidenceRecord(
+        run_id=run_id,
+        task_id="terminal-bench/fix-git",
+        model_id="claude-haiku-4-5",
+        execution_profile="E2",
+        primary_pass=True,
+        partial_score=1.0,
+        cost_usd=0.01,
+        latency_sec=10.0,
+        created_at=datetime(2026, 6, 18, 15, 5, tzinfo=UTC),
+    )
+    path.write_text(record.model_dump_json() + "\n", encoding="utf-8")
+
+
 def test_verify_auth_routes_anthropic_base_url_and_masks_key() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     server = HTTPServer(("127.0.0.1", 0), _OkHandler)
@@ -55,6 +72,8 @@ def test_verify_auth_routes_anthropic_base_url_and_masks_key() -> None:
             env={
                 "ANTHROPIC_API_KEY": secret,
                 "ANTHROPIC_BASE_URL": f"http://127.0.0.1:{port}/v1",
+                "http_proxy": "http://127.0.0.1:9",
+                "https_proxy": "http://127.0.0.1:9",
             },
         )
     finally:
@@ -77,6 +96,8 @@ def test_verify_auth_routes_openai_base_url() -> None:
             env={
                 "OPENAI_API_KEY": "openai-key-abcd",
                 "OPENAI_BASE_URL": f"http://127.0.0.1:{port}/v1",
+                "http_proxy": "http://127.0.0.1:9",
+                "https_proxy": "http://127.0.0.1:9",
             },
         )
     finally:
@@ -86,6 +107,33 @@ def test_verify_auth_routes_openai_base_url() -> None:
 
 
 def test_cli_register_accepts_status_passed(tmp_path: Path) -> None:
+    manifest = tmp_path / "runs.jsonl"
+    evidence = tmp_path / "evidence.jsonl"
+    _write_valid_evidence(evidence)
+
+    code = main(
+        [
+            "evidence",
+            "register",
+            "--run-id",
+            "run-passed",
+            "--model",
+            "claude-haiku-4-5",
+            "--evidence",
+            str(evidence),
+            "--status",
+            "passed",
+            "--host",
+            "dev-box",
+            "--manifest-path",
+            str(manifest),
+        ],
+    )
+    assert code == 0
+    assert read_live_runs(manifest)[0].status == "passed"
+
+
+def test_cli_register_rejects_invalid_evidence_for_passed(tmp_path: Path) -> None:
     manifest = tmp_path / "runs.jsonl"
     evidence = tmp_path / "evidence.jsonl"
     evidence.write_text("{}\n", encoding="utf-8")
@@ -108,8 +156,8 @@ def test_cli_register_accepts_status_passed(tmp_path: Path) -> None:
             str(manifest),
         ],
     )
-    assert code == 0
-    assert read_live_runs(manifest)[0].status == "passed"
+    assert code == 1
+    assert not manifest.exists()
 
 
 def test_cli_register_rejects_missing_evidence_for_completed(tmp_path: Path) -> None:

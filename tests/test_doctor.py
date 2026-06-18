@@ -9,7 +9,7 @@ import pytest
 from bencheval.cli import main
 from bencheval.doctor import PILOT_DOCTOR_BACKEND, run_doctor, run_pilot_doctor
 
-_PILOT_BINARIES = ("harbor", "bfcl-eval", "mini-extra")
+_PILOT_BINARIES = ("harbor", "bfcl", "mini-extra")
 
 
 def _patch_binaries(
@@ -36,14 +36,24 @@ def _patch_pilot_host(
     docker_ok: bool = True,
     versions: dict[str, str] | None = None,
 ) -> None:
+    versions = versions or {}
     _patch_binaries(monkeypatch, present=present, versions=versions)
+
+    def fake_probe(binary: str, args: tuple[str, ...]) -> tuple[bool, str | None]:
+        if binary not in present:
+            return False, f"{binary} missing"
+        if binary == "bfcl" and args == ("version",):
+            return True, versions.get("bfcl")
+        return True, versions.get(binary)
+
+    monkeypatch.setattr("bencheval.doctor._probe_binary_args", fake_probe)
     monkeypatch.setattr("bencheval.doctor.docker_available", lambda: docker_ok)
 
 
 def test_pilot_doctor_all_present(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_pilot_host(
         monkeypatch,
-        versions={"harbor": "0.9.0", "bfcl-eval": "2025.12.17", "mini-extra": "1.2.0"},
+        versions={"harbor": "0.9.0", "bfcl": "2025.8.6.2", "mini-extra": "1.2.0"},
     )
     report = run_pilot_doctor()
     assert report.backend == PILOT_DOCTOR_BACKEND
@@ -61,12 +71,32 @@ def test_pilot_doctor_missing_bfcl_eval(monkeypatch: pytest.MonkeyPatch) -> None
     report = run_pilot_doctor()
     bfcl = next(c for c in report.checks if c.name == "bfcl_eval")
     assert bfcl.status == "fail"
-    assert "bfcl-eval" in bfcl.message
+    assert "bfcl" in bfcl.message
+    assert report.ok is False
+
+
+def test_pilot_doctor_broken_bfcl_cli_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_pilot_host(monkeypatch)
+    monkeypatch.setattr(
+        "bencheval.doctor._probe_binary_args",
+        lambda binary, args: (
+            (
+                False,
+                "ModuleNotFoundError: No module named 'soundfile'",
+            )
+            if binary == "bfcl"
+            else (True, None)
+        ),
+    )
+    report = run_pilot_doctor()
+    bfcl = next(c for c in report.checks if c.name == "bfcl_eval")
+    assert bfcl.status == "fail"
+    assert "soundfile" in bfcl.message
     assert report.ok is False
 
 
 def test_pilot_doctor_missing_mini_extra(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_pilot_host(monkeypatch, present={"harbor", "bfcl-eval"})
+    _patch_pilot_host(monkeypatch, present={"harbor", "bfcl"})
     report = run_pilot_doctor()
     mini = next(c for c in report.checks if c.name == "mini_extra")
     assert mini.status == "fail"
@@ -74,7 +104,7 @@ def test_pilot_doctor_missing_mini_extra(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_pilot_doctor_missing_harbor(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_pilot_host(monkeypatch, present={"bfcl-eval", "mini-extra"})
+    _patch_pilot_host(monkeypatch, present={"bfcl", "mini-extra"})
     report = run_pilot_doctor()
     harbor = next(c for c in report.checks if c.name == "harbor_cli")
     assert harbor.status == "fail"
@@ -95,7 +125,7 @@ def test_pilot_doctor_version_probe_failure_still_pass(monkeypatch: pytest.Monke
     report = run_pilot_doctor()
     bfcl = next(c for c in report.checks if c.name == "bfcl_eval")
     assert bfcl.status == "pass"
-    assert "on PATH" in bfcl.message
+    assert "available" in bfcl.message
     assert report.ok is True
 
 
@@ -130,7 +160,7 @@ def test_pilot_doctor_mockllm_needs_no_credentials(monkeypatch: pytest.MonkeyPat
 def test_cli_doctor_profile_pilot_json(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_pilot_host(
         monkeypatch,
-        versions={"harbor": "0.9.0", "bfcl-eval": "2025.12.17", "mini-extra": "1.2.0"},
+        versions={"harbor": "0.9.0", "bfcl": "2025.8.6.2", "mini-extra": "1.2.0"},
     )
     buf = StringIO()
     with redirect_stdout(buf):

@@ -148,13 +148,15 @@ def test_build_harbor_run_command_forwards_proxy_with_env_file(
     assert "--env-file" in cmd
     env_file = Path(cmd[cmd.index("--env-file") + 1])
     assert env_file.read_text(encoding="utf-8") == "https_proxy=http://proxy.example:8118\n"
-    assert "http://proxy.example:8118" not in " ".join(cmd)
+    assert "https_proxy=http://proxy.example:8118" in cmd
 
 
 def test_build_harbor_run_command_forwards_agent_no_proxy(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("BENCHEVAL_HARBOR_FORWARD_PROXY", "1")
+    monkeypatch.setenv("https_proxy", "http://proxy.example:8118")
     monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost,172.17.0.1")
     monkeypatch.setenv("no_proxy", "127.0.0.1,localhost,172.17.0.1")
     plan = plan_control_plane(
@@ -171,6 +173,7 @@ def test_build_harbor_run_command_forwards_agent_no_proxy(
     )
 
     assert "--agent-env" in cmd
+    assert "https_proxy=http://proxy.example:8118" in cmd
     assert "NO_PROXY=127.0.0.1,localhost,172.17.0.1" in cmd
     assert "no_proxy=127.0.0.1,localhost,172.17.0.1" in cmd
 

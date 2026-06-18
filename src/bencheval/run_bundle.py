@@ -46,10 +46,15 @@ def _sha256_file(path: Path) -> str:
 
 def _collect_tool_versions() -> dict[str, str]:
     versions: dict[str, str] = {"python": platform.python_version()}
-    for binary in ("harbor", "uv", "bfcl-eval"):
+    commands = (
+        ("harbor", ("--version",)),
+        ("uv", ("--version",)),
+        ("bfcl", ("version",)),
+    )
+    for binary, args in commands:
         try:
             proc = subprocess.run(
-                [binary, "--version"],
+                [binary, *args],
                 check=False,
                 capture_output=True,
                 text=True,

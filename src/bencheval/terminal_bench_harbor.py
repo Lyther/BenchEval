@@ -33,7 +33,6 @@ _PROXY_ENV_NAMES = (
     "https_proxy",
     "no_proxy",
 )
-_AGENT_NO_PROXY_ENV_NAMES = ("NO_PROXY", "no_proxy")
 _CODEX_PROVIDER_ID = "bytellm"
 _CODEX_CONFIG_TARGET = "/logs/agent/config.toml"
 _CLI_AGENT_SETUP_TIMEOUT_MULTIPLIER = "8"
@@ -105,9 +104,11 @@ def _write_proxy_env_file(artifacts_dir: Path) -> Path | None:
     return env_file
 
 
-def _agent_no_proxy_args() -> list[str]:
+def _agent_proxy_args() -> list[str]:
     args: list[str] = []
-    for name in _AGENT_NO_PROXY_ENV_NAMES:
+    if os.environ.get(_PROXY_FORWARD_FLAG) != "1":
+        return args
+    for name in _PROXY_ENV_NAMES:
         value = os.environ.get(name)
         if value and "\n" not in value:
             args.extend(["--agent-env", f"{name}={value}"])
@@ -175,7 +176,7 @@ def build_harbor_run_command(
     proxy_env_file = _write_proxy_env_file(artifacts_dir)
     if proxy_env_file is not None:
         cmd.extend(["--env-file", str(proxy_env_file.resolve())])
-    cmd.extend(_agent_no_proxy_args())
+    cmd.extend(_agent_proxy_args())
     if plan.runtime_id == "claude-code":
         cmd.extend(["--agent-import-path", CLAUDE_CODE_NPM_IMPORT_PATH])
         allowed_tools = os.environ.get(_CLAUDE_CODE_ALLOWED_TOOLS_ENV)

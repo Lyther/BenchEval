@@ -16,7 +16,7 @@ from bencheval.task_contract import ExecutionProfile
 CheckStatus = Literal["pass", "fail", "skip"]
 
 # Scope label for the aggregated pilot host-dependency report. Not an
-# ExecutionBackend: pilot spans harbor/docker/bfcl-eval/mini-extra gates.
+# ExecutionBackend: pilot spans harbor/docker/bfcl/mini-extra gates.
 PILOT_DOCTOR_BACKEND = "pilot"
 
 
@@ -149,6 +149,26 @@ def _version_line(binary: str) -> str | None:
     return text.splitlines()[0][:200]
 
 
+def _probe_binary_args(binary: str, args: tuple[str, ...]) -> tuple[bool, str | None]:
+    try:
+        proc = subprocess.run(
+            [binary, *args],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+    except OSError as e:
+        return False, f"{type(e).__name__}: {e}"
+    except subprocess.TimeoutExpired:
+        return False, "timed out"
+    text = (proc.stdout or proc.stderr or "").strip()
+    line = text.splitlines()[0][:200] if text else None
+    if proc.returncode != 0:
+        return False, line or f"exit {proc.returncode}"
+    return True, line
+
+
 def _binary_check(check_name: str, binary: str, install_hint: str) -> DoctorCheck:
     if not binary_on_path(binary):
         return DoctorCheck(check_name, "fail", f"{binary} not on PATH; {install_hint}")
@@ -156,6 +176,26 @@ def _binary_check(check_name: str, binary: str, install_hint: str) -> DoctorChec
     if version is not None:
         return DoctorCheck(check_name, "pass", f"{binary} {version} available")
     return DoctorCheck(check_name, "pass", f"{binary} on PATH (version unavailable)")
+
+
+def _bfcl_check() -> DoctorCheck:
+    if not binary_on_path("bfcl"):
+        return DoctorCheck(
+            "bfcl_eval",
+            "fail",
+            "bfcl not on PATH; install the bfcl-eval package",
+        )
+    ok, detail = _probe_binary_args("bfcl", ("--help",))
+    if not ok:
+        return DoctorCheck(
+            "bfcl_eval",
+            "fail",
+            f"bfcl command failed; repair the bfcl-eval install: {detail or 'no output'}",
+        )
+    version_ok, version = _probe_binary_args("bfcl", ("version",))
+    if version_ok and version is not None:
+        return DoctorCheck("bfcl_eval", "pass", f"bfcl {version} available")
+    return DoctorCheck("bfcl_eval", "pass", "bfcl available (bfcl-eval package)")
 
 
 def _provider_credentials_check(model_id: str) -> DoctorCheck:
@@ -285,7 +325,8 @@ def run_pilot_doctor(*, model_id: str | None = None) -> DoctorReport:
     """Aggregate pilot host-dependency preflight checks.
 
     Mirrors the PATH/Docker gates in ``scripts/run-live-pilot-matrix.sh``:
-    ``harbor``, ``docker info``, ``bfcl-eval``, and ``mini-extra``. When a model
+    ``harbor``, ``docker info``, ``bfcl`` (from the ``bfcl-eval`` package),
+    and ``mini-extra``. When a model
     id is supplied, provider credential env vars are also checked.
     """
     checks: list[DoctorCheck] = [
@@ -303,7 +344,7 @@ def run_pilot_doctor(*, model_id: str | None = None) -> DoctorReport:
     )
     checks.extend(
         (
-            _binary_check("bfcl_eval", "bfcl-eval", "install the bfcl-eval package"),
+            _bfcl_check(),
             _binary_check("mini_extra", "mini-extra", "install mini-SWE-agent"),
         ),
     )

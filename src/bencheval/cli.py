@@ -737,6 +737,13 @@ def _validate_register_artifact_paths(
             return f"error: {label} path is not a regular file: {resolved}"
     if status in _TERMINAL_RUN_STATUSES and evidence is None:
         return "error: terminal status requires --evidence (or --allow-missing-artifacts for dev)"
+    if status in _TERMINAL_RUN_STATUSES and evidence is not None:
+        try:
+            records = read_evidence_jsonl(evidence)
+        except BenchEvalError as e:
+            return f"error: evidence path is not valid EvidenceRecord JSONL: {e}"
+        if not records:
+            return "error: terminal status requires non-empty EvidenceRecord JSONL"
     return None
 
 
@@ -981,7 +988,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Execution profile for profile-specific checks (Inspect E1/Harbor require Docker); "
-            "'pilot' aggregates harbor/docker/bfcl-eval/mini-extra host deps"
+            "'pilot' aggregates harbor/docker/bfcl/mini-extra host deps"
         ),
     )
     doctor.set_defaults(handler=_doctor_run)
@@ -1041,7 +1048,10 @@ def _build_parser() -> argparse.ArgumentParser:
         "--status",
         choices=get_args(LiveRunStatus),
         default="registered",
-        help="Run status (default: registered)",
+        help=(
+            "Run status (default: registered; terminal statuses require "
+            "valid non-empty EvidenceRecord JSONL)"
+        ),
     )
     evidence_register.add_argument(
         "--notes",

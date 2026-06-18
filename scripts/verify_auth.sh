@@ -10,6 +10,11 @@ die() {
   exit 1
 }
 
+curl_probe() {
+  curl --noproxy "127.0.0.1,localhost,::1,0.0.0.0,172.17.0.1,host.docker.internal" \
+    --fail --silent --show-error --max-time 10 "$@"
+}
+
 mask_tail() {
   local v="${1:-}"
   local n="${#v}"
@@ -39,7 +44,7 @@ if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
   anthropic_base="${ANTHROPIC_BASE_URL:-https://api.anthropic.com/v1}"
   anthropic_url="$(models_url_from_base "${anthropic_base}")"
   warn "probing Anthropic at ${anthropic_url} (key $(mask_tail "${ANTHROPIC_API_KEY}"))"
-  if ! curl --fail --silent --show-error --max-time 10 \
+  if ! curl_probe \
     -H "x-api-key: ${ANTHROPIC_API_KEY}" \
     -H "anthropic-version: 2023-06-01" \
     "${anthropic_url}" >/dev/null; then
@@ -51,7 +56,7 @@ if [ -n "${OPENAI_API_KEY:-}" ]; then
   openai_base="${OPENAI_BASE_URL:-https://api.openai.com/v1}"
   openai_url="$(models_url_from_base "${openai_base}")"
   warn "probing OpenAI at ${openai_url} (key $(mask_tail "${OPENAI_API_KEY}"))"
-  if ! curl --fail --silent --show-error --max-time 10 \
+  if ! curl_probe \
     -H "Authorization: Bearer ${OPENAI_API_KEY}" \
     -H "Content-Type: application/json" \
     "${openai_url}" >/dev/null; then
@@ -64,7 +69,7 @@ if [ -n "${MOONSHOT_API_KEY:-}" ]; then
   base="${base%/}"
   url="${base}/models"
   warn "probing Moonshot at ${url} (key $(mask_tail "${MOONSHOT_API_KEY}"))"
-  if ! curl --fail --silent --show-error --max-time 10 \
+  if ! curl_probe \
     -H "Authorization: Bearer ${MOONSHOT_API_KEY}" \
     "${url}" >/dev/null; then
     die "Moonshot credential probe failed (HTTP)"

@@ -10,6 +10,7 @@ import pytest
 from pydantic import ValidationError
 
 from bencheval.cli import main
+from bencheval.evidence import EvidenceRecord
 from bencheval.exceptions import LiveRunManifestError
 from bencheval.live_run_manifest import (
     LIVE_RUN_SCHEMA_VERSION,
@@ -39,6 +40,25 @@ def _record(**overrides: object) -> LiveRunRecord:
     }
     base.update(overrides)
     return LiveRunRecord(**base)
+
+
+def _write_evidence(
+    path: Path,
+    *,
+    run_id: str = "tb-claude-code-haiku-one-20260618T150500Z",
+) -> None:
+    record = EvidenceRecord(
+        run_id=run_id,
+        task_id="terminal-bench/fix-git",
+        model_id="claude-3-5-haiku",
+        execution_profile="E2",
+        primary_pass=True,
+        partial_score=1.0,
+        cost_usd=0.01,
+        latency_sec=12.0,
+        created_at=_TS,
+    )
+    path.write_text(record.model_dump_json() + "\n", encoding="utf-8")
 
 
 def test_schema_version_is_live_run_v1() -> None:
@@ -175,7 +195,7 @@ def test_cli_register_appends_record(tmp_path: Path) -> None:
     manifest = tmp_path / "manifests" / "runs.jsonl"
     evidence = tmp_path / "evidence" / "tb-haiku.jsonl"
     evidence.parent.mkdir(parents=True)
-    evidence.write_text("", encoding="utf-8")
+    _write_evidence(evidence)
 
     code = main(
         [
