@@ -53,9 +53,14 @@ matrix, in this order.
 
 ### 2a. Credential probe — `scripts/verify_auth.sh`
 
-`verify_auth.sh` does a real HTTP `/v1/models` (or Moonshot equivalent) call
+`verify_auth.sh` prefers ByteLLM when `BYTELLM_API_KEY` or
+`BYTELLM_PROXY_API_KEY` is set. That path probes the protected
+`/v1/messages/count_tokens` endpoint with bearer and `x-api-key` headers, so a
+stale proxy key fails before the live matrix starts. When no ByteLLM key is
+set, it falls back to a real HTTP `/v1/models` (or Moonshot equivalent) call
 against each baseline provider whose key is set:
 
+- `BYTELLM_API_KEY` / `BYTELLM_PROXY_API_KEY` → `${BYTELLM_BASE_URL}` or the root derived from `OPENAI_BASE_URL`
 - `ANTHROPIC_API_KEY` → `https://api.anthropic.com/v1/models`
 - `OPENAI_API_KEY` → `https://api.openai.com/v1/models`
 - `MOONSHOT_API_KEY` → `${MOONSHOT_BASE_URL:-https://api.moonshot.ai/v1}/models`
@@ -100,13 +105,18 @@ curl -fsS --max-time 10 https://api.openai.com/v1/models -H "Authorization: Bear
 bash scripts/verify_auth.sh
 ```
 
-If you point providers at a local router/gateway (e.g. an `ops-server` /
-LiteLLM-style proxy on `127.0.0.1:4000`), keep that host in `NO_PROXY` so the
-proxy is not double-applied, and set the matching `*_BASE_URL` env var
-(`OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, `MOONSHOT_BASE_URL`). For
-Anthropic-compatible routers that require a top-level `system` field, set
+If you point providers at ByteLLM on `127.0.0.1:4000`, keep that host in
+`NO_PROXY` so the proxy is not double-applied. Use `BYTELLM_API_KEY` as the
+client proxy key. The matrix maps it to `ANTHROPIC_AUTH_TOKEN` for Claude Code
+and to the Codex provider key as **dummy runtime credentials**; the host shim
+injects the real ByteLLM key upstream via `BENCHEVAL_SHIM_AUTH_TOKEN_ENV`.
+This avoids exposing the real key through Harbor `docker compose exec -e ...`
+process arguments. The matrix also derives `ANTHROPIC_BASE_URL` from
+`OPENAI_BASE_URL` when only the `/v1` URL is set.
+For Anthropic-compatible routers that require a top-level `system` field, set
 `BENCHEVAL_ANTHROPIC_SYSTEM_ROLE_SHIM=1` (the matrix then starts
-`bencheval.anthropic_role_shim` and rewrites `ANTHROPIC_BASE_URL`).
+`bencheval.anthropic_role_shim` and rewrites `ANTHROPIC_BASE_URL` for
+containers).
 
 ### 2c. One-shot combined check
 
@@ -126,13 +136,15 @@ uv run bencheval doctor --profile pilot --model "${BENCHEVAL_PILOT_MODEL}"
 
 ```bash
 cd /path/to/BenchEval
-export BENCHEVAL_PILOT_MODEL='openai/your-model'        # required
-# Optional: split Anthropic vs Responses router aliases
-export BENCHEVAL_PILOT_CLAUDE_MODEL='anthropic/your-claude'
-export BENCHEVAL_PILOT_CODEX_MODEL='openai/your-responses'
+export BYTELLM_API_KEY='sk-...'                         # latest proxy key
+export BYTELLM_BASE_URL='http://127.0.0.1:4000'         # or set OPENAI_BASE_URL=http://.../v1
+export BENCHEVAL_PILOT_MODEL='gpt-5.3-codex-2026-02-24'
+export BENCHEVAL_PILOT_CLAUDE_MODEL='gpt-5.3-codex-2026-02-24'
+export BENCHEVAL_PILOT_CODEX_MODEL='gpt-5.3-codex-2026-02-24'
 
 # Optional: Anthropic system-role shim, npm registry override, tool allowlist
 export BENCHEVAL_ANTHROPIC_SYSTEM_ROLE_SHIM=1
+export BENCHEVAL_SHIM_AUTH_TOKEN_ENV=BYTELLM_PROXY_API_KEY
 export BENCHEVAL_CLAUDE_CODE_NPM_REGISTRY='https://registry.npmjs.org/'
 export BENCHEVAL_CLAUDE_CODE_ALLOWED_TOOLS='Bash,Read,Write'
 

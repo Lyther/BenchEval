@@ -20,6 +20,11 @@ class _OkHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b"{}")
 
+    def do_POST(self) -> None:
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'{"input_tokens":1}')
+
     def log_message(self, format: str, *args: object) -> None:
         return
 
@@ -31,7 +36,13 @@ def _run_verify_auth(
 ) -> subprocess.CompletedProcess[str]:
     script = repo_root / "scripts" / "verify_auth.sh"
     merged = {**os.environ, **env}
-    for drop in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "MOONSHOT_API_KEY"):
+    for drop in (
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "MOONSHOT_API_KEY",
+        "BYTELLM_API_KEY",
+        "BYTELLM_PROXY_API_KEY",
+    ):
         if drop not in env:
             merged.pop(drop, None)
     return subprocess.run(
@@ -104,6 +115,45 @@ def test_verify_auth_routes_openai_base_url() -> None:
         server.shutdown()
 
     assert proc.returncode == 0, proc.stderr
+
+
+def test_verify_auth_prefers_bytellm_key_and_probes_protected_route() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    seen: dict[str, str] = {}
+
+    class Handler(_OkHandler):
+        def do_POST(self) -> None:
+            seen["path"] = self.path
+            seen["authorization"] = self.headers.get("Authorization", "")
+            seen["x_api_key"] = self.headers.get("x-api-key", "")
+            super().do_POST()
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        secret = "bytellm-secret-key-ABCD"
+        proc = _run_verify_auth(
+            repo_root,
+            env={
+                "BYTELLM_API_KEY": secret,
+                "OPENAI_API_KEY": "stale-openai-key",
+                "OPENAI_BASE_URL": f"http://127.0.0.1:{port}/v1",
+                "http_proxy": "http://127.0.0.1:9",
+                "https_proxy": "http://127.0.0.1:9",
+            },
+        )
+    finally:
+        server.shutdown()
+
+    assert proc.returncode == 0, proc.stderr
+    assert seen["path"] == "/v1/messages/count_tokens"
+    assert seen["authorization"] == f"Bearer {secret}"
+    assert seen["x_api_key"] == secret
+    assert secret not in proc.stderr + proc.stdout
+    assert "stale-openai-key" not in proc.stderr + proc.stdout
+    assert "****ABCD" in proc.stderr
 
 
 def test_cli_register_accepts_status_passed(tmp_path: Path) -> None:

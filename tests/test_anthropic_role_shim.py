@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from bencheval.anthropic_role_shim import normalize_anthropic_payload
+from bencheval.anthropic_role_shim import _forward_headers, normalize_anthropic_payload
 
 
 def test_normalize_payload_without_system_role_is_unchanged() -> None:
@@ -49,3 +49,21 @@ def test_normalize_appends_existing_system_prompt() -> None:
 
     assert normalized["system"] == "existing\n\nextra"
     assert normalized["messages"] == [{"role": "user", "content": "hello"}]
+
+
+def test_forward_headers_inject_auth_without_preserving_host() -> None:
+    headers = _forward_headers(
+        {
+            "host": "container.local",
+            "Authorization": "Bearer dummy",
+            "x-api-key": "dummy",
+            "accept-encoding": "gzip",
+        },
+        auth_token="real-token",
+    )
+
+    assert headers["Authorization"] == "Bearer real-token"
+    assert headers["x-api-key"] == "real-token"
+    assert headers["content-type"] == "application/json"
+    assert headers["accept-encoding"] == "identity"
+    assert "host" not in {k.lower(): v for k, v in headers.items()}

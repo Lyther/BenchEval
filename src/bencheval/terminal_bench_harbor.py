@@ -86,21 +86,20 @@ def harbor_agent_for_runtime(runtime_id: str) -> str:
 
 
 def _write_proxy_env_file(artifacts_dir: Path) -> Path | None:
-    if os.environ.get(_PROXY_FORWARD_FLAG) != "1":
-        return None
-
     lines: list[str] = []
-    for name in _PROXY_ENV_NAMES:
-        value = os.environ.get(name)
-        if not value or "\n" in value:
-            continue
-        lines.append(f"{name}={value}")
+    if os.environ.get(_PROXY_FORWARD_FLAG) == "1":
+        for name in _PROXY_ENV_NAMES:
+            value = os.environ.get(name)
+            if not value or "\n" in value:
+                continue
+            lines.append(f"{name}={value}")
     if not lines:
         return None
 
     env_file = artifacts_dir / ".bencheval-harbor-proxy.env"
     env_file.parent.mkdir(parents=True, exist_ok=True)
     env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    env_file.chmod(0o600)
     return env_file
 
 
@@ -123,6 +122,9 @@ def _write_codex_provider_config(artifacts_dir: Path) -> Path | None:
     base_url = os.environ.get("OPENAI_BASE_URL")
     if not base_url:
         return None
+    env_key = os.environ.get("BENCHEVAL_CODEX_ENV_KEY")
+    if not env_key:
+        env_key = "OPENAI_API_KEY"
 
     config_file = artifacts_dir / ".bencheval-codex-config.toml"
     config_file.parent.mkdir(parents=True, exist_ok=True)
@@ -134,7 +136,7 @@ def _write_codex_provider_config(artifacts_dir: Path) -> Path | None:
                 f"[model_providers.{_CODEX_PROVIDER_ID}]",
                 f"name = {_toml_string('ByteLLM')}",
                 f"base_url = {_toml_string(base_url)}",
-                f"env_key = {_toml_string('OPENAI_API_KEY')}",
+                f"env_key = {_toml_string(env_key)}",
                 "supports_websockets = false",
                 f"wire_api = {_toml_string('responses')}",
                 "",
@@ -173,9 +175,9 @@ def build_harbor_run_command(
         "run",
         "--yes",
     ]
-    proxy_env_file = _write_proxy_env_file(artifacts_dir)
-    if proxy_env_file is not None:
-        cmd.extend(["--env-file", str(proxy_env_file.resolve())])
+    env_file = _write_proxy_env_file(artifacts_dir)
+    if env_file is not None:
+        cmd.extend(["--env-file", str(env_file.resolve())])
     cmd.extend(_agent_proxy_args())
     if plan.runtime_id == "claude-code":
         cmd.extend(["--agent-import-path", CLAUDE_CODE_NPM_IMPORT_PATH])

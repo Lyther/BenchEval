@@ -189,3 +189,45 @@ def test_export_run_bundle(tmp_path: Path) -> None:
     assert (bundle_dir / "manifest.json").is_file()
     assert (bundle_dir / "SHA256SUMS.txt").is_file()
     assert (tmp_path / "bundle.tar.gz").is_file()
+
+
+def test_export_run_bundle_skips_unreadable_raw_file(tmp_path: Path) -> None:
+    evidence = tmp_path / "ev.jsonl"
+    JsonlEvidenceSink().append_jsonl(evidence, _cp_record(instance_id="tb-001"))
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    (raw / "readable.txt").write_text("ok\n", encoding="utf-8")
+    unreadable = raw / "unreadable.jsonl"
+    unreadable.write_text("private session\n", encoding="utf-8")
+    unreadable.chmod(0)
+    try:
+        try:
+            unreadable.read_text(encoding="utf-8")
+        except PermissionError:
+            pass
+        else:
+            pytest.skip("chmod did not make raw fixture unreadable")
+
+        bundle_dir = tmp_path / "bundle"
+        code = main(
+            [
+                "export-run",
+                "--evidence",
+                str(evidence),
+                "--raw-dir",
+                str(raw),
+                "--output",
+                str(bundle_dir),
+                "--redaction",
+                "private",
+            ],
+        )
+    finally:
+        unreadable.chmod(0o600)
+
+    assert code == 0
+    assert (bundle_dir / "raw" / "readable.txt").read_text(encoding="utf-8") == "ok\n"
+    skipped = (bundle_dir / "raw_skipped.txt").read_text(encoding="utf-8")
+    assert "unreadable.jsonl" in skipped
+    manifest = json.loads((bundle_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["raw_skipped_count"] == 1

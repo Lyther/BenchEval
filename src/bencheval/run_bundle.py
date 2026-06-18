@@ -137,6 +137,32 @@ def _redact_compare_markdown(text: str) -> str:
     return "\n".join(lines) + ("\n" if text.endswith("\n") else "")
 
 
+def _copy_raw_tree(src: Path, dest: Path) -> list[str]:
+    skipped: list[str] = []
+
+    def copy_path(path: Path) -> None:
+        rel = path.relative_to(src)
+        target = dest / rel
+        if path.is_symlink():
+            skipped.append(f"{rel.as_posix()}\tsymlink")
+            return
+        try:
+            if path.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                for child in path.iterdir():
+                    copy_path(child)
+                return
+            if path.is_file():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(path, target)
+        except OSError as e:
+            reason = e.strerror or str(e)
+            skipped.append(f"{rel.as_posix()}\t{reason}")
+
+    copy_path(src)
+    return skipped
+
+
 def export_run_bundle(
     *,
     evidence_path: Path,
@@ -196,7 +222,16 @@ def export_run_bundle(
         else:
             src = raw_dir.resolve()
             if src.is_dir():
-                shutil.copytree(src, bundle_root / "raw", dirs_exist_ok=True)
+                skipped_raw = _copy_raw_tree(src, bundle_root / "raw")
+                if skipped_raw:
+                    (bundle_root / "raw_skipped.txt").write_text(
+                        "\n".join(skipped_raw) + "\n",
+                        encoding="utf-8",
+                    )
+                    summary_lines.append(
+                        f"- Raw artifacts skipped: {len(skipped_raw)} (see `raw_skipped.txt`).",
+                    )
+                    summary_lines.append("")
 
     (bundle_root / "SUMMARY.md").write_text("\n".join(summary_lines) + "\n", encoding="utf-8")
 
@@ -206,6 +241,12 @@ def export_run_bundle(
             compare_text = _redact_compare_markdown(compare_text)
         (bundle_root / "compare_report.md").write_text(compare_text, encoding="utf-8")
 
+    raw_skipped_path = bundle_root / "raw_skipped.txt"
+    raw_skipped_count = (
+        len(raw_skipped_path.read_text(encoding="utf-8").splitlines())
+        if raw_skipped_path.is_file()
+        else 0
+    )
     manifest: dict[str, object] = {
         "schema_version": "run_bundle_v1",
         "generated_at": datetime.now(tz=UTC).isoformat(),
@@ -217,6 +258,7 @@ def export_run_bundle(
             "baseline": "baseline.jsonl" if compare_baseline else None,
             "current": "current.jsonl" if compare_current else None,
         },
+        "raw_skipped_count": raw_skipped_count,
     }
     if redaction == "private":
         manifest["host"] = socket.gethostname()

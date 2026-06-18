@@ -76,6 +76,7 @@ def normalize_anthropic_payload(payload: JsonObject) -> JsonObject:
 class _ShimServer(ThreadingHTTPServer):
     upstream: str
     timeout_sec: float
+    auth_token_env: str | None
 
     def __init__(
         self,
@@ -84,10 +85,30 @@ class _ShimServer(ThreadingHTTPServer):
         *,
         upstream: str,
         timeout_sec: float,
+        auth_token_env: str | None,
     ) -> None:
         super().__init__(server_address, request_handler_class)
         self.upstream = upstream.rstrip("/") + "/"
         self.timeout_sec = timeout_sec
+        self.auth_token_env = auth_token_env
+
+
+def _forward_headers(
+    source_headers: Mapping[str, str],
+    *,
+    auth_token: str | None,
+) -> dict[str, str]:
+    headers = {
+        key: value
+        for key, value in source_headers.items()
+        if key.lower() not in _REQUEST_DROP_HEADERS
+    }
+    headers["content-type"] = "application/json"
+    headers["accept-encoding"] = "identity"
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+        headers["x-api-key"] = auth_token
+    return headers
 
 
 class _AnthropicRoleShimHandler(BaseHTTPRequestHandler):
@@ -134,13 +155,12 @@ class _AnthropicRoleShimHandler(BaseHTTPRequestHandler):
 
     def _forward(self, body: bytes) -> None:
         target = urljoin(self.server.upstream, self.path.lstrip("/"))
-        headers = {
-            key: value
-            for key, value in self.headers.items()
-            if key.lower() not in _REQUEST_DROP_HEADERS
-        }
-        headers["content-type"] = "application/json"
-        headers["accept-encoding"] = "identity"
+        auth_token = None
+        if self.server.auth_token_env is not None:
+            import os
+
+            auth_token = os.environ.get(self.server.auth_token_env)
+        headers = _forward_headers(self.headers, auth_token=auth_token)
         request = Request(target, data=body, headers=headers, method="POST")
         try:
             with urlopen(request, timeout=self.server.timeout_sec) as response:
@@ -186,12 +206,14 @@ def run_server(
     port: int,
     upstream: str,
     timeout_sec: float,
+    auth_token_env: str | None = None,
 ) -> None:
     server = _ShimServer(
         (host, port),
         _AnthropicRoleShimHandler,
         upstream=upstream,
         timeout_sec=timeout_sec,
+        auth_token_env=auth_token_env,
     )
     try:
         server.serve_forever()
@@ -207,6 +229,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--upstream", required=True)
     parser.add_argument("--timeout-sec", type=float, default=120.0)
+    parser.add_argument(
+        "--auth-token-env",
+        default=None,
+        help="Environment variable whose value is injected as bearer and x-api-key auth upstream",
+    )
     return parser
 
 
@@ -217,6 +244,7 @@ def main() -> None:
         port=args.port,
         upstream=args.upstream,
         timeout_sec=args.timeout_sec,
+        auth_token_env=args.auth_token_env,
     )
 
 

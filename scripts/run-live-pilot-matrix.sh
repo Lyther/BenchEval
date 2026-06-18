@@ -13,6 +13,9 @@ readonly TB_CLAUDE_MODEL="${BENCHEVAL_PILOT_CLAUDE_MODEL:-${MODEL}}"
 readonly TB_CODEX_MODEL="${BENCHEVAL_PILOT_CODEX_MODEL:-${MODEL}}"
 readonly BFCL_MODEL="${BENCHEVAL_PILOT_BFCL_MODEL:-${MODEL}}"
 readonly SWE_MODEL="${BENCHEVAL_PILOT_SWE_MODEL:-${MODEL}}"
+readonly TB_EXPECTED_INSTANCES="${BENCHEVAL_PILOT_TB_EXPECTED_INSTANCES:-5}"
+readonly BFCL_EXPECTED_INSTANCES="${BENCHEVAL_PILOT_BFCL_EXPECTED_INSTANCES:-5}"
+readonly SWE_EXPECTED_INSTANCES="${BENCHEVAL_PILOT_SWE_EXPECTED_INSTANCES:-10}"
 export BENCHEVAL_HARBOR_FORWARD_PROXY="${BENCHEVAL_HARBOR_FORWARD_PROXY:-1}"
 
 PASSED=0
@@ -33,17 +36,67 @@ trap cleanup EXIT
 cd "${REPO_ROOT}"
 mkdir -p results/evidence results/raw results/reports results/bundles results/preflight results/compare
 
+root_from_v1_base() {
+    local base="${1%/}"
+    if [[ "${base}" == */v1 ]]; then
+        printf '%s\n' "${base%/v1}"
+    else
+        printf '%s\n' "${base}"
+    fi
+}
+
+v1_from_root_base() {
+    local base="${1%/}"
+    if [[ "${base}" == */v1 ]]; then
+        printf '%s\n' "${base}"
+    else
+        printf '%s/v1\n' "${base}"
+    fi
+}
+
+configure_bytellm_client_env() {
+    local key="${BYTELLM_API_KEY:-${BYTELLM_PROXY_API_KEY:-}}"
+    if [[ -n "${key}" ]]; then
+        export BYTELLM_PROXY_API_KEY="${key}"
+        export OPENAI_API_KEY="${BENCHEVAL_DUMMY_RUNTIME_API_KEY:-bencheval-local-shim}"
+        export ANTHROPIC_API_KEY="${BENCHEVAL_DUMMY_RUNTIME_API_KEY:-bencheval-local-shim}"
+        export ANTHROPIC_AUTH_TOKEN="${BENCHEVAL_DUMMY_RUNTIME_API_KEY:-bencheval-local-shim}"
+        export BENCHEVAL_SHIM_AUTH_TOKEN_ENV="${BENCHEVAL_SHIM_AUTH_TOKEN_ENV:-BYTELLM_PROXY_API_KEY}"
+        export BENCHEVAL_OPENAI_VIA_ROLE_SHIM="${BENCHEVAL_OPENAI_VIA_ROLE_SHIM:-1}"
+        export BENCHEVAL_CODEX_ENV_KEY="${BENCHEVAL_CODEX_ENV_KEY:-OPENAI_API_KEY}"
+    fi
+
+    local root_base="${BYTELLM_BASE_URL:-}"
+    if [[ -z "${root_base}" && -n "${ANTHROPIC_BASE_URL:-}" ]]; then
+        root_base="$(root_from_v1_base "${ANTHROPIC_BASE_URL}")"
+    fi
+    if [[ -z "${root_base}" && -n "${OPENAI_BASE_URL:-}" ]]; then
+        root_base="$(root_from_v1_base "${OPENAI_BASE_URL}")"
+    fi
+    if [[ -n "${root_base}" ]]; then
+        export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-${root_base}}"
+        export OPENAI_BASE_URL="${OPENAI_BASE_URL:-$(v1_from_root_base "${root_base}")}"
+        export BENCHEVAL_ANTHROPIC_UPSTREAM="${BENCHEVAL_ANTHROPIC_UPSTREAM:-${root_base}}"
+    fi
+}
+
 start_anthropic_role_shim() {
     [[ "${BENCHEVAL_ANTHROPIC_SYSTEM_ROLE_SHIM:-}" == "1" ]] || return 0
 
-    local host="${BENCHEVAL_ANTHROPIC_SYSTEM_ROLE_SHIM_HOST:-127.0.0.1}"
     local port="${BENCHEVAL_ANTHROPIC_SYSTEM_ROLE_SHIM_PORT:-4011}"
     local upstream="${BENCHEVAL_ANTHROPIC_UPSTREAM:-http://127.0.0.1:4000}"
     local docker_host="${BENCHEVAL_DOCKER_HOST_GATEWAY:-172.17.0.1}"
+    local host="${BENCHEVAL_ANTHROPIC_SYSTEM_ROLE_SHIM_HOST:-${docker_host}}"
     local log="results/raw/anthropic-role-shim-${STAMP}.log"
 
-    uv run --no-sync python -m bencheval.anthropic_role_shim \
-        --host "${host}" --port "${port}" --upstream "${upstream}" >"${log}" 2>&1 &
+    local shim_cmd=(
+        uv run --no-sync python -m bencheval.anthropic_role_shim
+        --host "${host}" --port "${port}" --upstream "${upstream}"
+    )
+    if [[ -n "${BENCHEVAL_SHIM_AUTH_TOKEN_ENV:-}" ]]; then
+        shim_cmd+=(--auth-token-env "${BENCHEVAL_SHIM_AUTH_TOKEN_ENV}")
+    fi
+    "${shim_cmd[@]}" >"${log}" 2>&1 &
     SHIM_PID="$!"
 
     local ready=0
@@ -60,6 +113,9 @@ start_anthropic_role_shim() {
     fi
 
     export ANTHROPIC_BASE_URL="http://${docker_host}:${port}"
+    if [[ "${BENCHEVAL_OPENAI_VIA_ROLE_SHIM:-}" == "1" ]]; then
+        export OPENAI_BASE_URL="${ANTHROPIC_BASE_URL%/}/v1"
+    fi
     printf 'Anthropic role shim enabled: upstream=%s container_base=%s\n' \
         "${upstream}" "${ANTHROPIC_BASE_URL}"
 }
@@ -90,6 +146,37 @@ emit_artifacts() {
     fi
 }
 
+evidence_record_count() {
+    local evidence="$1"
+    if [[ ! -s "${evidence}" ]]; then
+        printf '0\n'
+        return 0
+    fi
+    uv run --no-sync python - "${evidence}" <<'PY'
+from pathlib import Path
+import sys
+
+from bencheval.evidence import read_evidence_jsonl
+
+print(len(read_evidence_jsonl(Path(sys.argv[1]))))
+PY
+}
+
+require_evidence_records() {
+    local evidence="$1"
+    local expected="$2"
+    local tag="$3"
+    local count
+
+    count="$(evidence_record_count "${evidence}")"
+    if [[ "${count}" -ge "${expected}" ]]; then
+        return 0
+    fi
+    printf 'error: %s produced %s/%s evidence records\n' \
+        "${tag}" "${count}" "${expected}" >&2
+    return 1
+}
+
 run_tb() {
     local runtime="$1"
     local model="${MODEL}"
@@ -108,14 +195,19 @@ run_tb() {
             --reason "harbor doctor failed"
         return 1
     fi
-    if ! uv run --no-sync bencheval run \
+    local run_status=0
+    uv run --no-sync bencheval run \
         --benchmark terminal-bench --slice smoke-5 --runtime "${runtime}" \
-        --model "${model}" --output "${evidence}" --artifacts-dir "${raw}"; then
-        emit_artifacts "${tag}" "${evidence}" "${raw}" || true
+        --model "${model}" --output "${evidence}" --artifacts-dir "${raw}" || run_status=$?
+    emit_artifacts "${tag}" "${evidence}" "${raw}" || true
+    if [[ "${run_status}" -ne 0 ]]; then
+        printf 'note: %s exited %s; checking evidence completeness\n' \
+            "${tag}" "${run_status}" >&2
+    fi
+    if ! require_evidence_records "${evidence}" "${TB_EXPECTED_INSTANCES}" "${tag}"; then
         FAILED=$((FAILED + 1))
         return 1
     fi
-    emit_artifacts "${tag}" "${evidence}" "${raw}"
     PASSED=$((PASSED + 1))
 }
 
@@ -142,16 +234,19 @@ run_bfcl() {
             --reason "bfcl model is not supported by bfcl models; set BENCHEVAL_PILOT_BFCL_MODEL"
         return 1
     fi
-    if ! uv run --no-sync bencheval run \
+    local run_status=0
+    uv run --no-sync bencheval run \
         --benchmark bfcl-v4 --slice smoke-5 --runtime native-api \
-        --model "${BFCL_MODEL}" --output "${evidence}" --artifacts-dir "${raw}"; then
+        --model "${BFCL_MODEL}" --output "${evidence}" --artifacts-dir "${raw}" || run_status=$?
+    emit_artifacts "${tag}" "${evidence}" "${raw}" || true
+    if [[ "${run_status}" -ne 0 ]]; then
+        printf 'note: %s exited %s; checking evidence completeness\n' \
+            "${tag}" "${run_status}" >&2
+    fi
+    if ! require_evidence_records "${evidence}" "${BFCL_EXPECTED_INSTANCES}" "${tag}"; then
         FAILED=$((FAILED + 1))
         return 1
     fi
-    uv run --no-sync bencheval report "${evidence}" --output "results/reports/${tag}.md"
-    uv run --no-sync bencheval export-run \
-        --evidence "${evidence}" --raw-dir "${raw}" \
-        --output "results/bundles/${tag}" --redaction private
     PASSED=$((PASSED + 1))
 }
 
@@ -173,22 +268,26 @@ run_swe() {
             --reason "docker not available"
         return 1
     fi
-    if ! uv run --no-sync bencheval run \
+    local run_status=0
+    uv run --no-sync bencheval run \
         --benchmark swe-bench-verified --slice swe-bench-verified-smoke-10 \
         --runtime mini-swe-agent --model "${SWE_MODEL}" \
-        --output "${evidence}" --artifacts-dir "${raw}"; then
+        --output "${evidence}" --artifacts-dir "${raw}" || run_status=$?
+    emit_artifacts "${tag}" "${evidence}" "${raw}" || true
+    if [[ "${run_status}" -ne 0 ]]; then
+        printf 'note: %s exited %s; checking evidence completeness\n' \
+            "${tag}" "${run_status}" >&2
+    fi
+    if ! require_evidence_records "${evidence}" "${SWE_EXPECTED_INSTANCES}" "${tag}"; then
         FAILED=$((FAILED + 1))
         return 1
     fi
-    uv run --no-sync bencheval report "${evidence}" --output "results/reports/${tag}.md"
-    uv run --no-sync bencheval export-run \
-        --evidence "${evidence}" --raw-dir "${raw}" \
-        --output "results/bundles/${tag}" --redaction private
     PASSED=$((PASSED + 1))
 }
 
 printf 'Pilot matrix stamp=%s default_model=%s tb_claude_model=%s tb_codex_model=%s\n' \
     "${STAMP}" "${MODEL}" "${TB_CLAUDE_MODEL}" "${TB_CODEX_MODEL}"
+configure_bytellm_client_env
 start_anthropic_role_shim
 
 TB_CC=0

@@ -117,6 +117,32 @@ def test_build_harbor_run_command_mounts_codex_provider_config(
     assert "sk-test-not-in-command" not in config
 
 
+def test_build_harbor_run_command_uses_bytellm_key_for_codex_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_BASE_URL", "http://172.17.0.1:4000/v1")
+    monkeypatch.setenv("BENCHEVAL_CODEX_ENV_KEY", "BYTELLM_API_KEY")
+    monkeypatch.setenv("BYTELLM_API_KEY", "sk-bytellm-not-in-command")
+    plan = plan_control_plane(
+        benchmark_id="terminal-bench",
+        slice_id="smoke-5",
+        runtime_id="codex-cli",
+        model_id="gpt-5.3-codex-2026-02-24",
+    )
+
+    cmd = build_harbor_run_command(
+        plan=plan,
+        instance_id="fix-git",
+        artifacts_dir=tmp_path,
+    )
+
+    config = (tmp_path / ".bencheval-codex-config.toml").read_text(encoding="utf-8")
+    assert 'env_key = "BYTELLM_API_KEY"' in config
+    assert "sk-bytellm-not-in-command" not in " ".join(cmd)
+    assert "sk-bytellm-not-in-command" not in config
+
+
 def test_build_harbor_run_command_forwards_proxy_with_env_file(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -148,7 +174,49 @@ def test_build_harbor_run_command_forwards_proxy_with_env_file(
     assert "--env-file" in cmd
     env_file = Path(cmd[cmd.index("--env-file") + 1])
     assert env_file.read_text(encoding="utf-8") == "https_proxy=http://proxy.example:8118\n"
+    assert env_file.name == ".bencheval-harbor-proxy.env"
+    assert env_file.stat().st_mode & 0o777 == 0o600
     assert "https_proxy=http://proxy.example:8118" in cmd
+
+
+def test_build_harbor_run_command_does_not_forward_bytellm_auth_with_env_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secret = "sk-bytellm-not-in-command"
+    for name in (
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "no_proxy",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("BENCHEVAL_HARBOR_FORWARD_PROXY", "1")
+    monkeypatch.setenv("https_proxy", "http://proxy.example:8118")
+    monkeypatch.setenv("BYTELLM_API_KEY", secret)
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", secret)
+    plan = plan_control_plane(
+        benchmark_id="terminal-bench",
+        slice_id="smoke-5",
+        runtime_id="claude-code",
+        model_id="gpt-5.3-codex-2026-02-24",
+    )
+
+    cmd = build_harbor_run_command(
+        plan=plan,
+        instance_id="fix-git",
+        artifacts_dir=tmp_path,
+    )
+
+    assert "--env-file" in cmd
+    env_file = Path(cmd[cmd.index("--env-file") + 1])
+    content = env_file.read_text(encoding="utf-8")
+    assert "https_proxy=http://proxy.example:8118\n" in content
+    assert secret not in content
+    assert env_file.stat().st_mode & 0o777 == 0o600
+    assert secret not in " ".join(cmd)
 
 
 def test_build_harbor_run_command_forwards_agent_no_proxy(

@@ -7,6 +7,8 @@
 - `verify-performance.sh` — micro-benchmarks for planner/catalog/compare hot paths.
 - `check-production-v1.sh` — internal pilot CI gate (`make check-production-v1`).
 - `run-live-pilot-matrix.sh` — Phase B live TB/BFCL/SWE matrix; writes `results/preflight/` on blockers.
+  Set `BYTELLM_API_KEY` for ByteLLM pilots; the script keeps real auth on the
+  host shim and passes only dummy runtime keys into Harbor containers.
   Set `BENCHEVAL_ANTHROPIC_SYSTEM_ROLE_SHIM=1` for Anthropic-compatible
   routers that require top-level `system` instead of `messages[].role=system`.
   Set `BENCHEVAL_CLAUDE_CODE_NPM_REGISTRY` when the default npm registry is
@@ -26,7 +28,9 @@
 
 ## Ops / preflight
 
-- `verify_auth.sh` — probe baseline provider credentials (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `MOONSHOT_API_KEY`).
+- `verify_auth.sh` — probe ByteLLM proxy auth (`BYTELLM_API_KEY` /
+  `BYTELLM_PROXY_API_KEY`) or baseline provider credentials
+  (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `MOONSHOT_API_KEY`).
 - `preflight_disk.sh` — disk check for local `results/raw` (skipped when `BENCHEVAL_RUNTIME=harbor`).
 - `run_provider_smoke.sh` — bounded Inspect E0 provider smoke; runs `bencheval doctor` per model; skips known blockers only; fails on invalid smoke config or unexpected doctor errors.
 
