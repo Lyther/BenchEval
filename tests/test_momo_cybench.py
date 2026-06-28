@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -19,6 +20,7 @@ from bencheval.momo_cybench import (
     make_run_paths,
     validate_run_root,
 )
+from bencheval.replay import load_run_record
 
 
 def _write_run_root(root: Path, challenge_id: str = "lootstash") -> None:
@@ -145,14 +147,83 @@ def test_momo_live_with_fake_kilo_writes_evidence(
     assert code == 0
     out = capsys.readouterr().out
     assert "MOMO" in out
-    assert "FLAG: [redacted]" in out
+    # Canonical records are raw by default (flag_policy=show): the flag appears
+    # unchanged in both stdout and the events.jsonl file.
+    assert "FLAG{ok}" in out
     paths = make_run_paths(tmp_path / "results", run_id)
     rows = read_evidence_jsonl(paths.evidence_jsonl)
     assert len(rows) == 1
     assert rows[0].primary_pass is True
     assert rows[0].adapter_metadata["flag_check"] == "flag_match"
     assert paths.events_jsonl.is_file()
+    # The canonical events.jsonl must preserve the raw flag (no redaction).
+    events_text = paths.events_jsonl.read_text(encoding="utf-8")
+    assert "FLAG{ok}" in events_text
+    assert "[redacted]" not in events_text
+    record = load_run_record(paths.events_jsonl)
+    assert record.schema_version == "bencheval_run_record_v1"
+    assert record.header is not None
+    assert record.header.run_id == run_id
+    assert record.header.benchmark_id == "cybench"
+    assert record.footer is not None
+    expected_evidence_sha = hashlib.sha256(paths.evidence_jsonl.read_bytes()).hexdigest()
+    assert record.footer.evidence_sha256 == expected_evidence_sha
     assert paths.summary_json.is_file()
+
+
+def test_momo_live_with_redact_policy_preserves_raw_canonical(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """F006 regression: even with flag_policy=redact, canonical events.jsonl is raw."""
+    run_root = tmp_path / "run-root"
+    _write_run_root(run_root)
+    fake_kilo = tmp_path / "fake_kilo_redact.py"
+    _write_fake_kilo(fake_kilo)
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "\n".join(
+            [
+                'name: "momo-redact-test"',
+                'target_host: "vps.0xb105.com"',
+                'model: "ollama-cloud/glm-5.2"',
+                'variant: "max"',
+                f'kilo_argv_prefix: ["{sys.executable}", "{fake_kilo}"]',
+                "output_token_max: 131072",
+                "concurrency: 1",
+                "max_attempts: 1",
+                "remote_snapshot: false",
+                'flag_policy: "redact"',
+                "challenges:",
+                '  - id: "lootstash"',
+            ],
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    run_id = "momo-redact-test"
+    code = main(
+        [
+            "--config",
+            str(config),
+            "--run-root",
+            str(run_root),
+            "--results-root",
+            str(tmp_path / "results"),
+            "--run-id",
+            run_id,
+            "--no-color",
+        ],
+    )
+    assert code == 0
+    capsys.readouterr()  # consume stdout (may contain redacted display)
+    paths = make_run_paths(tmp_path / "results", run_id)
+    # The canonical events.jsonl must preserve the raw flag even with redact policy.
+    events_text = paths.events_jsonl.read_text(encoding="utf-8")
+    assert "FLAG{ok}" in events_text
+    assert "[redacted]" not in events_text
 
 
 def test_remote_snapshot_timeout_writes_marker(
@@ -210,7 +281,8 @@ def test_prepare_prompt_text_rewrites_archived_private_root(tmp_path: Path) -> N
     assert str(run_root.resolve() / "keys" / "lootstash") in prepared
 
 
-def test_terminal_sanitizer_redacts_embedded_flag_tokens() -> None:
+def test_public_presentation_sanitizer_redacts_embedded_flag_tokens() -> None:
+    """The sanitizer is for derived public artifacts only, not canonical records."""
     text = "Decoded candidate output. FLAG: HTB{example_secret} found in memory"
     assert _sanitize_for_terminal(text, "redact") == (
         "Decoded candidate output. FLAG: [redacted-flag] found in memory"
@@ -225,6 +297,7 @@ def test_momo_replay_prints_captured_display(
     events.write_text(
         json.dumps(
             {
+                "schema_version": "momo_event_v1",
                 "elapsed_sec": 0.0,
                 "kind": "pass",
                 "display": "[00:00:00] PASS     lootstash  flag verified",

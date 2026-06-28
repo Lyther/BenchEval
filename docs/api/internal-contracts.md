@@ -28,6 +28,8 @@ BenchEval has **no public HTTP surface**. Boundaries are **Python protocols** (c
 | [`src/bencheval/benchmark_registry.py`](../../src/bencheval/benchmark_registry.py) | `config/benchmarks.yaml` → `BenchmarkCatalog` (implements `BenchmarkCatalogSource`) |
 | [`src/bencheval/planner.py`](../../src/bencheval/planner.py) | Four-axis `RunPlan` builder (implements `RunPlanner`) |
 | [`src/bencheval/executor.py`](../../src/bencheval/executor.py) | Adapter dispatch (implements `AdapterDispatcher`) |
+| [`src/bencheval/replay.py`](../../src/bencheval/replay.py) | General-purpose raw run record/replay: v1 `RecordHeader`/`RecordEvent`/`RecordFooter` + legacy `LegacyMomoEvent`, `RunRecordWriter`, `load_run_record`, `replay`, `verify_bound_evidence` |
+| [`src/bencheval/presentation.py`](../../src/bencheval/presentation.py) | Derived public presentation helpers: `redact_for_public_presentation`, `strip_ansi` |
 
 ## CLI command surface (v0.3, frozen during impl)
 
@@ -48,7 +50,41 @@ bencheval run --task|--suite|--manifest ... --backend local|inspect|harbor      
 bencheval report <evidence.jsonl> --output <report.md>
 bencheval compare <baseline.jsonl> <current.jsonl> --format md|json
 bencheval export <evidence.jsonl> --format parquet|duckdb --output <warehouse/...>
+bencheval replay <events.jsonl> [--no-color] [--speed N] [--max-delay S] [--verify-evidence [evidence.jsonl]] [--format text|json]   # run record/replay (NEW)
 ```
+
+### Replay contract (general-purpose, production-ready)
+
+`bencheval replay` replays a captured run record (`events.jsonl`) to the terminal with original timing and colors, and can verify the evidence rows bound to that run.
+
+#### Canonical vs derived lanes (integrity policy)
+
+There are two lanes that must never be confused:
+
+- **Canonical run record** (`events.jsonl`): **raw, private, integrity-preserving**. It is the scoring/audit source of truth. It MAY contain flags, secrets, prompts, model outputs, tool calls, stack traces, filesystem paths, and challenge content. Redaction is forbidden here by default. `replay()` operates on this lane and prints exactly what was recorded.
+- **Derived public artifacts** (public reports, demo videos, shareable transcripts): MAY redact sensitive material via `redact_for_public_presentation()`, but they are never used as scoring truth and must carry provenance (source path/hash, redaction mode, generated time).
+
+#### Schema
+
+- **`bencheval_run_record_v1`** — production schema with `header`/`event`/`footer` record types, integrity binding (`run_id`, `benchmark_id`, optional `evidence_sha256` in header or footer), per-event monotonically increasing `seq`, and `redaction_policy: "none"` for canonical records.
+- **`momo_event_v1`** — legacy MOMO capture schema (flat event stream, no header). Accepted for backward compatibility; flagged `legacy_unbound` (no integrity binding) so old recordings stay usable without pretending they have audit-grade binding.
+- Schema-less lines are tolerated as `momo_event_v1` so existing captured files keep replaying. Mixed-schema files are rejected fast.
+
+#### Backward compatibility
+
+MOMO's `momo_cybench.replay()` delegates to the general module; `python -m bencheval.momo_cybench --replay <file>` still works. MOMO `EventSink` now writes **raw** records to `events.jsonl` (canonical) while applying `flag_policy` to console display only (derived presentation).
+
+#### `--verify-evidence [path]`
+
+`nargs="?"` — without a path argument, derives the sibling evidence file by convention (`<results_root>/evidence/<run_id>.jsonl`). With a path, uses it explicitly. Loads and cross-checks evidence rows against the run record (run_id, benchmark_id, instance_id, evidence_sha256). Prints a summary (`text`) or `{record, row_count, rows}` (`json`). This **verifies** bound evidence; it does not rerun verifiers or regenerate evidence.
+
+#### Redaction
+
+`redact_for_public_presentation()` lives in `bencheval.presentation` and is the helper for derived public artifacts only. It is NOT called by `replay()` or `load_run_record()`. The deprecated alias `sanitize_for_replay()` still works from `bencheval.replay` for old imports, but new code should import presentation helpers from `bencheval.presentation`.
+
+#### Idempotency
+
+`replay` writes only to stdout; no files mutated. `verify_bound_evidence` is read-only over evidence files. Both are safe to retry.
 
 ### Exit-code contract (frozen)
 

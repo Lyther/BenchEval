@@ -71,10 +71,6 @@ ANSI_COLORS: dict[EventKind, str] = {
 }
 
 FLAG_PATTERN = re.compile(r"(?im)^FLAG:\s*(?P<flag>\S[^\r\n]*)")
-EMBEDDED_FLAG_PATTERN = re.compile(r"\b[A-Z0-9_]+\{[^}\r\n]{1,240}\}")
-SECRETISH_PATTERN = re.compile(
-    r"(?i)(sk-[a-z0-9_\-]{8,}|api[_-]?key\s*[=:]\s*[^\s]+|authorization:\s*[^\s]+)",
-)
 LEGACY_PRIVATE_ROOT_ALIAS = "/tmp/bencheval-cybench-real-vps"
 
 
@@ -101,7 +97,7 @@ class MomoCybenchConfig(BaseModel):
     concurrency: int = Field(default=2, ge=1, le=10)
     max_attempts: int = Field(default=1, ge=1, le=3)
     pass_at_k_budget: int = Field(default=1, ge=1, le=3)
-    flag_policy: FlagPolicy = "redact"
+    flag_policy: FlagPolicy = "show"
     remote_snapshot: bool = True
     remote_snapshot_timeout_sec: float = Field(default=15.0, gt=0)
     challenges: list[MomoChallenge] = Field(min_length=1)
@@ -189,17 +185,66 @@ class TeeConsole:
 
 
 class EventSink:
-    """Terminal event writer with JSONL capture."""
+    """Terminal event writer with canonical (raw) v1 run-record capture.
 
-    def __init__(self, console: TeeConsole, path: Path, started_monotonic: float) -> None:
+    Uses :class:`bencheval.replay.RunRecordWriter` to write the generic
+    ``bencheval_run_record_v1`` schema (header + events + footer). The
+    ``events.jsonl`` file is the **canonical run record**: written RAW
+    (unsanitized) regardless of ``flag_policy`` so benchmark-critical strings
+    (flags, model output, tool calls) are preserved for scoring/audit. The
+    console display (stdout + tee logs) may apply ``flag_policy`` for operator
+    display only — that is a derived presentation layer, not the source of truth.
+    """
+
+    def __init__(
+        self,
+        console: TeeConsole,
+        path: Path,
+        started_monotonic: float,
+        *,
+        flag_policy: FlagPolicy = "show",
+        run_id: str = "momo-run",
+        benchmark_id: str = "cybench",
+        runtime_id: str = "kilo",
+        model_id: str | None = None,
+        adapter_id: str = "momo-cybench-kilo",
+        producer_command: str | None = None,
+        producer_version: str | None = None,
+        host_label: str | None = None,
+    ) -> None:
+        from bencheval.replay import RunRecordWriter
+
         self._console = console
         self._path = path
         self._started_monotonic = started_monotonic
-        path.parent.mkdir(parents=True, exist_ok=True)
-        self._file = path.open("w", encoding="utf-8")
+        self._flag_policy = flag_policy
+        self._writer = RunRecordWriter(
+            path,
+            run_id=run_id,
+            benchmark_id=benchmark_id,
+            runtime_id=runtime_id,
+            model_id=model_id,
+            adapter_id=adapter_id,
+            producer_command=producer_command,
+            producer_version=producer_version,
+            host_label=host_label,
+        )
 
     def close(self) -> None:
-        self._file.close()
+        self._writer.close()
+
+    def write_footer(
+        self,
+        *,
+        exit_code: int = 0,
+        summary: dict[str, object] | None = None,
+        evidence_sha256: str | None = None,
+    ) -> None:
+        self._writer.write_footer(
+            exit_code=exit_code,
+            summary=summary,
+            evidence_sha256=evidence_sha256,
+        )
 
     def emit(
         self,
@@ -218,20 +263,21 @@ class EventSink:
             if attempt is not None:
                 prefix += f"#{attempt}"
         display = f"{prefix}  {message}"
-        record = {
-            "schema_version": "momo_event_v1",
-            "time": datetime.now(UTC).isoformat(),
-            "elapsed_sec": round(elapsed, 3),
-            "kind": kind,
-            "challenge_id": challenge_id,
-            "attempt": attempt,
-            "message": message,
-            "data": data or {},
-            "display": display,
-        }
-        self._file.write(json.dumps(record, ensure_ascii=False) + "\n")
-        self._file.flush()
-        self._console.line(display, kind=kind)
+        # Canonical file: RAW v1 event via RunRecordWriter (no redaction).
+        self._writer.write_event(
+            kind=kind,
+            message=message,
+            elapsed_sec=round(elapsed, 3),
+            time=datetime.now(UTC),
+            instance_id=challenge_id,
+            challenge_id=challenge_id,
+            attempt=attempt,
+            data=data or {},
+            display=display,
+        )
+        # Console display: derived presentation, may apply flag_policy redaction.
+        console_display = _sanitize_for_terminal(display, self._flag_policy)
+        self._console.line(console_display, kind=kind)
 
 
 def load_config(path: Path) -> MomoCybenchConfig:
@@ -304,7 +350,18 @@ async def run_live(
     validate_run_root(config, run_root)
 
     console = TeeConsole(paths.console_ansi_log, paths.console_plain_log, color=color)
-    sink = EventSink(console, paths.events_jsonl, time.monotonic())
+    sink = EventSink(
+        console,
+        paths.events_jsonl,
+        time.monotonic(),
+        flag_policy=config.flag_policy,
+        run_id=resolved_run_id,
+        benchmark_id="cybench",
+        runtime_id=config.runtime,
+        model_id=config.model,
+        adapter_id="momo-cybench-kilo",
+        producer_command="python -m bencheval.momo_cybench",
+    )
     try:
         _emit_banner(console)
         sink.emit("system", f"run_id={resolved_run_id}")
@@ -328,31 +385,30 @@ async def run_live(
             f"passed={passed} failed={failed} artifacts={paths.run_dir}",
             data={"passed": passed, "failed": failed, "run_dir": str(paths.run_dir)},
         )
-        return 0 if failed == 0 else 1
+        exit_code = 0 if failed == 0 else 1
+        # Write the v1 footer (exit code + summary) to the canonical record.
+        evidence_sha256 = hashlib.sha256(paths.evidence_jsonl.read_bytes()).hexdigest()
+        sink.write_footer(
+            exit_code=exit_code,
+            summary={"passed": passed, "failed": failed},
+            evidence_sha256=evidence_sha256,
+        )
+        return exit_code
     finally:
         sink.close()
         console.close()
 
 
 def replay(events_path: Path, *, color: bool = True, speed: float = 1.0) -> int:
-    """Replay a captured MOMO event stream to the terminal."""
-    if speed <= 0:
-        raise BenchEvalError("--speed must be > 0")
-    previous_elapsed = 0.0
-    for line in events_path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        record = json.loads(line)
-        elapsed = float(record.get("elapsed_sec", 0.0))
-        delay = max(0.0, elapsed - previous_elapsed) / speed
-        if delay > 0:
-            time.sleep(min(delay, 2.0))
-        previous_elapsed = elapsed
-        kind = _event_kind(record.get("kind"))
-        display = str(record.get("display", record.get("message", "")))
-        sys.stdout.write(_colorize(display, kind, enabled=color) + "\n")
-        sys.stdout.flush()
-    return 0
+    """Replay a captured MOMO event stream to the terminal.
+
+    Delegates to the general-purpose :mod:`bencheval.replay` module so MOMO
+    event files (``momo_event_v1`` schema) replay through the same validated
+    loader and renderer as any other BenchEval run record.
+    """
+    from bencheval.replay import replay as general_replay
+
+    return general_replay(events_path, color=color, speed=speed)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -534,7 +590,6 @@ async def _run_attempt(
                 combined_text=combined_text,
                 counters=counters,
                 token_usage=token_usage,
-                flag_policy=config.flag_policy,
             )
     returncode = await proc.wait()
     await stderr_task
@@ -638,7 +693,6 @@ def _handle_kilo_line(
     combined_text: list[str],
     counters: dict[str, int],
     token_usage: dict[str, int],
-    flag_policy: FlagPolicy,
 ) -> None:
     stripped = line.strip()
     if not stripped:
@@ -647,9 +701,11 @@ def _handle_kilo_line(
         event = json.loads(stripped)
     except json.JSONDecodeError:
         combined_text.append(stripped)
+        # F001: pass RAW message to sink.emit(); the sink sanitizes for console
+        # display only. The canonical events.jsonl must preserve the raw text.
         sink.emit(
             "debug",
-            _sanitize_for_terminal(stripped, flag_policy),
+            stripped,
             challenge_id=challenge_id,
             attempt=attempt,
         )
@@ -666,9 +722,10 @@ def _handle_kilo_line(
             if text:
                 combined_text.append(text)
                 kind: EventKind = "break" if _extract_flag(text) else "llm"
+                # F001: raw compacted text — no sanitization before emit.
                 sink.emit(
                     kind,
-                    _sanitize_for_terminal(_compact(text), flag_policy),
+                    _compact(text),
                     challenge_id=challenge_id,
                     attempt=attempt,
                 )
@@ -677,16 +734,18 @@ def _handle_kilo_line(
             message, output = _tool_message(part)
             if output:
                 combined_text.append(output)
+            # F001: raw tool message — no sanitization before emit.
             sink.emit(
                 "tool",
-                _sanitize_for_terminal(message, flag_policy),
+                message,
                 challenge_id=challenge_id,
                 attempt=attempt,
             )
             if output:
+                # F001: raw compacted output — no sanitization before emit.
                 sink.emit(
                     "debug",
-                    _sanitize_for_terminal(_compact(output), flag_policy),
+                    _compact(output),
                     challenge_id=challenge_id,
                     attempt=attempt,
                 )
@@ -993,12 +1052,9 @@ def _flag_check_label(result: AttemptResult) -> str:
 
 
 def _sanitize_for_terminal(text: str, flag_policy: FlagPolicy) -> str:
-    sanitized = text
-    if flag_policy == "redact":
-        sanitized = FLAG_PATTERN.sub("FLAG: [redacted]", sanitized)
-        sanitized = EMBEDDED_FLAG_PATTERN.sub("[redacted-flag]", sanitized)
-    sanitized = SECRETISH_PATTERN.sub("[redacted-secret]", sanitized)
-    return sanitized
+    from bencheval.presentation import redact_for_public_presentation
+
+    return redact_for_public_presentation(text, redact=flag_policy == "redact")
 
 
 def _compact(text: str, limit: int = 260) -> str:

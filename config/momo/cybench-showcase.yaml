@@ -8,7 +8,7 @@ output_token_max: 131072
 concurrency: 2
 max_attempts: 1
 pass_at_k_budget: 1
-flag_policy: "redact"
+flag_policy: "show"
 remote_snapshot: false
 challenges:
   - id: "lootstash"

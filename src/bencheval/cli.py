@@ -587,6 +587,53 @@ def _export_run_bundle(args: argparse.Namespace) -> int:
     return 0
 
 
+def _replay_run(args: argparse.Namespace) -> int:
+    from bencheval.replay import load_run_record, replay, verify_bound_evidence
+
+    if args.verify_evidence is not None:
+        # nargs="?" means: None -> flag absent; "" -> derive by convention; path -> explicit.
+        evidence_arg = args.verify_evidence or None
+        rows = verify_bound_evidence(
+            args.record,
+            evidence_path=evidence_arg,
+            allow_missing_evidence=args.allow_missing_evidence,
+        )
+        if args.format == "json":
+            payload = {
+                "record": str(Path(args.record).resolve()),
+                "row_count": len(rows),
+                "rows": [json.loads(r.model_dump_json()) for r in rows],
+            }
+            sys.stdout.write(json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+        else:
+            run_record = load_run_record(args.record)
+            binding = "legacy_unbound" if run_record.is_legacy_unbound else "v1_bound"
+            if not rows and args.allow_missing_evidence:
+                sys.stdout.write(
+                    f"No evidence file found for run record {run_record.path} "
+                    f"(schema {run_record.schema_version}, {binding}); "
+                    f"--allow-missing-evidence was set.\n",
+                )
+            else:
+                sys.stdout.write(
+                    f"Verified {len(rows)} evidence row(s) bound to run record "
+                    f"{run_record.path} (schema {run_record.schema_version}, {binding}).\n",
+                )
+            for r in rows:
+                status = "PASS" if r.primary_pass else "FAIL"
+                sys.stdout.write(
+                    f"  {r.task_id} | {r.model_id} | {status} | "
+                    f"cost=${r.cost_usd:.4f} | {r.latency_sec:.2f}s\n",
+                )
+        return 0
+    return replay(
+        args.record,
+        color=not args.no_color,
+        speed=args.speed,
+        max_delay_sec=args.max_delay,
+    )
+
+
 def _compare_run(args: argparse.Namespace) -> int:
     from bencheval.evidence_compare import (
         compare_evidence_runs,
@@ -1134,6 +1181,57 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Optional compare report markdown copied as compare_report.md",
     )
     export_run.set_defaults(handler=_export_run_bundle)
+
+    replay = sub.add_parser(
+        "replay",
+        help="Replay a captured run record (events.jsonl) to the terminal",
+    )
+    replay.add_argument(
+        "record",
+        type=Path,
+        help="Run record JSONL (events.jsonl) produced by a live run or adapter",
+    )
+    replay.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable ANSI color in the replayed output",
+    )
+    replay.add_argument(
+        "--speed",
+        type=float,
+        default=1.0,
+        help="Replay speed multiplier (default: 1.0; >1 speeds up, <1 slows down)",
+    )
+    replay.add_argument(
+        "--max-delay",
+        type=float,
+        default=2.0,
+        help="Cap per-event sleep at this many seconds (default: 2.0)",
+    )
+    replay.add_argument(
+        "--verify-evidence",
+        nargs="?",
+        const="",
+        default=None,
+        type=str,
+        help=(
+            "Verify evidence rows bound to this run record. Without a path argument, "
+            "derives the sibling evidence file by convention. With a path, uses it "
+            "explicitly. Prints a summary (text) or full rows (json)."
+        ),
+    )
+    replay.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="Output format for --verify-evidence (default: text)",
+    )
+    replay.add_argument(
+        "--allow-missing-evidence",
+        action="store_true",
+        help="Do not fail when the evidence file is missing (dry inspection; default: fail)",
+    )
+    replay.set_defaults(handler=_replay_run)
 
     return parser
 
