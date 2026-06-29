@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# MOMO CyBench live terminal runner.
+# Compatibility launcher for the generic external-command runner.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -13,15 +13,17 @@ usage() {
     cat >&2 <<'EOF'
 Usage: scripts/momo-cybench-live.sh [args...]
 
-Runs the MOMO CyBench terminal workflow through local Kilo + GLM 5.2.
+Compatibility wrapper for the CyBench Kilo external-command profile.
+Prefer:
+  scripts/external-command-run.sh --config config/runs/cybench-kilo-showcase.yaml
 
 Required for live mode:
-  MOMO_CYBENCH_RUN_ROOT   Private prepared CyBench root containing run-prompts/ and keys/.
+  MOMO_CYBENCH_RUN_ROOT   Prepared CyBench root containing run-prompts/ and keys/.
 
 Common args:
   --dry-run               Validate config and private run root without launching Kilo.
-  --replay EVENTS.jsonl   Replay a previously captured MOMO event stream.
-  --no-remote-snapshot    Skip VPS docker/host metadata capture.
+  --replay EVENTS.jsonl   Replay a previously captured run record.
+  --no-snapshot           Skip configured host metadata capture.
 
 Example:
   MOMO_CYBENCH_RUN_ROOT=/tmp/bencheval-cybench-real-vps \

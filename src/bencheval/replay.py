@@ -1,7 +1,7 @@
 """General-purpose run record/replay for BenchEval.
 
 A *run record* is a JSONL file where each line is a structured record: a header,
-a stream of events, and a footer. Any adapter (MOMO CyBench, Terminal-Bench,
+a stream of events, and a footer. Any adapter (external-command, Terminal-Bench,
 SWE-bench, a future native adapter) captures its live terminal stream + timeline
 + structured data into such a file. This module loads, validates, replays, and
 verifies that file.
@@ -636,7 +636,7 @@ def _sha256_file(path: Path) -> str:
 class RunRecordWriter:
     """Generic v1 run-record writer for BenchEval adapters.
 
-    Adapters (MOMO, Terminal-Bench, SWE-bench, future native) use this writer
+    Adapters (external-command, Terminal-Bench, SWE-bench, future native) use this writer
     instead of hand-rolling record JSON. The writer emits:
 
     1. A ``RecordHeader`` as the first line (integrity binding).

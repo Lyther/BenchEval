@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
+import os
 import socket
 import sys
 from datetime import UTC, datetime
@@ -42,6 +44,11 @@ from bencheval.doctor import run_doctor, run_pilot_doctor
 from bencheval.evidence import read_evidence_jsonl
 from bencheval.exceptions import BenchEvalError, TaskContractError
 from bencheval.executor import execute_task
+from bencheval.external_command_adapter import (
+    load_external_run_config,
+    plan_external_run,
+    run_external_command,
+)
 from bencheval.lifecycle import CleanupPolicy, RunMode, cleanup_transient_artifacts
 from bencheval.live_run_manifest import (
     LiveRunRecord,
@@ -312,7 +319,100 @@ def _reject_partial_control_plane_axes(args: argparse.Namespace) -> int | None:
     return 2
 
 
+def _config_run_selected(args: argparse.Namespace) -> bool:
+    return getattr(args, "config", None) is not None
+
+
+def _external_run_root(args: argparse.Namespace, config_path: Path) -> tuple[object, Path | None]:
+    config = load_external_run_config(config_path)
+    run_root = getattr(args, "run_root", None)
+    if run_root is None and config.input.root_env:
+        value = os.environ.get(config.input.root_env, "").strip()
+        run_root = Path(value).expanduser() if value else None
+    return config, run_root
+
+
+def _run_config_dry(args: argparse.Namespace) -> int:
+    config_err = _reject_config_run_conflicts(args)
+    if config_err is not None:
+        return config_err
+    config, run_root = _external_run_root(args, Path(args.config))
+    # Dry-run is a plan command: it validates the config and, when a root is
+    # supplied, validates inputs. It does not require private material merely to
+    # show the resolved run shape.
+    if run_root is not None:
+        from bencheval.external_command_adapter import validate_external_run_root
+
+        validate_external_run_root(config, run_root)
+    payload = plan_external_run(
+        config=config,
+        run_root=run_root,
+        results_root=args.results_root,
+        run_id=args.run_id,
+    )
+    sys.stdout.write(json.dumps(payload, indent=2) + "\n")
+    return 0
+
+
+def _run_config_execute(args: argparse.Namespace) -> int:
+    config_err = _reject_config_run_conflicts(args)
+    if config_err is not None:
+        return config_err
+    config, run_root = _external_run_root(args, Path(args.config))
+    return asyncio.run(
+        run_external_command(
+            config=config,
+            run_root=run_root,
+            results_root=args.results_root,
+            run_id=args.run_id,
+            color=not args.no_color,
+            snapshot=args.snapshot,
+            producer_command="bencheval run --config",
+        ),
+    )
+
+
+def _require_model_arg(args: argparse.Namespace) -> int | None:
+    if getattr(args, "model", None):
+        return None
+    sys.stderr.write("error: --model is required unless --config is used\n")
+    return 2
+
+
+def _reject_config_run_conflicts(args: argparse.Namespace) -> int | None:
+    conflicts: list[str] = []
+    for attr, flag, default in (
+        ("benchmark", "--benchmark", None),
+        ("slice", "--slice", None),
+        ("runtime", "--runtime", None),
+        ("task", "--task", None),
+        ("suite", "--suite", None),
+        ("manifest", "--manifest", None),
+        ("model", "--model", None),
+        ("backend", "--backend", None),
+        ("output", "--output", None),
+        ("artifacts_dir", "--artifacts-dir", None),
+        ("mode", "--mode", None),
+        ("cleanup", "--cleanup", None),
+    ):
+        if getattr(args, attr, default) != default:
+            conflicts.append(flag)
+    if not conflicts:
+        return None
+    joined = ", ".join(conflicts)
+    sys.stderr.write(
+        "error: --config reads benchmark/runtime/model/output settings from the profile; "
+        f"remove conflicting flag(s): {joined}\n",
+    )
+    return 2
+
+
 def _run_dry(args: argparse.Namespace) -> int:
+    if _config_run_selected(args):
+        return _run_config_dry(args)
+    model_err = _require_model_arg(args)
+    if model_err is not None:
+        return model_err
     partial_err = _reject_partial_control_plane_axes(args)
     if partial_err is not None:
         return partial_err
@@ -322,7 +422,7 @@ def _run_dry(args: argparse.Namespace) -> int:
             slice_id=args.slice,
             runtime_id=args.runtime,
             model_id=args.model,
-            cleanup_policy=args.cleanup,
+            cleanup_policy=args.cleanup or "never",
         )
         resolution = dry_run_slice_resolution(
             benchmark_id=args.benchmark,
@@ -342,9 +442,9 @@ def _run_dry(args: argparse.Namespace) -> int:
         payload = {
             "dry_run": True,
             "model_id": args.model,
-            "backend": args.backend,
-            "mode": args.mode,
-            "cleanup": args.cleanup,
+            "backend": args.backend or LOCAL_BACKEND,
+            "mode": args.mode or "batch",
+            "cleanup": args.cleanup or "never",
             "manifest": str(Path(args.manifest).resolve()),
             "benchmark": digest.benchmark,
             "task_manifest_hash": digest.content_sha256,
@@ -357,9 +457,9 @@ def _run_dry(args: argparse.Namespace) -> int:
         payload = {
             "dry_run": True,
             "model_id": args.model,
-            "backend": args.backend,
-            "mode": args.mode,
-            "cleanup": args.cleanup,
+            "backend": args.backend or LOCAL_BACKEND,
+            "mode": args.mode or "batch",
+            "cleanup": args.cleanup or "never",
             "task_count": 1,
             "task_ids": [args.task],
         }
@@ -405,6 +505,11 @@ def _artifacts_dir_for_task(
 
 
 def _run_execute(args: argparse.Namespace) -> int:
+    if _config_run_selected(args):
+        return _run_config_execute(args)
+    model_err = _require_model_arg(args)
+    if model_err is not None:
+        return model_err
     partial_err = _reject_partial_control_plane_axes(args)
     if partial_err is not None:
         return partial_err
@@ -417,7 +522,7 @@ def _run_execute(args: argparse.Namespace) -> int:
             slice_id=args.slice,
             runtime_id=args.runtime,
             model_id=args.model,
-            cleanup_policy=args.cleanup,
+            cleanup_policy=args.cleanup or "never",
         )
         summary = execute_control_plane_run(
             plan=plan,
@@ -444,12 +549,12 @@ def _run_execute(args: argparse.Namespace) -> int:
     if args.output is None:
         sys.stderr.write("error: non-dry-run requires --output evidence JSONL path\n")
         return 2
-    mode = cast("RunMode", args.mode)
-    cleanup_policy = cast("CleanupPolicy", args.cleanup)
+    mode = cast("RunMode", args.mode or "batch")
+    cleanup_policy = cast("CleanupPolicy", args.cleanup or "never")
     if cleanup_policy != "never" and mode != "single":
         sys.stderr.write("error: --cleanup is only supported with --mode single\n")
         return 2
-    backend: ExecutionBackend = args.backend
+    backend: ExecutionBackend = args.backend or LOCAL_BACKEND
     if backend == LOCAL_BACKEND and args.model != LOCAL_HARNESS_MODEL_ID:
         sys.stderr.write(
             f"error: local backend requires --model {LOCAL_HARNESS_MODEL_ID!r}; "
@@ -952,6 +1057,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
     run = sub.add_parser("run", help="Run planning and execution")
     run.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help=(
+            "Structured run config (recommended for external command runtimes). "
+            "When set, --model/--benchmark/--slice/--runtime are read from the config."
+        ),
+    )
+    run.add_argument(
         "--dry-run",
         action="store_true",
         help="Estimate run envelope without executing",
@@ -971,11 +1085,16 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Task-id manifest for sequential execution (one id per non-comment line)",
     )
-    run.add_argument("--model", dest="model", required=True, help="Model identifier")
+    run.add_argument(
+        "--model",
+        dest="model",
+        default=None,
+        help="Model identifier (required unless --config is used)",
+    )
     run.add_argument(
         "--backend",
         choices=(LOCAL_BACKEND, INSPECT_BACKEND, HARBOR_BACKEND),
-        default=LOCAL_BACKEND,
+        default=None,
         help="Execution backend (default: local reference harness)",
     )
     run.add_argument(
@@ -991,18 +1110,49 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Directory for verifier logs (default: results/raw/<run_id>/)",
     )
     run.add_argument(
+        "--run-root",
+        type=Path,
+        default=None,
+        help="Prepared external benchmark root for --config runs",
+    )
+    run.add_argument(
+        "--results-root",
+        type=Path,
+        default=_repo_root() / "results",
+        help="Results root for --config runs (default: results/)",
+    )
+    run.add_argument("--run-id", default=None, help="Run id override for --config runs")
+    run.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable ANSI colors for --config live terminal output",
+    )
+    run.add_argument(
+        "--snapshot",
+        dest="snapshot",
+        action="store_true",
+        default=None,
+        help="Force configured host snapshot for --config runs",
+    )
+    run.add_argument(
+        "--no-snapshot",
+        dest="snapshot",
+        action="store_false",
+        help="Disable configured host snapshot for --config runs",
+    )
+    run.add_argument(
         "--mode",
         choices=("batch", "single"),
-        default="batch",
+        default=None,
         help=(
             "Execution lifecycle mode. 'single' runs one task lifecycle at a time "
-            "and enables transient cleanup."
+            "and enables transient cleanup. Default: batch."
         ),
     )
     run.add_argument(
         "--cleanup",
         choices=("never", "on-success", "always"),
-        default="never",
+        default=None,
         help="Transient cleanup policy for --mode single (default: never)",
     )
     run.set_defaults(handler=_run_handler)

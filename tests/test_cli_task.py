@@ -53,6 +53,74 @@ def test_dry_run_smoke_exits_0() -> None:
     assert payload["task_count"] == 8
 
 
+def test_run_config_dry_run_does_not_require_model() -> None:
+    r = _run("run", "--config", "config/runs/cybench-kilo-showcase.yaml", "--dry-run")
+    assert r.returncode == 0, r.stderr
+    payload = json.loads(r.stdout)
+    assert payload["schema_version"] == "external_command_run_v1"
+    assert payload["benchmark_id"] == "cybench"
+    assert payload["runtime_id"] == "kilo"
+    assert payload["model_id"] == "ollama-cloud/glm-5.2"
+
+
+def test_run_without_config_still_requires_model() -> None:
+    r = _run("run", "--dry-run", "--suite", "smoke")
+    assert r.returncode == 2
+    assert "--model is required unless --config is used" in r.stderr
+
+
+def test_run_config_rejects_ignored_axis_flags() -> None:
+    r = _run(
+        "run",
+        "--config",
+        "config/runs/cybench-kilo-showcase.yaml",
+        "--dry-run",
+        "--model",
+        "openai/gpt-test",
+    )
+    assert r.returncode == 2
+    assert "remove conflicting flag(s): --model" in r.stderr
+
+
+@pytest.mark.parametrize(
+    "flag,value",
+    (
+        ("--backend", "local"),
+        ("--mode", "batch"),
+        ("--cleanup", "never"),
+    ),
+)
+def test_run_config_rejects_explicit_default_compat_flags(flag: str, value: str) -> None:
+    r = _run(
+        "run",
+        "--config",
+        "config/runs/cybench-kilo-showcase.yaml",
+        "--dry-run",
+        flag,
+        value,
+    )
+    assert r.returncode == 2
+    assert f"remove conflicting flag(s): {flag}" in r.stderr
+
+
+def test_four_axis_dry_run_preserves_default_cleanup_policy() -> None:
+    r = _run(
+        "run",
+        "--dry-run",
+        "--benchmark",
+        "terminal-bench",
+        "--slice",
+        "smoke-5",
+        "--runtime",
+        "claude-code",
+        "--model",
+        "claude-haiku-4-5",
+    )
+    assert r.returncode == 0, r.stderr
+    payload = json.loads(r.stdout)
+    assert payload["cleanup_policy"] == "never"
+
+
 def test_run_rejects_provider_model_on_local_backend(tmp_path: Path) -> None:
     out = tmp_path / "evidence.jsonl"
     r = _run(
