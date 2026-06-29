@@ -28,6 +28,7 @@ BenchEval has **no public HTTP surface**. Boundaries are **Python protocols** (c
 | [`src/bencheval/benchmark_registry.py`](../../src/bencheval/benchmark_registry.py) | `config/benchmarks.yaml` → `BenchmarkCatalog` (implements `BenchmarkCatalogSource`) |
 | [`src/bencheval/planner.py`](../../src/bencheval/planner.py) | Four-axis `RunPlan` builder (implements `RunPlanner`) |
 | [`src/bencheval/executor.py`](../../src/bencheval/executor.py) | Adapter dispatch (implements `AdapterDispatcher`) |
+| [`src/bencheval/external_command_adapter.py`](../../src/bencheval/external_command_adapter.py) | Generic external-command runner for config-driven external projects; writes raw run records + `EvidenceRecord` JSONL |
 | [`src/bencheval/replay.py`](../../src/bencheval/replay.py) | General-purpose raw run record/replay: v1 `RecordHeader`/`RecordEvent`/`RecordFooter` + legacy `LegacyMomoEvent`, `RunRecordWriter`, `load_run_record`, `replay`, `verify_bound_evidence` |
 | [`src/bencheval/presentation.py`](../../src/bencheval/presentation.py) | Derived public presentation helpers: `redact_for_public_presentation`, `strip_ansi` |
 
@@ -44,18 +45,32 @@ bencheval runtime list|show <id>                 # discovery (NEW)
 bencheval model list|show <id>                   # discovery (NEW)
 bencheval adapter list                           # discovery (NEW)
 bencheval doctor [--benchmark <id>] [--runtime <id>]
+bencheval run --config <run-profile.yaml> [--run-root <path>] [--dry-run]          # external command profile (recommended)
 bencheval run --dry-run --benchmark <id> --slice <id> --runtime <id> --model <id>   # plan (NEW)
 bencheval run --benchmark <id> --slice <id> --runtime <id> --model <id> --output <evidence.jsonl> [--cleanup always]   # execute (NEW)
 bencheval run --task|--suite|--manifest ... --backend local|inspect|harbor           # selftest compat (v0.2, unchanged)
 bencheval report <evidence.jsonl> --output <report.md>
 bencheval compare <baseline.jsonl> <current.jsonl> --format md|json
 bencheval export <evidence.jsonl> --format parquet|duckdb --output <warehouse/...>
-bencheval replay <events.jsonl> [--no-color] [--speed N] [--max-delay S] [--verify-evidence [evidence.jsonl]] [--format text|json]   # run record/replay (NEW)
+bencheval export-run --evidence <evidence.jsonl> --output <bundle-dir> [--raw-dir ...] [--redaction public|private]
+bencheval evidence register --evidence <evidence.jsonl> [--artifacts-dir ...] [--notes ...]
+bencheval replay <events.jsonl> [--no-color] [--speed N] [--max-delay S] [--verify-evidence [evidence.jsonl]] [--format text|json]
 ```
 
-### Replay contract (general-purpose, production-ready)
+### External command profiles and run record / replay
 
-`bencheval replay` replays a captured run record (`events.jsonl`) to the terminal with original timing and colors, and can verify the evidence rows bound to that run.
+`bencheval run --config <profile.yaml>` runs an external project through the
+generic external-command adapter. The profile contains benchmark/runtime/model
+identity, command template, stream parser, verification policy, and artifact
+layout. This is the preferred CLI for large external benchmark integrations
+whose native harness already owns materialization, sandboxing, and cleanup.
+
+`bencheval replay` replays a captured **run record** (`events.jsonl`) to the terminal with original timing and colors, and can verify `EvidenceRecord` rows bound to that run. This lane is **benchmark-agnostic**: any external runner may emit `bencheval_run_record_v1` and optionally bind evidence — it is not tied to a Production v1 adapter.
+
+The private CyBench/Kilo profile (`config/runs/cybench-kilo-showcase.yaml`) is
+one consumer of this API. The compatibility entrypoint
+`bencheval.momo_cybench` delegates to the generic adapter and contains no
+separate runner implementation.
 
 #### Canonical vs derived lanes (integrity policy)
 
@@ -67,12 +82,14 @@ There are two lanes that must never be confused:
 #### Schema
 
 - **`bencheval_run_record_v1`** — production schema with `header`/`event`/`footer` record types, integrity binding (`run_id`, `benchmark_id`, optional `evidence_sha256` in header or footer), per-event monotonically increasing `seq`, and `redaction_policy: "none"` for canonical records.
-- **`momo_event_v1`** — legacy MOMO capture schema (flat event stream, no header). Accepted for backward compatibility; flagged `legacy_unbound` (no integrity binding) so old recordings stay usable without pretending they have audit-grade binding.
-- Schema-less lines are tolerated as `momo_event_v1` so existing captured files keep replaying. Mixed-schema files are rejected fast.
+- **`momo_event_v1`** — legacy flat event stream with no header, emitted by early reference integrations. Accepted for backward compatibility; flagged `legacy_unbound` (no integrity binding). "Legacy flat event" is a descriptive compatibility lane, not a separate schema identifier.
+- Schema-less lines are tolerated as legacy flat events so older captured files keep replaying. Mixed-schema files are rejected fast.
 
 #### Backward compatibility
 
-MOMO's `momo_cybench.replay()` delegates to the general module; `python -m bencheval.momo_cybench --replay <file>` still works. MOMO `EventSink` now writes **raw** records to `events.jsonl` (canonical) while applying `flag_policy` to console display only (derived presentation).
+Reference integrations may delegate replay to the general module. Producers
+write **raw** canonical records to `events.jsonl`; redaction is reserved for
+explicit derived public artifacts, never canonical evidence.
 
 #### `--verify-evidence [path]`
 
@@ -105,6 +122,7 @@ Discovery and dry-run commands emit a single JSON object to **stdout** (indented
 - `runtime list --format json` → `{ "runtimes": [ { "id", "kind", "display_name", "admission" }, ... ] }`
 - `runtime show <id> --format json` → `<RuntimeProfile dict>` (no secrets — env var names only, never values)
 - `run --dry-run ...` → `<RunPlan dict>` (see `domain.RunPlan`; `comparison_validity` is one of `model_comparison|runtime_comparison|adapter_smoke|diagnostic_only|invalid`)
+- `run --config ... --dry-run` → `<ExternalRunConfig-derived plan dict>` (`benchmark_id`, `slice_id`, `runtime_id`, `model_id`, `instances`, `events`, `evidence`, `snapshot_enabled`)
 
 **Never leaked** in any JSON output: secret values (`*_API_KEY` contents), artifact file contents, raw model outputs, `password_hash`-equivalents. Env vars are represented by **name only**.
 

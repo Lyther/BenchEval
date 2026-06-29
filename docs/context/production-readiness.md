@@ -8,7 +8,7 @@ BenchEval is an evaluation **control plane**, not a benchmark author. "Productio
 
 ```text
 Tier 0  Phase A — Software          control plane compiles, plans, and gates correctly with NO live deps
-Tier 1  Phase B — Live Evidence     ≥1 real instance ran end-to-end through a native harness (credentials + Docker)
+Tier 1  Phase B — Live Evidence     ≥1 real instance end-to-end via the benchmark’s native harness (credentials; sandbox when the harness requires it)
 Tier 2  Production v1               adapter admitted + live proof + full checklist satisfied
 ```
 
@@ -16,7 +16,7 @@ Tier 2  Production v1               adapter admitted + live proof + full checkli
 
 ## Tier 0 — Phase A: Software (no live dependencies)
 
-**Question answered:** *Does the control plane itself behave correctly, deterministically, and safely with zero network, zero credentials, zero Docker?*
+**Question answered:** *Does the control plane itself behave correctly, deterministically, and safely with zero network, zero credentials, and zero harness sandbox on the host?*
 
 This tier is fully covered by the single command:
 
@@ -37,11 +37,19 @@ make check-production-v1        # → ./scripts/check-production-v1.sh
 
 ---
 
-## Tier 1 — Phase B: Live Evidence (credentials + Docker required)
+## Tier 1 — Phase B: Live Evidence (credentials + native harness)
 
-**Question answered:** *Did at least one real instance run end-to-end through the native harness and produce a valid `EvidenceRecord`?*
+**Question answered:** *Did at least one real instance run end-to-end through the benchmark’s native harness and produce a valid `EvidenceRecord`?*
 
-Phase B lifts the Tier 0 live blockers. **Operator procedure** (commands, exit codes, proxy, registration): [`docs/ops/dev-box-pilot.md`](../ops/dev-box-pilot.md). **Host dependencies:** [`docs/roadmap.md`](../roadmap.md) §Live blockers (Docker, `harbor`, provider keys, `mini-extra`, `bfcl`).
+Phase B lifts the Tier 0 live blockers. **Expected operator environment:** dev-box-cpu (or equivalent VPS) — not every developer laptop. **Operator procedure:** [`docs/ops/dev-box-pilot.md`](../ops/dev-box-pilot.md). **Host dependencies:** [`docs/roadmap.md`](../roadmap.md) §Live blockers (provider keys, harness CLIs such as `harbor` / `bfcl`, and **harness-owned** sandboxes when the benchmark requires them).
+
+BenchEval does **not** implement a separate Docker orchestration plane. When Terminal-Bench (Harbor) or similar adapters need containers, that isolation is provided by the **official harness/runtime**, not by BenchEval core.
+
+Config-driven external-command runs (`bencheval run --config ...`) are part of
+the control plane and may produce valid raw run records/evidence for private or
+operator-managed benchmarks. They do **not** by themselves promote a cataloged
+benchmark to Production v1; promotion still requires the native-harness evidence
+and checklist below.
 
 Outputs live under `results/` (gitignored): evidence, reports, bundles (`--redaction private` default), and `preflight/*.json` when a step is blocked — **negative evidence**, not a fake pass.
 
@@ -116,7 +124,7 @@ BenchEval 的"生产就绪"分三个层级，逐级递进，不可跳级：
 | 层级 | 名称 | 含义 | 退出标准 |
 |------|------|------|----------|
 | Tier 0 | Phase A 软件 | 控制平面本身在零依赖下正确、确定、安全 | `make check-production-v1` 全绿（pytest / ruff / shellcheck / uv lock / 可执行适配器=3 / cybench 必须在执行前失败） |
-| Tier 1 | Phase B 实证据 | 至少 1 个真实实例端到端跑通原生 harness（需要凭据 + Docker） | Peer 锚点：Terminal-Bench 的 `fix-git` 实例通过 Harbor 产出完整 `EvidenceRecord` |
+| Tier 1 | Phase B 实证据 | 至少 1 个真实实例通过**基准原生 harness** 端到端跑通（凭据；sandbox 由 harness 按需提供） | 在 **dev-box** 上完成；Peer 锚点：Terminal-Bench `fix-git` 经 Harbor 产出完整 `EvidenceRecord` |
 | Tier 2 | Production v1 | 适配器被准入 + 实证据 + 全清单满足 | 上文 §A–§E 全部勾选，且无豁免 |
 
 **关键红线：** 没有 Phase B 真实运行，绝不能打 `benchmark_native_claim` 标签。live blockers 期间可用 `local/harness`、`mockllm/model` 做适配器 smoke，但必须标注 `adapter_smoke`。smoke/lite 切片不得声称统计显著性；Calibration / Stretch / selftest 任务不得混入公开基准加权总分（architecture §14 VETO）。

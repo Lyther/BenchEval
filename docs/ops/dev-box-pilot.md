@@ -1,14 +1,19 @@
 # Phase B on dev-box-cpu — live pilot runbook
 
 Operational runbook for executing the Phase B live control-plane pilot on a
-`dev-box-cpu` (or equivalent VPS with Docker). Tier definitions:
+**dev-box-cpu** (or equivalent operator VPS). Tier definitions:
 [`docs/context/production-readiness.md`](../context/production-readiness.md).
 Scope summary: [`docs/context/production-v1-pilot.md`](../context/production-v1-pilot.md).
 Design: [`docs/context/concept-hld.md`](../context/concept-hld.md).
 
-Phase B = live matrix with real credentials and Docker. It is gated and
+Phase B = live matrix with real credentials and **native harness runtimes**. It is gated and
 non-fatal to blockers: blocked steps produce **negative preflight evidence**
 (`results/preflight/*.json`), never fake passes.
+
+**Scope boundary:** BenchEval core does not ship a Docker control plane. Docker (or other
+sandbox) appears here only when a **benchmark adapter’s official harness** requires it
+(e.g. Harbor for Terminal-Bench). Local Tier 0 development and CI do not require Docker on
+the host.
 
 ## Scope and what counts as proof
 
@@ -29,7 +34,7 @@ SWE (`swe-bench-verified` smoke-10 via `mini-swe-agent`) is exercised but is
 | Dependency | Why | Check |
 |---|---|---|
 | Python 3.12+, `uv` | control plane | `uv --version` |
-| Docker daemon | Harbor containers, SWE | `docker info` |
+| Docker daemon | Harbor TB harness (when used), some SWE materialization | `docker info` (dev-box only when running those adapters) |
 | `harbor` CLI | TB runtime | `harbor --version` (or `uv sync --extra eval`) |
 | `bfcl` | BFCL lane (`bfcl-eval` package) | `command -v bfcl && bfcl --help` |
 | `mini-extra` | SWE lane | `command -v mini-extra` |

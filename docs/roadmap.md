@@ -2,7 +2,7 @@
 
 > **Source:** [`docs/context/concept-hld.md`](context/concept-hld.md) §11.2, §14 + [`docs/architecture.md`](architecture.md) §17
 > **Ledger:** Checked `- [x]` milestones below record completed phases (P1–P9). Current production v1 bar: [`production-readiness.md`](context/production-readiness.md) + `make check-production-v1`.
-> **Status (2026-06-19):** v0.3 control-plane P1–P6/P5.1/P5.3/P9.2 implemented. Remaining: P5.2 LiveCodeBench, P7–P8 security/GUI, Phase B live matrix on dev-box — see §Live blockers.
+> **Status (2026-06-29):** v0.3 control-plane P1–P6/P5.1/P5.3/P9.2 implemented, plus config-driven external-command profiles (`bencheval run --config`). Remaining: P5.2 LiveCodeBench, P7–P8 security/GUI, Phase B live matrix on dev-box — see §Live blockers.
 > **Principle:** additive only. Never break the v0.2 `EvidenceRecord` flat contract. Never delete working coverage to reach a new shape.
 
 ## Phase 0 — Validation (research spikes, no code)
@@ -26,6 +26,7 @@
 - [x] **P1.6** CLI: `bencheval run --dry-run --benchmark <id> --slice <id> --runtime <id> --model <id>`. Dry-run output per HLD §8.2 (9 fields + comparison-validity line). Keep `--task/--manifest/--backend` for selftest.
 - [x] **P1.7** Additive `EvidenceRecord` v0.3 fields (architecture §7.4). Update `tests/test_evidence.py` for new optional fields; prove v0.2 fixtures still parse.
 - [x] **P1.8** Reposition Core-8/16 as `selftest`: add `selftest` lane flag to `config/suites.yaml` entries; keep all verifiers/admission green. No task deletion.
+- [x] **P1.9** Config-first external-command profile lane: `bencheval run --config <profile.yaml>` executes external projects through a generic adapter, writes raw `bencheval_run_record_v1` + `EvidenceRecord` JSONL, and avoids benchmark-specific wrappers.
 
 > Constraint: no "nice to haves" (no dashboard, no weighted portfolio, no leaderboard).
 
@@ -40,7 +41,7 @@
 - [x] **P2.5** Pass adapter admission gates (architecture §13.1) for `terminal-bench-harbor`; flip `adapter_status` to `manifest_available` in YAML.
 - [x] **P2.6** CLI: `bencheval run --benchmark terminal-bench --slice smoke-5 --runtime claude-code --model <m> --cleanup always --output <evidence.jsonl>` (live Harbor requires doctor; adapter-smoke via injected runner in tests).
 
-> Blocker: credentials + Docker (live blockers, see §Live blockers). Adapter-smoke with deterministic stand-in is acceptable for P2 gate if live is blocked.
+> Blocker: credentials + harness CLIs on dev-box (see §Live blockers). Adapter-smoke with deterministic stand-in is acceptable for P2 gate if live is blocked.
 
 ## Phase 3 — Runtime comparison report
 
@@ -112,7 +113,7 @@
 | Gate | Status | Affects |
 |------|--------|---------|
 | Provider credentials (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) | Required | P2–P5 live runs |
-| Docker daemon | Required | P2 Harbor / P4 SWE E1 |
+| Harness sandbox (e.g. Docker for Harbor TB, Inspect E1) | Required on **dev-box** when adapter uses that harness | P2 Harbor / P4 SWE E1 — **not** a BenchEval-owned Docker plane |
 | Harbor CLI install + contract stability | Required (S0.1) | P2 Terminal-Bench |
 | `claude-code` / `codex-cli` noninteractive + auth | Required (S0.2) | P2 runtime comparison |
 | CyberGym-E2E public task release | Pending | P8.4 |

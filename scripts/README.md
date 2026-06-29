@@ -17,16 +17,15 @@
   Anthropic and Responses routers need different model aliases.
   Set `BENCHEVAL_CLAUDE_CODE_ALLOWED_TOOLS` when a router rejects advanced
   Claude Code tool schemas and only basic terminal/edit tools are needed.
-- `momo-cybench-live.sh` — polished MOMO terminal run for local Kilo +
-  GLM 5.2 against a private prepared CyBench root. Requires
-  `MOMO_CYBENCH_RUN_ROOT` with `run-prompts/` and `keys/`; writes colored
-  console logs, raw Kilo JSONL, normalized events/evidence, summaries, and
-  optional remote host/Docker metadata under `results/`.
-- `render-momo-video.py` — render a MOMO `events.jsonl` stream to a
-  terminal-style MP4, for example
-  `scripts/render-momo-video.py --events results/raw/<run_id>/events.jsonl`.
-  MP4 rendering uses OpenCV from the invoking Python environment; `--ass-only`
-  writes the subtitle/timeline sidecar without OpenCV.
+
+## External command profiles and run records
+
+General APIs: `bencheval run --config`, `bencheval replay`, `bencheval.external_command_adapter`, `bencheval.replay.RunRecordWriter`, `bencheval.presentation` — see [`docs/api/internal-contracts.md`](../docs/api/internal-contracts.md).
+
+- `external-command-run.sh` — generic wrapper for `bencheval run --config <profile.yaml>`.
+- `momo-cybench-live.sh` — compatibility wrapper for the CyBench/Kilo external profile. New usage should prefer `external-command-run.sh --config config/runs/cybench-kilo-showcase.yaml`.
+- `render-run-video.py` — optional **derived** MP4/ASS from any compatible `events.jsonl` (OpenCV for MP4; `--ass-only` without OpenCV).
+- `render-momo-video.py` — compatibility wrapper for `render-run-video.py`.
 - `write_preflight.py` — JSON `preflight_v1` artifact helper.
 - `doctor-pilot.sh` — Phase B wrapper: `verify_auth.sh` (optional) + `bencheval doctor --profile pilot`
   runs `verify_auth.sh`, then `bencheval doctor`. See `docs/ops/dev-box-pilot.md`.

@@ -72,10 +72,10 @@ flowchart LR
 | Validation | **Pydantic v2** | Already in deps. Used for `BenchmarkContract`, `SliceManifest`, `RuntimeProfile`, `ModelProfile`, extended `EvidenceRecord`. `frozen=True, extra="forbid"` per repo convention. |
 | CLI | **argparse** (`bencheval` entrypoint) | Already set; extend `cli.py`, don't replace. |
 | Evidence store | **JSONL** (primary) + **Parquet/DuckDB** (analytics) | JSONL now; DuckDB/Parquet via existing `analytics` extra (`duckdb`, `pyarrow`) and `export.py`. **No database** — this is a CLI tool. |
-| Harness adapters | **External binaries, not vendored** | Harbor = external CLI (`uv tool install harbor`) + Docker; Inspect = optional `eval` extra; native = subprocess. Core library stays dependency-light (no `eval` requirement for core). |
+| Harness adapters | **External binaries, not vendored** | Harbor = external CLI (`uv tool install harbor`) and may use Docker internally; Inspect = optional `eval` extra; native/external-command = subprocess. Core library stays dependency-light (no `eval` requirement for core). |
 | Orchestration (heavy) | **Inspect AI** (optional `eval` extra) + **Harbor** (external) | Provider abstraction + sandbox; never reimplement benchmark semantics. |
-| Local sandbox | **Docker** | Default for E1 coding + defensive tasks. |
-| Terminal/verifier-heavy | **Harbor** (optional E2) | POC; not mandatory for all tasks. |
+| Sandbox ownership | **Runtime-owned** | BenchEval does not ship a Docker plane. Official benchmark runtimes own containers/images when they require them. |
+| Terminal/verifier-heavy | **Harbor or external command profiles** | Optional E2 paths; not mandatory for all tasks. |
 | Testing | **pytest** | Already set. |
 | Lint | **ruff** (E/F/I/W, line 100) | Already set. Type-check via ruff; no pyright in repo. |
 | Secret store | **`.env` only** | `config/models.yaml` must stay non-secret (AGENTS.md rule). |
@@ -89,10 +89,10 @@ flowchart LR
 | Model Registry | Model identity, provider, pricing, context limits, version capture. | **Promote** existing `config/models.yaml` + `pricing/` + `models.py` (`ModelFamily`, `RunStamp`). | `models.py`, `pricing.py` |
 | Runtime Registry | CLI/API/scaffold runtime profiles + capability/safety metadata. | **New.** `runtime_registry.py` + `config/runtimes/*.yaml`. | new |
 | Run Planner | Build concrete plan from benchmark + slice + model + runtime; budget envelope. | **Extend** existing `planner.py`. | `planner.py` |
-| Preflight / Doctor | Harness install, runtime auth, disk, Docker/Harbor, env vars, budget. | **Extend** existing `doctor.py` + `scripts/run_provider_smoke.sh`. | `doctor.py` |
+| Preflight / Doctor | Harness install, runtime auth, disk, runtime-specific sandbox checks, env vars, budget. | **Extend** existing `doctor.py` + `scripts/run_provider_smoke.sh`. | `doctor.py` |
 | Materialization Manager | Ephemeral workspaces, fetch images/repos/datasets, cleanup. | **Extend** existing `lifecycle.py` + `workspace_staging.py`. | `lifecycle.py`, `workspace_staging.py` |
-| Adapter Dispatcher | Route (runtime, harness) → adapter. | **New** dispatch layer over existing `executor.py` + `backends.py`. | `executor.py`, new dispatcher |
-| Adapters | Native / Inspect / Harbor / Runtime-CLI / Selftest. | `inspect_adapter.py`, `harbor_adapter.py`, `runner.py` exist; add native + runtime-CLI + selftest. | adapters |
+| Adapter Dispatcher | Route (runtime, harness) → adapter. | Dispatch layer over existing `executor.py` + `backends.py`. | `executor.py`, `control_plane_executor.py` |
+| Adapters | Native / Inspect / Harbor / External-command / Selftest. | External command profiles are config-driven and write raw run records. | `inspect_adapter.py`, `harbor_adapter.py`, `terminal_bench_harbor.py`, `swebench_adapter.py`, `bfcl_native_adapter.py`, `external_command_adapter.py`, `runner.py` |
 | Evidence Normalizer | Convert native output → `EvidenceRecord` preserving native artifacts. | **Extend** `evidence.py`. | `evidence.py` |
 | Evidence Store | Run configs, attempts, scores, costs, logs, diffs, artifacts, verifier output. | JSONL now (`sink.py`); Parquet/DuckDB via `export.py`. | `evidence.py`, `sink.py`, `export.py` |
 | Compare/Report/Export | Markdown/JSON/HTML reports + cross-run comparisons. | **Exists** (`report.py`, `compare.py`, `evidence_compare.py`, `export.py`). | as listed |
@@ -104,12 +104,14 @@ flowchart LR
 | Profile | Name | Used for | Runtime |
 |---------|------|----------|---------|
 | E0 | Inspect Stateless | Structured output, single tool calls | Inspect only (model-only) |
-| E1 | Inspect Local Sandbox | Coding, repo tests, local defensive tasks | Inspect + Docker |
-| E2 | Harbor Sandbox | Terminal, multi-step verifier-heavy | Harbor (external CLI + Docker) |
+| E1 | Runtime Sandbox | Coding, repo tests, local defensive tasks | Inspect or native runtime sandbox when selected |
+| E2 | Terminal / Harness Sandbox | Terminal, multi-step verifier-heavy | Harbor or external runtime; sandbox is runtime-owned |
 | E3 | Calibration External | Public benchmark micro-slices | Adapter-backed; **never weighted** |
 | E4 | Stretch Sandbox | Expensive quarterly / offensive-restricted | Harbor/cloud; explicit safety review |
 
-Dry-run planner sets `requires_harbor=true` when any selected task profile includes E2; `requires_sandbox=true` when E1 or E2 present.
+Dry-run planner reports `requires_harbor` / `requires_sandbox` when the selected
+runtime or harness needs them. Those flags are operator preflight signals, not a
+BenchEval-owned Docker/materialization plane.
 
 ## 7. Data Contracts
 
@@ -204,6 +206,8 @@ Exceeding envelope → failure label `budget_exceeded` (distinct from `wrong_sol
 `harness_failure` · `runtime_launch_failure` · `runtime_auth_failure` · `runtime_permission_block` · `runtime_output_unparseable` · `runtime_context_overflow` · `runtime_tool_failure` · `runtime_config_drift` · `runtime_budget_exceeded` · `materialization_failure` · `model_wrong_solution` · `adapter_error` · `model_output_invalid` · `budget_exceeded`.
 
 Preflight/infrastructure failures **abort without evidence**. Post-preflight adapter failures write `EvidenceRecord` with `primary_pass=false` and the relevant failure label. Verifier remains scoring authority when a candidate artifact exists.
+
+External runtime launch and tool failures are separate: `runtime_launch_failure` means BenchEval could not start or materialize the runtime process; `runtime_tool_failure` means the runtime/tool process launched and returned an unsuccessful status. Output caps are recorded as `runtime_output_cap_reached`; when both output and total token counts are present, the output count is authoritative, otherwise total count is the fallback.
 
 ## 11. Scoring & Reporting
 
