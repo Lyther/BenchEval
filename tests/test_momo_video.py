@@ -7,8 +7,8 @@ from pathlib import Path
 
 
 def _load_renderer() -> object:
-    script = Path("scripts/render-momo-video.py")
-    spec = importlib.util.spec_from_file_location("render_momo_video", script)
+    script = Path("scripts/render-run-video.py")
+    spec = importlib.util.spec_from_file_location("render_run_video", script)
     assert spec is not None
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -17,7 +17,7 @@ def _load_renderer() -> object:
     return module
 
 
-def test_render_momo_video_ass_only_redacts_and_builds_timeline(tmp_path: Path) -> None:
+def test_render_run_video_ass_only_builds_timeline(tmp_path: Path) -> None:
     renderer = _load_renderer()
     events = tmp_path / "events.jsonl"
     events.write_text(
@@ -54,21 +54,21 @@ def test_render_momo_video_ass_only_redacts_and_builds_timeline(tmp_path: Path) 
             "--speed",
             "2",
             "--title",
-            "MOMO Test",
+            "BenchEval Test",
         ],
     )
 
     assert code == 0
     ass = output.with_suffix(".ass").read_text(encoding="utf-8")
-    assert "MOMO Test" in ass
+    assert "BenchEval Test" in ass
     assert "run_id=momo-test" in ass
     assert "[redacted-flag]" in ass
     assert "Style: Terminal" in ass
 
 
-def test_render_momo_video_default_output_path() -> None:
+def test_render_run_video_default_output_path() -> None:
     renderer = _load_renderer()
-    events = Path("results/raw/momo-cybench-glm52-20260625T092928Z/events.jsonl")
+    events = Path("results/raw/external-run-20260625T092928Z/events.jsonl")
     assert renderer.default_output_path(events) == Path(
-        "results/videos/momo-cybench-glm52-20260625T092928Z.mp4",
+        "results/videos/external-run-20260625T092928Z.mp4",
     )
