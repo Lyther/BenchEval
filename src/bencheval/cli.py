@@ -350,6 +350,21 @@ def _run_config_dry(args: argparse.Namespace) -> int:
         results_root=args.results_root,
         run_id=args.run_id,
     )
+    # If the config declares a run root (``input.root_env``) but none was supplied, the
+    # plan is SHAPE-ONLY: private material (prompts/keys/manifest) was not validated.
+    # Label it loudly so an omitted ``--run-root`` can't read as "plan looks launch-ready".
+    if run_root is None and config.input.root_env:
+        payload["shape_only"] = True
+        payload["private_material_validated"] = False
+        payload["note"] = (
+            f"shape-only: no run root ({config.input.root_env} unset and --run-root "
+            "omitted); prompts/keys/manifest were NOT validated. Supply --run-root for a "
+            "launch-ready preflight."
+        )
+        sys.stderr.write(
+            f"warning: shape-only dry-run — {config.input.root_env} unset and --run-root "
+            "omitted; private material not validated\n",
+        )
     sys.stdout.write(json.dumps(payload, indent=2) + "\n")
     return 0
 

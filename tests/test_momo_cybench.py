@@ -198,6 +198,23 @@ def test_validate_run_root_blocks_instance_with_missing_key(tmp_path: Path) -> N
         validate_external_run_root(cfg, run_root)
 
 
+def test_dry_run_without_run_root_is_labeled_shape_only(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A dry-run of a `root_env` config with no `--run-root` (and the env var unset)
+    must label itself shape-only — private material was NOT validated — so an omitted
+    run root cannot read as a launch-ready plan (peer review F005)."""
+    monkeypatch.delenv("MOMO_CYBENCH_RUN_ROOT", raising=False)
+    code = main(["run", "--config", "config/runs/momo-cybench.yaml", "--dry-run"])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["run_root"] is None
+    assert payload["shape_only"] is True
+    assert payload["private_material_validated"] is False
+    assert "MOMO_CYBENCH_RUN_ROOT" in payload["note"]
+
+
 def test_external_command_live_with_fake_kilo_writes_evidence(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
