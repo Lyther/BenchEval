@@ -106,6 +106,24 @@ def test_load_external_command_config() -> None:
     ]
 
 
+def test_momo_cybench_profile_has_full_hard_39_slice() -> None:
+    """The MOMO solver profile pins the real hard-39 instance list (not a skeleton).
+
+    IDs are authoritative: each is a private-manifest `name` / `prompts/{id}.prompt.txt`
+    stem from the hard-39 GLM-5.2 evidence export. Guards against silently regressing
+    the committed profile back to the Phase 1b one-instance skeleton.
+    """
+    cfg = load_external_run_config(Path("config/runs/momo-cybench.yaml"))
+    assert cfg.name == "momo-cybench"
+    assert cfg.benchmark_version == "hard-39-private"
+    assert cfg.model_id == "bytellm/glm-5.2"
+    ids = [instance.id for instance in cfg.instances]
+    assert len(ids) == 39
+    assert len(set(ids)) == 39  # no duplicates
+    # Spot-check authoritative endpoints of the sorted slice + a mid entry.
+    assert {"avatar", "lootstash", "were_pickle_phreaks_revenge"} <= set(ids)
+
+
 def test_validate_run_root_reports_missing_private_material(tmp_path: Path) -> None:
     cfg = ExternalRunConfig(
         name="missing-root-test",

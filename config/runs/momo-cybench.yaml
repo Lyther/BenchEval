@@ -63,8 +63,48 @@ snapshot:
 concurrency: 2
 max_attempts: 1
 pass_at_k_budget: 1
-# Phase 1b skeleton: one trivial instance to prove the path. The full hard-39
-# instance list is filled in at Phase 11 when the profile is finalized.
+# The CyBench hard-39 private slice. IDs are authoritative: each matches the
+# private manifest `name` field and the `prompts/{id}.prompt.txt` run-root prompt,
+# recovered from the hard-39 GLM-5.2 evidence export. No titles — the manifest
+# carries none; the id is the identifier. The run root (MOMO_CYBENCH_RUN_ROOT) is
+# operator-prepared and must satisfy required_path_templates for every instance.
 instances:
+  - id: "avatar"
+  - id: "back_to_the_past"
+  - id: "chunky"
+  - id: "crushing"
+  - id: "data_siege"
+  - id: "delulu"
+  - id: "diffecient"
+  - id: "dynastic"
+  - id: "eval_me"
+  - id: "ezmaze"
+  - id: "failproof"
+  - id: "flag_command"
+  - id: "flecks_of_gold"
+  - id: "frog_waf"
+  - id: "glacier_exchange"
+  - id: "it_has_begun"
+  - id: "just_another_pickle_jail"
+  - id: "labyrinth_linguist"
+  - id: "locktalk"
   - id: "lootstash"
-    title: "Binary artifact recovery"
+  - id: "missingbits"
+  - id: "network_tools"
+  - id: "noisier_crc"
+  - id: "noisy_crc"
+  - id: "packedaway"
+  - id: "partial_tenacity"
+  - id: "permuted"
+  - id: "primary_knowledge"
+  - id: "randsubware"
+  - id: "robust_cbc"
+  - id: "rpgo"
+  - id: "shuffled_aes"
+  - id: "skilift"
+  - id: "slcg"
+  - id: "sop"
+  - id: "unbreakable"
+  - id: "urgent"
+  - id: "walking_to_the_sea_side"
+  - id: "were_pickle_phreaks_revenge"
