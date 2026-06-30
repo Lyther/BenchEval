@@ -17,7 +17,12 @@ from bencheval.admission import (
     audit_suite_admission,
     audit_task_admission,
 )
-from bencheval.backends import HARBOR_BACKEND, INSPECT_BACKEND, LOCAL_BACKEND, ExecutionBackend
+from bencheval.backends import (
+    HARBOR_BACKEND,
+    INSPECT_BACKEND,
+    LOCAL_BACKEND,
+    ExecutionBackend,
+)
 from bencheval.benchmark_plan import (
     dry_run_slice_resolution,
     list_adapter_descriptors,
@@ -113,7 +118,12 @@ def _task_validate(args: argparse.Namespace) -> int:
         "execution_profile": contract.execution.profile,
         "budget_class": contract.constraints.budget_class,
         "issues": [
-            {"severity": i.severity, "code": i.code, "message": i.message, "path": i.path}
+            {
+                "severity": i.severity,
+                "code": i.code,
+                "message": i.message,
+                "path": i.path,
+            }
             for i in report.issues
         ],
     }
@@ -128,7 +138,10 @@ def _task_audit(args: argparse.Namespace) -> int:
         report = audit_suite_admission(target)
         payload = report.to_dict()
     else:
-        report = audit_task_admission(target, admission_path=admission_path_for_task(target))
+        report = audit_task_admission(
+            target,
+            admission_path=admission_path_for_task(target),
+        )
         payload = report.to_dict()
     sys.stdout.write(json.dumps(payload, indent=2) + "\n")
     admitted = payload.get("admitted", False)
@@ -226,7 +239,9 @@ def _runtime_list(args: argparse.Namespace) -> int:
         return 0
     for rp in catalog.runtimes:
         sys.stdout.write(
-            "\t".join((rp.runtime.id, rp.runtime.kind, rp.admission, rp.runtime.display_name))
+            "\t".join(
+                (rp.runtime.id, rp.runtime.kind, rp.admission, rp.runtime.display_name),
+            )
             + "\n",
         )
     return 0
@@ -323,7 +338,10 @@ def _config_run_selected(args: argparse.Namespace) -> bool:
     return getattr(args, "config", None) is not None
 
 
-def _external_run_root(args: argparse.Namespace, config_path: Path) -> tuple[object, Path | None]:
+def _external_run_root(
+    args: argparse.Namespace,
+    config_path: Path,
+) -> tuple[object, Path | None]:
     config = load_external_run_config(config_path)
     run_root = getattr(args, "run_root", None)
     if run_root is None and config.input.root_env:
@@ -489,7 +507,9 @@ def _run_dry(args: argparse.Namespace) -> int:
 def _selected_task_ids(args: argparse.Namespace) -> tuple[list[str], dict[str, object]]:
     selected = sum(x is not None for x in (args.task, args.suite, args.manifest))
     if selected != 1:
-        raise ValueError("non-dry-run requires exactly one of --task, --suite, or --manifest")
+        raise ValueError(
+            "non-dry-run requires exactly one of --task, --suite, or --manifest",
+        )
     if args.task is not None:
         return [args.task], {}
     if args.suite is not None:
@@ -530,7 +550,9 @@ def _run_execute(args: argparse.Namespace) -> int:
         return partial_err
     if _control_plane_run_selected(args):
         if args.output is None:
-            sys.stderr.write("error: four-axis run requires --output evidence JSONL path\n")
+            sys.stderr.write(
+                "error: four-axis run requires --output evidence JSONL path\n",
+            )
             return 2
         plan = plan_control_plane(
             benchmark_id=args.benchmark,
@@ -662,7 +684,9 @@ def _doctor_run(args: argparse.Namespace) -> int:
         report = run_pilot_doctor(model_id=args.model)
     else:
         if args.backend is None:
-            sys.stderr.write("error: --backend is required unless --profile pilot is used\n")
+            sys.stderr.write(
+                "error: --backend is required unless --profile pilot is used\n",
+            )
             return 2
         report = run_doctor(
             args.backend,
@@ -979,10 +1003,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "audit",
         help="Audit Core-8/Core-16 admission gates (exit 1 when not fully admitted)",
     )
-    audit.add_argument("target", help="Task id or suite name (e.g. core-8, core-16, smoke)")
+    audit.add_argument(
+        "target",
+        help="Task id or suite name (e.g. core-8, core-16, smoke)",
+    )
     audit.set_defaults(handler=_task_audit)
 
-    benchmark = sub.add_parser("benchmark", help="External benchmark catalog operations")
+    benchmark = sub.add_parser(
+        "benchmark",
+        help="External benchmark catalog operations",
+    )
     benchmark_sub = benchmark.add_subparsers(dest="benchmark_command", required=True)
 
     benchmark_list = benchmark_sub.add_parser(
@@ -1090,10 +1120,26 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Benchmark id for four-axis control-plane run (with --slice, --runtime, --model)",
     )
-    run.add_argument("--slice", default=None, help="Slice id for four-axis control-plane run")
-    run.add_argument("--runtime", default=None, help="Runtime id for four-axis control-plane run")
-    run.add_argument("--suite", default=None, help="Suite name for dry-run or batch execution")
-    run.add_argument("--task", default=None, help="Single task id for non-dry-run execution")
+    run.add_argument(
+        "--slice",
+        default=None,
+        help="Slice id for four-axis control-plane run",
+    )
+    run.add_argument(
+        "--runtime",
+        default=None,
+        help="Runtime id for four-axis control-plane run",
+    )
+    run.add_argument(
+        "--suite",
+        default=None,
+        help="Suite name for dry-run or batch execution",
+    )
+    run.add_argument(
+        "--task",
+        default=None,
+        help="Single task id for non-dry-run execution",
+    )
     run.add_argument(
         "--manifest",
         type=Path,
@@ -1172,7 +1218,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     run.set_defaults(handler=_run_handler)
 
-    report = sub.add_parser("report", help="Generate Markdown report from evidence JSONL")
+    report = sub.add_parser(
+        "report",
+        help="Generate Markdown report from evidence JSONL",
+    )
     report.add_argument("evidence", type=Path, help="Evidence JSONL input path")
     report.add_argument(
         "--output",
@@ -1182,7 +1231,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     report.set_defaults(handler=_report_generate)
 
-    doctor = sub.add_parser("doctor", help="Preflight checks for live execution backends")
+    doctor = sub.add_parser(
+        "doctor",
+        help="Preflight checks for live execution backends",
+    )
     doctor.add_argument(
         "--backend",
         choices=(INSPECT_BACKEND, HARBOR_BACKEND),
@@ -1308,7 +1360,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "export-run",
         help="Bundle evidence, report, raw artifacts, manifest, and tar.gz",
     )
-    export_run.add_argument("--evidence", type=Path, required=True, help="Evidence JSONL path")
+    export_run.add_argument(
+        "--evidence",
+        type=Path,
+        required=True,
+        help="Evidence JSONL path",
+    )
     export_run.add_argument(
         "--output",
         type=Path,

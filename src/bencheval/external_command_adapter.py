@@ -441,11 +441,22 @@ def validate_external_run_root(config: ExternalRunConfig, run_root: Path | None)
     for instance in config.instances:
         if not _prompt_path(config, run_root, instance).is_file():
             missing.append(f"prompt:{instance.id}")
+            # Without the prompt we cannot tell which private material it needs; the
+            # missing prompt is already the reported gap, so skip the per-prompt checks.
+            continue
+        prompt_text = _prompt_text(config, run_root, instance)
         for template in config.input.required_path_templates:
             rel = _format_template(
                 template,
                 _template_context(config, run_root, instance, attempt=1, work_dir=run_root),
             )
+            # Require private material only when the SELECTED prompt actually references
+            # it (e.g. `ssh -i .../keys/<id>`). A prompt-only challenge that never SSHes
+            # does not need a per-task key, so a blanket `keys/{id}` requirement must not
+            # block it (peer review F003). The prompt text is alias-rewritten, so both the
+            # legacy and run-root path forms contain the rendered `rel` substring.
+            if rel not in prompt_text:
+                continue
             path = Path(rel)
             candidate = path if path.is_absolute() else run_root / path
             if not candidate.is_file():

@@ -170,17 +170,20 @@ def test_validate_run_root_reports_missing_private_material(tmp_path: Path) -> N
         validate_external_run_root(cfg, tmp_path)
 
 
-def test_validate_run_root_blocks_instance_with_missing_key(tmp_path: Path) -> None:
-    """A run root that has the prompt but lacks an instance's key fails preflight.
+def test_validate_run_root_blocks_key_referenced_by_prompt(tmp_path: Path) -> None:
+    """A key the SELECTED prompt references must exist, else preflight fails closed.
 
-    The hard-39 evidence export lacked keys for 4 instances (skilift, unbreakable,
-    walking_to_the_sea_side, were_pickle_phreaks_revenge). A real 39-run is blocked
-    fail-fast (not silently run with gaps) until the operator run root provides every
-    key. `bencheval run` calls this preflight before launch (peer review F004).
+    Private material is required per-prompt: an SSH challenge whose prompt says
+    `ssh -i .../keys/<id>` must have that key. The block is fail-fast (not a silent
+    run with gaps). `bencheval run` calls this preflight before launch (peer review
+    F003/F004).
     """
     run_root = tmp_path / "rr"
     (run_root / "run-prompts").mkdir(parents=True)
-    (run_root / "run-prompts" / "skilift.txt").write_text("solve\n", encoding="utf-8")
+    (run_root / "run-prompts" / "skilift.txt").write_text(
+        "Solve through ssh -i keys/skilift root@victim and print FLAG.\n",
+        encoding="utf-8",
+    )
     cfg = ExternalRunConfig(
         name="keys-preflight-test",
         benchmark_id="cybench",
@@ -193,9 +196,51 @@ def test_validate_run_root_blocks_instance_with_missing_key(tmp_path: Path) -> N
         },
         instances=[{"id": "skilift"}],
     )
-    # Prompt is present, so the block is specifically the missing key.
+    # Prompt references keys/skilift, so the missing key is a hard block.
     with pytest.raises(BenchEvalError, match=r"required:skilift:keys/skilift"):
         validate_external_run_root(cfg, run_root)
+
+
+def test_validate_run_root_prompt_only_instance_needs_no_key(tmp_path: Path) -> None:
+    """A prompt-only instance whose prompt references no key passes preflight even when
+    `required_path_templates` lists `keys/{id}` — keys are required only when the
+    selected prompt references them, so a non-SSH challenge is not falsely blocked
+    (peer review F003)."""
+    run_root = tmp_path / "rr"
+    (run_root / "prompts").mkdir(parents=True)
+    (run_root / "prompts" / "skilift.prompt.txt").write_text(
+        "Reverse the binary and print the FLAG. No remote service.\n",
+        encoding="utf-8",
+    )
+    cfg = ExternalRunConfig(
+        name="prompt-only-test",
+        benchmark_id="cybench",
+        runtime_id="claude-code",
+        model_id="bytellm/glm-5.2",
+        command={"argv_prefix": ["true"]},
+        input={
+            "prompt_path_templates": [
+                "run-prompts/{instance_id}.txt",
+                "prompts/{instance_id}.prompt.txt",
+            ],
+            "required_path_templates": ["keys/{instance_id}"],
+        },
+        instances=[{"id": "skilift"}],
+    )
+    validate_external_run_root(cfg, run_root)  # must not raise — no key referenced
+
+
+def test_full_hard39_profile_passes_preflight_against_historical_root() -> None:
+    """The committed momo-cybench profile preflights cleanly against the historical
+    hard-39 root: the four prompt-only instances (no key) pass because their prompts
+    reference no key, and every key-using instance has its key (peer review F003)."""
+    root = Path(
+        "results/raw/cybench-hard-39-glm52-20260618T022156Z/local/bencheval-cybench-real-vps"
+    )
+    if not root.is_dir():
+        pytest.skip("historical hard-39 run root not present")
+    cfg = load_external_run_config(Path("config/runs/momo-cybench.yaml"))
+    validate_external_run_root(cfg, root)  # must not raise — false key blocker removed
 
 
 def test_dry_run_without_run_root_is_labeled_shape_only(
@@ -306,7 +351,9 @@ def test_external_command_live_with_fake_kilo_writes_evidence(
     assert record.header.run_id == run_id
     assert record.header.benchmark_id == "cybench"
     assert record.footer is not None
-    expected_evidence_sha = hashlib.sha256(paths.evidence_jsonl.read_bytes()).hexdigest()
+    expected_evidence_sha = hashlib.sha256(
+        paths.evidence_jsonl.read_bytes(),
+    ).hexdigest()
     assert record.footer.evidence_sha256 == expected_evidence_sha
     assert paths.summary_json.is_file()
 
@@ -412,7 +459,9 @@ def test_external_command_nonzero_exit_is_runtime_tool_failure(tmp_path: Path) -
     )
 
     assert code == 1
-    rows = read_evidence_jsonl(make_external_run_paths(tmp_path / "results", run_id).evidence_jsonl)
+    rows = read_evidence_jsonl(
+        make_external_run_paths(tmp_path / "results", run_id).evidence_jsonl,
+    )
     assert rows[0].failure_class == "runtime_tool_failure"
     assert rows[0].invalid_reason == "process_exit=7"
 
@@ -486,10 +535,17 @@ def test_remote_snapshot_timeout_writes_marker(
         def emit(self, _kind: str, message: str, **_kwargs: object) -> None:
             self.messages.append(message)
 
-    async def fake_create_subprocess_exec(*_args: object, **_kwargs: object) -> SlowProcess:
+    async def fake_create_subprocess_exec(
+        *_args: object,
+        **_kwargs: object,
+    ) -> SlowProcess:
         return SlowProcess()
 
-    monkeypatch.setattr(external_command_adapter.shutil, "which", lambda _name: "/usr/bin/ssh")
+    monkeypatch.setattr(
+        external_command_adapter.shutil,
+        "which",
+        lambda _name: "/usr/bin/ssh",
+    )
     monkeypatch.setattr(
         external_command_adapter.asyncio,
         "create_subprocess_exec",
@@ -549,10 +605,17 @@ def test_remote_snapshot_timeout_cleanup_error_still_writes_marker(
 
     proc = CleanupErrorProcess()
 
-    async def fake_create_subprocess_exec(*_args: object, **_kwargs: object) -> CleanupErrorProcess:
+    async def fake_create_subprocess_exec(
+        *_args: object,
+        **_kwargs: object,
+    ) -> CleanupErrorProcess:
         return proc
 
-    monkeypatch.setattr(external_command_adapter.shutil, "which", lambda _name: "/usr/bin/ssh")
+    monkeypatch.setattr(
+        external_command_adapter.shutil,
+        "which",
+        lambda _name: "/usr/bin/ssh",
+    )
     monkeypatch.setattr(
         external_command_adapter.asyncio,
         "create_subprocess_exec",
