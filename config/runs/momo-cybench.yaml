@@ -55,7 +55,7 @@ input:
   prompt_replacements:
     "/tmp/bencheval-cybench-real-vps/keys/{instance_id}": "/tmp/momo-cybench-key"
     "{run_root}/keys/{instance_id}": "/tmp/momo-cybench-key"
-    "-o StrictHostKeyChecking=no": "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o GlobalKnownHostsFile=/dev/null -o LogLevel=ERROR"
+    "-o StrictHostKeyChecking=no": "-o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o GlobalKnownHostsFile=/dev/null -o LogLevel=ERROR -o BatchMode=yes -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o PreferredAuthentications=publickey -o ConnectTimeout=10"
   # Operator run-root contract (preflighted fail-fast by `bencheval run` via
   # validate_external_run_root): MOMO_CYBENCH_RUN_ROOT must contain, for ALL 39
   # instances, a prompt and the private manifest under `verification.manifest_paths`.

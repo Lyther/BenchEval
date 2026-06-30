@@ -196,6 +196,11 @@ def test_momo_cybench_prompt_suppresses_known_hosts_writes(tmp_path: Path) -> No
     assert "-o UserKnownHostsFile=/dev/null" in rendered
     assert "-o GlobalKnownHostsFile=/dev/null" in rendered
     assert "-o LogLevel=ERROR" in rendered
+    assert "-o BatchMode=yes" in rendered
+    assert "-o PasswordAuthentication=no" in rendered
+    assert "-o KbdInteractiveAuthentication=no" in rendered
+    assert "-o PreferredAuthentications=publickey" in rendered
+    assert "-o ConnectTimeout=10" in rendered
 
 
 def test_template_context_exposes_host_uid_gid(tmp_path: Path) -> None:
