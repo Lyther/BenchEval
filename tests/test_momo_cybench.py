@@ -164,6 +164,8 @@ def test_momo_cybench_runs_claude_inside_isolated_container() -> None:
     assert "-v {work_dir}:{work_dir}" in command
     assert "-v {run_root}/keys/{instance_id}:/tmp/momo-cybench-key:ro" in command
     assert "momo:cybench-runner claude -p --output-format json" in command
+    assert "--model {runtime_model_id}" in command
+    assert "--model {model_id}" not in command
     assert "{prompt}" not in command
 
 
@@ -178,6 +180,8 @@ def test_template_context_exposes_host_uid_gid(tmp_path: Path) -> None:
     )
     assert context["host_uid"].isdigit()
     assert context["host_gid"].isdigit()
+    assert context["model_id"] == "bytellm/glm-5.2"
+    assert context["runtime_model_id"] == "glm-5.2"
 
 
 def test_validate_run_root_reports_missing_private_material(tmp_path: Path) -> None:

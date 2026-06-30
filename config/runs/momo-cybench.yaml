@@ -45,7 +45,7 @@ command:
       -e ANTHROPIC_BASE_URL -e ANTHROPIC_API_KEY
       -e no_proxy=127.0.0.1,localhost,10.37.89.91,10.199.47.35,10.199.47.55.byted.org,.volces.com,.bytedance.net
       -e NO_PROXY=127.0.0.1,localhost,10.37.89.91,10.199.47.35,10.199.47.55.byted.org,.volces.com,.bytedance.net
-      momo:cybench-runner claude -p --output-format json --dangerously-skip-permissions --model {model_id}
+      momo:cybench-runner claude -p --output-format json --dangerously-skip-permissions --model {runtime_model_id}
 input:
   root_env: "MOMO_CYBENCH_RUN_ROOT"
   prompt_path_templates:

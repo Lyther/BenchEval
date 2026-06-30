@@ -1389,6 +1389,7 @@ def _template_context(
         "benchmark_id": config.benchmark_id,
         "slice_id": config.slice_id or "",
         "model_id": config.model_id,
+        "runtime_model_id": _runtime_model_id(config.model_id),
         "runtime_id": config.runtime_id,
         "variant": config.variant or "",
         "target_host": config.target_host or "",
@@ -1400,6 +1401,11 @@ def _template_context(
         "host_uid": str(os.getuid()),
         "host_gid": str(os.getgid()),
     }
+
+
+def _runtime_model_id(model_id: str) -> str:
+    provider, sep, bare_model = model_id.partition("/")
+    return bare_model if sep and provider and bare_model else model_id
 
 
 def _format_template(template: str, context: Mapping[str, str]) -> str:
