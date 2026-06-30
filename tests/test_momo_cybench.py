@@ -16,6 +16,7 @@ from bencheval.evidence import read_evidence_jsonl
 from bencheval.exceptions import BenchEvalError
 from bencheval.external_command_adapter import (
     ExternalRunConfig,
+    _classify_result,
     _hit_output_cap,
     _prompt_text,
     load_external_run_config,
@@ -124,6 +125,37 @@ def test_momo_cybench_profile_has_full_hard_39_slice() -> None:
     assert {"avatar", "lootstash", "were_pickle_phreaks_revenge"} <= set(ids)
 
 
+def test_momo_cybench_scorer_is_strict_no_observed_without_expected() -> None:
+    """The MOMO profile must score only against an official expected value.
+
+    With ``allow_observed_without_expected=false``, a printed ``FLAG:`` whose
+    instance has no expected value in the private manifest (``expected is None``)
+    must be classified as NOT passed — never a self-asserted solve. A real
+    expected value still scores by exact match. Guards the official-scorer-only
+    requirement (peer review F001).
+    """
+    cfg = load_external_run_config(Path("config/runs/momo-cybench.yaml"))
+    assert cfg.verification.allow_observed_without_expected is False
+    # Missing expected (e.g. manifest gap) + a printed flag must NOT pass.
+    passed, value_match = _classify_result(
+        config=cfg,
+        returncode=0,
+        observed="FLAG{anything_the_solver_printed}",
+        expected=None,
+    )
+    assert passed is False
+    assert value_match is None
+    # A real expected value scores by exact match (positive control).
+    ok_pass, ok_match = _classify_result(
+        config=cfg,
+        returncode=0,
+        observed="HTB{real}",
+        expected="HTB{real}",
+    )
+    assert ok_pass is True
+    assert ok_match is True
+
+
 def test_validate_run_root_reports_missing_private_material(tmp_path: Path) -> None:
     cfg = ExternalRunConfig(
         name="missing-root-test",
@@ -136,6 +168,34 @@ def test_validate_run_root_reports_missing_private_material(tmp_path: Path) -> N
     )
     with pytest.raises(BenchEvalError, match="prompt:lootstash"):
         validate_external_run_root(cfg, tmp_path)
+
+
+def test_validate_run_root_blocks_instance_with_missing_key(tmp_path: Path) -> None:
+    """A run root that has the prompt but lacks an instance's key fails preflight.
+
+    The hard-39 evidence export lacked keys for 4 instances (skilift, unbreakable,
+    walking_to_the_sea_side, were_pickle_phreaks_revenge). A real 39-run is blocked
+    fail-fast (not silently run with gaps) until the operator run root provides every
+    key. `bencheval run` calls this preflight before launch (peer review F004).
+    """
+    run_root = tmp_path / "rr"
+    (run_root / "run-prompts").mkdir(parents=True)
+    (run_root / "run-prompts" / "skilift.txt").write_text("solve\n", encoding="utf-8")
+    cfg = ExternalRunConfig(
+        name="keys-preflight-test",
+        benchmark_id="cybench",
+        runtime_id="claude-code",
+        model_id="bytellm/glm-5.2",
+        command={"argv_prefix": ["true"]},
+        input={
+            "prompt_path_templates": ["run-prompts/{instance_id}.txt"],
+            "required_path_templates": ["keys/{instance_id}"],
+        },
+        instances=[{"id": "skilift"}],
+    )
+    # Prompt is present, so the block is specifically the missing key.
+    with pytest.raises(BenchEvalError, match=r"required:skilift:keys/skilift"):
+        validate_external_run_root(cfg, run_root)
 
 
 def test_external_command_live_with_fake_kilo_writes_evidence(

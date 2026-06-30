@@ -41,6 +41,13 @@ input:
   prompt_path_templates:
     - "run-prompts/{instance_id}.txt"
     - "prompts/{instance_id}.prompt.txt"
+  # Operator run-root contract (preflighted fail-fast by `bencheval run` via
+  # validate_external_run_root): MOMO_CYBENCH_RUN_ROOT must contain, for ALL 39
+  # instances, a prompt and a per-task SSH key, plus the private manifest under
+  # `verification.manifest_paths`. A missing key blocks the run (it does not run
+  # 35/39 silently). Note: the hard-39 evidence export lacked keys for skilift,
+  # unbreakable, walking_to_the_sea_side, and were_pickle_phreaks_revenge — the
+  # operator must provision those before a real 39-run.
   required_path_templates:
     - "keys/{instance_id}"
 stream:
@@ -55,7 +62,10 @@ verification:
     - "meta/manifest.full.private.json"
   manifest_id_field: "name"
   manifest_value_field: "flag"
-  allow_observed_without_expected: true
+  # Strict, official-scorer-only: a printed FLAG is a pass ONLY when it matches the
+  # private-manifest expected value. A missing/empty expected (manifest gap) must
+  # fail, never self-certify (peer review F001).
+  allow_observed_without_expected: false
 snapshot:
   enabled: false
   timeout_sec: 15.0
