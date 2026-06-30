@@ -195,6 +195,7 @@ def test_momo_cybench_prompt_suppresses_known_hosts_writes(tmp_path: Path) -> No
     assert "/tmp/momo-cybench-key" in rendered
     assert "-o UserKnownHostsFile=/dev/null" in rendered
     assert "-o GlobalKnownHostsFile=/dev/null" in rendered
+    assert "-o LogLevel=ERROR" in rendered
 
 
 def test_template_context_exposes_host_uid_gid(tmp_path: Path) -> None:
