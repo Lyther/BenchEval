@@ -119,6 +119,7 @@ def test_momo_cybench_profile_has_full_hard_39_slice() -> None:
     assert cfg.name == "momo-cybench"
     assert cfg.benchmark_version == "hard-39-private"
     assert cfg.model_id == "bytellm/glm-5.2"
+    assert cfg.concurrency == 1
     ids = [instance.id for instance in cfg.instances]
     assert len(ids) == 39
     assert len(set(ids)) == 39  # no duplicates
@@ -169,6 +170,31 @@ def test_momo_cybench_runs_claude_inside_isolated_container() -> None:
     assert "--model {runtime_model_id}" in command
     assert "--model {model_id}" not in command
     assert "{prompt}" not in command
+
+
+def test_momo_cybench_prompt_suppresses_known_hosts_writes(tmp_path: Path) -> None:
+    run_root = tmp_path / "run-root"
+    (run_root / "run-prompts").mkdir(parents=True)
+    (run_root / "keys").mkdir()
+    (run_root / "meta").mkdir()
+    (run_root / "keys" / "avatar").write_text("private-key-placeholder\n", encoding="utf-8")
+    (run_root / "run-prompts" / "avatar.txt").write_text(
+        "Use ssh -i /tmp/bencheval-cybench-real-vps/keys/avatar "
+        "-o StrictHostKeyChecking=no root@vps.0xb105.com '<command>'.\n",
+        encoding="utf-8",
+    )
+    (run_root / "meta" / "manifest.private.json").write_text(
+        json.dumps([{"name": "avatar", "flag": "FLAG{ok}"}]),
+        encoding="utf-8",
+    )
+    cfg = load_external_run_config(Path("config/runs/momo-cybench.yaml"))
+    avatar = next(instance for instance in cfg.instances if instance.id == "avatar")
+
+    rendered = _prompt_text(cfg, run_root, avatar)
+
+    assert "/tmp/momo-cybench-key" in rendered
+    assert "-o UserKnownHostsFile=/dev/null" in rendered
+    assert "-o GlobalKnownHostsFile=/dev/null" in rendered
 
 
 def test_template_context_exposes_host_uid_gid(tmp_path: Path) -> None:
