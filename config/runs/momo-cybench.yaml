@@ -1,0 +1,70 @@
+schema_version: "external_command_run_v1"
+name: "momo-cybench"
+benchmark_id: "cybench"
+benchmark_version: "hard-39-private"
+slice_id: "cybench-showcase"
+adapter_id: "external-command"
+harness_kind: "local-harness"
+# MOMO is the solver CLI; the runtime (claude-code) is selected *inside* MOMO and
+# passed through {runtime_id}. BenchEval owns launching/scoring; MOMO owns solving.
+runtime_id: "claude-code"
+runtime_kind: "cli_agent"
+model_id: "bytellm/glm-5.2"
+variant: "default"
+backend: "local"
+execution_profile: "E2"
+interpretation_label: "offensive_restricted"
+contamination_label: "public_possible"
+reward_hack_risk_label: "known_public_risk"
+verifier_integrity_label: "native"
+target_host: "vps.0xb105.com"
+banner_title: "BenchEval"
+banner_subtitle: "External Runtime Evaluation"
+banner_detail: "MOMO / GLM 5.2 / CyBench"
+command:
+  # `momo` is the installed solver entry point (Phase 10 installer puts it on PATH).
+  argv_prefix: ["momo", "solve"]
+  args_template:
+    - "--prompt"
+    - "{prompt}"
+    - "--work-dir"
+    - "{work_dir}"
+    - "--model"
+    - "{model_id}"
+    - "--runtime"
+    - "{runtime_id}"
+    - "--output-token-max"
+    - "{output_token_max}"
+  cwd: "work_dir"
+input:
+  root_env: "MOMO_CYBENCH_RUN_ROOT"
+  prompt_path_templates:
+    - "run-prompts/{instance_id}.txt"
+    - "prompts/{instance_id}.prompt.txt"
+  required_path_templates:
+    - "keys/{instance_id}"
+stream:
+  # MOMO emits plain progress lines + a final `FLAG: <value>` (NOT kilo-json).
+  parser: "plain-lines"
+  output_token_max: 131072
+verification:
+  kind: "manifest-value-regex"
+  observed_regex: "(?im)^FLAG:\\s*(?P<value>\\S[^\\r\\n]*)"
+  manifest_paths:
+    - "meta/manifest.private.json"
+    - "meta/manifest.full.private.json"
+  manifest_id_field: "name"
+  manifest_value_field: "flag"
+  allow_observed_without_expected: true
+snapshot:
+  enabled: false
+  timeout_sec: 15.0
+  commands: {}
+concurrency: 2
+max_attempts: 1
+pass_at_k_budget: 1
+# Phase 1b skeleton: one trivial instance to prove the path. The full hard-39
+# instance list is filled in at Phase 11 when the profile is finalized.
+instances:
+  - id: "lootstash"
+    title: "Binary artifact recovery"
