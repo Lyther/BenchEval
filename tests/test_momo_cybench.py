@@ -161,6 +161,8 @@ def test_momo_cybench_runs_claude_inside_isolated_container() -> None:
     cfg = load_external_run_config(Path("config/runs/momo-cybench.yaml"))
     command = cfg.command.env["MOMO_CLAUDE_CODE_COMMAND"]
     assert "docker run --rm" in command
+    assert "-v /etc/passwd:/etc/passwd:ro" in command
+    assert "-v /etc/group:/etc/group:ro" in command
     assert "-v {work_dir}:{work_dir}" in command
     assert "-v {run_root}/keys/{instance_id}:/tmp/momo-cybench-key:ro" in command
     assert "momo:cybench-runner claude -p --output-format json" in command

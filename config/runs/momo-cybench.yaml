@@ -39,6 +39,7 @@ command:
   env:
     MOMO_CLAUDE_CODE_COMMAND: >-
       docker run --rm --network host -i --user {host_uid}:{host_gid}
+      -v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro
       -v {work_dir}:{work_dir} -w {work_dir}
       -v {run_root}/keys/{instance_id}:/tmp/momo-cybench-key:ro
       -e HOME={work_dir}/.container-home
