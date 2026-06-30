@@ -43,11 +43,11 @@ input:
     - "prompts/{instance_id}.prompt.txt"
   # Operator run-root contract (preflighted fail-fast by `bencheval run` via
   # validate_external_run_root): MOMO_CYBENCH_RUN_ROOT must contain, for ALL 39
-  # instances, a prompt and a per-task SSH key, plus the private manifest under
-  # `verification.manifest_paths`. A missing key blocks the run (it does not run
-  # 35/39 silently). Note: the hard-39 evidence export lacked keys for skilift,
-  # unbreakable, walking_to_the_sea_side, and were_pickle_phreaks_revenge — the
-  # operator must provision those before a real 39-run.
+  # instances, a prompt and the private manifest under `verification.manifest_paths`.
+  # A per-task SSH key is required only when the selected prompt references it.
+  # The hard-39 evidence export has prompt-only instances with no key; those pass
+  # preflight because their prompts do not require keys. Missing private material
+  # for a prompt that references it still blocks the run before execution.
   required_path_templates:
     - "keys/{instance_id}"
 stream:
@@ -77,7 +77,8 @@ pass_at_k_budget: 1
 # private manifest `name` field and the `prompts/{id}.prompt.txt` run-root prompt,
 # recovered from the hard-39 GLM-5.2 evidence export. No titles — the manifest
 # carries none; the id is the identifier. The run root (MOMO_CYBENCH_RUN_ROOT) is
-# operator-prepared and must satisfy required_path_templates for every instance.
+# operator-prepared and must satisfy required_path_templates when a selected
+# prompt references those private-material paths.
 instances:
   - id: "avatar"
   - id: "back_to_the_past"
