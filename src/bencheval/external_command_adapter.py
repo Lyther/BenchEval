@@ -444,7 +444,7 @@ def validate_external_run_root(config: ExternalRunConfig, run_root: Path | None)
             # Without the prompt we cannot tell which private material it needs; the
             # missing prompt is already the reported gap, so skip the per-prompt checks.
             continue
-        prompt_text = _prompt_text(config, run_root, instance)
+        prompt_text = _required_path_prompt_text(config, run_root, instance)
         for template in config.input.required_path_templates:
             rel = _format_template(
                 template,
@@ -1231,14 +1231,48 @@ def _prompt_text(
     run_root: Path | None,
     instance: ExternalInstance,
 ) -> str:
-    path = _prompt_path(config, run_root, instance)
-    text = path.read_text(encoding="utf-8")
-    replacements = dict(config.input.prompt_replacements)
+    text = _raw_prompt_text(config, run_root, instance)
+    context = _template_context(
+        config,
+        run_root,
+        instance,
+        attempt=1,
+        work_dir=run_root or Path("."),
+    )
+    replacements = {
+        _format_template(old, context): _format_template(new, context)
+        for old, new in config.input.prompt_replacements.items()
+    }
     if run_root is not None:
         replacements.setdefault(LEGACY_PRIVATE_ROOT_ALIAS, str(run_root.resolve()))
     for old, new in replacements.items():
         text = text.replace(old, new)
     return text
+
+
+def _raw_prompt_text(
+    config: ExternalRunConfig,
+    run_root: Path | None,
+    instance: ExternalInstance,
+) -> str:
+    path = _prompt_path(config, run_root, instance)
+    return path.read_text(encoding="utf-8")
+
+
+def _required_path_prompt_text(
+    config: ExternalRunConfig,
+    run_root: Path,
+    instance: ExternalInstance,
+) -> str:
+    """Prompt text used only to decide whether private material is referenced.
+
+    Runtime prompt rewrites may replace a private host path with a container-local
+    mount path. Preflight must still validate the original referenced material,
+    so it checks the raw prompt plus the historical root-alias expansion, not the
+    final runtime prompt.
+    """
+    text = _raw_prompt_text(config, run_root, instance)
+    return text.replace(LEGACY_PRIVATE_ROOT_ALIAS, str(run_root.resolve()))
 
 
 def _expected_value(
@@ -1363,6 +1397,8 @@ def _template_context(
         "run_root": str(run_root.resolve()) if run_root else "",
         "work_dir": str(work_dir.resolve()),
         "output_token_max": str(config.stream.output_token_max or ""),
+        "host_uid": str(os.getuid()),
+        "host_gid": str(os.getgid()),
     }
 
 

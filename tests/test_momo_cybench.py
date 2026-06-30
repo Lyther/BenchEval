@@ -19,6 +19,7 @@ from bencheval.external_command_adapter import (
     _classify_result,
     _hit_output_cap,
     _prompt_text,
+    _template_context,
     load_external_run_config,
     make_external_run_paths,
     validate_external_run_root,
@@ -156,6 +157,29 @@ def test_momo_cybench_scorer_is_strict_no_observed_without_expected() -> None:
     assert ok_match is True
 
 
+def test_momo_cybench_runs_claude_inside_isolated_container() -> None:
+    cfg = load_external_run_config(Path("config/runs/momo-cybench.yaml"))
+    command = cfg.command.env["MOMO_CLAUDE_CODE_COMMAND"]
+    assert "docker run --rm" in command
+    assert "-v {work_dir}:{work_dir}" in command
+    assert "-v {run_root}/keys/{instance_id}:/tmp/momo-cybench-key:ro" in command
+    assert "momo:cybench-runner claude -p --output-format json" in command
+    assert "{prompt}" not in command
+
+
+def test_template_context_exposes_host_uid_gid(tmp_path: Path) -> None:
+    cfg = load_external_run_config(Path("config/runs/momo-cybench.yaml"))
+    context = _template_context(
+        cfg,
+        tmp_path,
+        cfg.instances[0],
+        attempt=1,
+        work_dir=tmp_path / "work",
+    )
+    assert context["host_uid"].isdigit()
+    assert context["host_gid"].isdigit()
+
+
 def test_validate_run_root_reports_missing_private_material(tmp_path: Path) -> None:
     cfg = ExternalRunConfig(
         name="missing-root-test",
@@ -199,6 +223,39 @@ def test_validate_run_root_blocks_key_referenced_by_prompt(tmp_path: Path) -> No
     # Prompt references keys/skilift, so the missing key is a hard block.
     with pytest.raises(BenchEvalError, match=r"required:skilift:keys/skilift"):
         validate_external_run_root(cfg, run_root)
+
+
+def test_validate_run_root_checks_key_before_runtime_prompt_rewrite(tmp_path: Path) -> None:
+    run_root = tmp_path / "rr"
+    (run_root / "run-prompts").mkdir(parents=True)
+    (run_root / "run-prompts" / "avatar.txt").write_text(
+        "Use ssh -i /tmp/bencheval-cybench-real-vps/keys/avatar root@vps.0xb105.com '<command>'.\n",
+        encoding="utf-8",
+    )
+    cfg = ExternalRunConfig(
+        name="keys-rewrite-preflight-test",
+        benchmark_id="cybench",
+        runtime_id="claude-code",
+        model_id="bytellm/glm-5.2",
+        command={"argv_prefix": ["true"]},
+        input={
+            "prompt_path_templates": ["run-prompts/{instance_id}.txt"],
+            "required_path_templates": ["keys/{instance_id}"],
+            "prompt_replacements": {
+                "/tmp/bencheval-cybench-real-vps/keys/{instance_id}": ("/tmp/momo-cybench-key"),
+            },
+        },
+        instances=[{"id": "avatar"}],
+    )
+    with pytest.raises(BenchEvalError, match=r"required:avatar:keys/avatar"):
+        validate_external_run_root(cfg, run_root)
+
+    (run_root / "keys").mkdir()
+    (run_root / "keys" / "avatar").write_text("private key\n", encoding="utf-8")
+    validate_external_run_root(cfg, run_root)
+    rendered = _prompt_text(cfg, run_root, cfg.instances[0])
+    assert "/tmp/bencheval-cybench-real-vps" not in rendered
+    assert "/tmp/momo-cybench-key" in rendered
 
 
 def test_validate_run_root_prompt_only_instance_needs_no_key(tmp_path: Path) -> None:
