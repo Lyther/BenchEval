@@ -65,11 +65,11 @@ def docker_available() -> bool:
 
 def provider_env_vars_for_model(model_id: str) -> tuple[str, ...]:
     lowered = model_id.lower()
-    if lowered.startswith("openai/") or lowered.startswith("gpt-"):
+    if lowered.startswith(("openai/", "gpt-")):
         return ("OPENAI_API_KEY",)
-    if lowered.startswith("anthropic/") or lowered.startswith("claude"):
+    if lowered.startswith(("anthropic/", "claude")):
         return ("ANTHROPIC_API_KEY",)
-    if lowered.startswith("google/") or lowered.startswith("gemini"):
+    if lowered.startswith(("google/", "gemini")):
         return ("GOOGLE_API_KEY",)
     if lowered.startswith("mockllm/"):
         return ()

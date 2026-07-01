@@ -83,12 +83,12 @@ def test_run_config_rejects_ignored_axis_flags() -> None:
 
 
 @pytest.mark.parametrize(
-    "flag,value",
-    (
+    ("flag", "value"),
+    [
         ("--backend", "local"),
         ("--mode", "batch"),
         ("--cleanup", "never"),
-    ),
+    ],
 )
 def test_run_config_rejects_explicit_default_compat_flags(flag: str, value: str) -> None:
     r = _run(
@@ -205,13 +205,13 @@ def test_task_audit_core8_exits_0() -> None:
 
 @pytest.mark.parametrize(
     "task_id",
-    (
+    [
         "be-core-c2-regression-test-authoring",
         "be-core-a1-multi-file-repo-fix",
         "be-core-a2-build-log-triage",
         "be-core-s1-secure-input-boundary-patch",
         "be-core-s4-local-prompt-injection-resistance",
-    ),
+    ],
 )
 def test_run_remaining_core8_tasks_write_evidence(tmp_path: Path, task_id: str) -> None:
     out = tmp_path / f"{task_id}.jsonl"

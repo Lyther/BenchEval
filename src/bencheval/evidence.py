@@ -94,9 +94,7 @@ def eligible_for_pass_at_k(record: EvidenceRecord) -> bool:
     """Whether a row should enter pass@k rate / Wilson CI denominators."""
     if record.counts_toward_pass_at_k is not None:
         return record.counts_toward_pass_at_k
-    if record.attempt_validity == "invalid":
-        return False
-    return True
+    return record.attempt_validity != "invalid"
 
 
 def count_ineligible_pass_at_k(records: list[EvidenceRecord]) -> int:

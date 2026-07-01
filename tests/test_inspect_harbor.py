@@ -342,7 +342,7 @@ def test_inspect_adapter_model_id_spoof_rejected(tmp_path: Path) -> None:
 
 
 def test_local_backend_still_requires_harness_model(tmp_path: Path) -> None:
-    with pytest.raises(BenchEvalError, match="local runs require|local backend requires"):
+    with pytest.raises(BenchEvalError, match=r"local runs require|local backend requires"):
         execute_task(
             task_id="be-core-t1-single-structured-call",
             model_id="openai/gpt-test",

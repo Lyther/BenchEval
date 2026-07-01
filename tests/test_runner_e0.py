@@ -168,7 +168,7 @@ def test_t2_negative_provider_fails(tmp_path: Path) -> None:
 
 
 def test_non_harness_model_rejected_without_provider(tmp_path: Path) -> None:
-    with pytest.raises(BenchEvalError, match="local runs require|local backend requires"):
+    with pytest.raises(BenchEvalError, match=r"local runs require|local backend requires"):
         run_single_task(
             task_id="be-core-t1-single-structured-call",
             model_id="anthropic/claude-test",

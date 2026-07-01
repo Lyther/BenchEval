@@ -3,9 +3,9 @@
 from decimal import Decimal
 
 import pytest
+from bencheval.models import ManifestDigest
 from pydantic import ValidationError
 
-from bencheval.models import ManifestDigest
 from tests.factories import make_summary_row
 
 
@@ -79,7 +79,7 @@ def test_positive_experimental_lane_estimate_cost_xor() -> None:
 
 
 def test_baseline_lane_rejects_estimate_only_cost() -> None:
-    with pytest.raises(ValueError, match="baseline_.* auth lane requires actual_cost_usd"):
+    with pytest.raises(ValueError, match=r"baseline_.* auth lane requires actual_cost_usd"):
         make_summary_row(
             auth_lane="baseline_api",
             actual_cost_usd=None,

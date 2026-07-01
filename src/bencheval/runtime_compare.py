@@ -479,10 +479,10 @@ def render_runtime_comparison_markdown(report: RuntimeComparisonReport) -> str:
         lines.append("")
         if report.missing_in_current:
             miss_cur = [f"- {i}" for i in report.missing_in_current]
-            lines.extend(["Missing in current:", ""] + miss_cur + [""])
+            lines.extend(["Missing in current:", "", *miss_cur, ""])
         if report.missing_in_baseline:
             miss_base = [f"- {i}" for i in report.missing_in_baseline]
-            lines.extend(["Missing in baseline:", ""] + miss_base + [""])
+            lines.extend(["Missing in baseline:", "", *miss_base, ""])
 
     lines.extend(
         [

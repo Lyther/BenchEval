@@ -17,10 +17,7 @@ _DEFAULTS: dict[str, Any] = {
 
 def _read_raw(path: Path) -> dict[str, Any]:
     text = path.read_text(encoding="utf-8")
-    if path.suffix.lower() == ".json":
-        data = json.loads(text)
-    else:
-        data = yaml.safe_load(text)
+    data = json.loads(text) if path.suffix.lower() == ".json" else yaml.safe_load(text)
     if not isinstance(data, dict):
         raise ValueError(f"config root must be a mapping: {path}")
     return data
