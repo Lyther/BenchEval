@@ -3,9 +3,9 @@
 from decimal import Decimal
 
 import pytest
-from bencheval.models import ManifestDigest
 from pydantic import ValidationError
 
+from bencheval.models import ManifestDigest
 from tests.factories import make_summary_row
 
 
