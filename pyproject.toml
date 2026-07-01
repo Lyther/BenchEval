@@ -33,6 +33,10 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# config/selftest/**/workspaces/**/repo is intentional fixture data (mini-repos staged by
+# the selftests, some deliberately representing OLD/backward-compatible configs). Never lint
+# or reformat fixtures — modernizing them defeats their purpose.
+extend-exclude = ["config/selftest"]
 
 [tool.ruff.lint]
 # Strict for correctness + hygiene, minus the noisy rules. Kept in sync with MOMO's
