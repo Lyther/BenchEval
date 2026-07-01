@@ -9,9 +9,9 @@ readonly REPO_ROOT
 
 cd "${REPO_ROOT}"
 uv run pytest -q \
-    --cov=bencheval.paths \
-    --cov=bencheval.path_safety \
-    --cov=bencheval.control_plane_executor \
-    --cov=bencheval.evidence_compare \
-    --cov-report=term-missing \
-    --cov-fail-under=80
+  --cov=bencheval.paths \
+  --cov=bencheval.path_safety \
+  --cov=bencheval.control_plane_executor \
+  --cov=bencheval.evidence_compare \
+  --cov-report=term-missing \
+  --cov-fail-under=80

@@ -14,6 +14,14 @@ indent_size = 4
 [*.py]
 max_line_length = 100
 
+# Shell: 2-space indent (Google shell style). Read by shfmt so editor + pre-commit + CI
+# agree — bash dialect, cases indented under switch, binary operators (&&/||) at line start.
+[*.sh]
+indent_size = 2
+shell_variant = bash
+switch_case_indent = true
+binary_next_line = true
+
 [*.{json,yml,yaml,html,css,scss,js,ts,tsx,jsx,mjs,cjs}]
 indent_size = 2
 

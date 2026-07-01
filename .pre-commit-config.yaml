@@ -10,3 +10,12 @@
     hooks:
       - id: ruff
       - id: ruff-format
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.10.0-1
+    hooks:
+      - id: shfmt  # formats *.sh to the .editorconfig [*.sh] style (2-space bash)
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        args: ["--severity=warning"]

@@ -28,7 +28,7 @@ mask_tail() {
 models_url_from_base() {
   local base="${1:-}"
   base="${base%/}"
-  if [[ "${base}" == */v1 ]]; then
+  if [[ ${base} == */v1 ]]; then
     printf '%s/models' "${base}"
   else
     printf '%s/v1/models' "${base}"
@@ -38,7 +38,7 @@ models_url_from_base() {
 root_from_v1_base() {
   local base="${1:-}"
   base="${base%/}"
-  if [[ "${base}" == */v1 ]]; then
+  if [[ ${base} == */v1 ]]; then
     printf '%s' "${base%/v1}"
   else
     printf '%s' "${base}"

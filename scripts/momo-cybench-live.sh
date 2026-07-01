@@ -10,7 +10,7 @@ readonly REPO_ROOT
 cd "${REPO_ROOT}"
 
 usage() {
-    cat >&2 <<'EOF'
+  cat >&2 <<'EOF'
 Usage: scripts/momo-cybench-live.sh [args...]
 
 Compatibility wrapper for the CyBench Kilo external-command profile.
@@ -31,9 +31,9 @@ Example:
 EOF
 }
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-    usage
-    exit 0
+if [[ ${1:-} == "-h" || ${1:-} == "--help" ]]; then
+  usage
+  exit 0
 fi
 
 uv run --no-sync python -m bencheval.momo_cybench "$@"

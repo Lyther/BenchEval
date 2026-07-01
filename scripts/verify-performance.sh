@@ -105,12 +105,12 @@ PY
 
 printf '\n=== pytest timing (domain subset) ===\n'
 /usr/bin/time -p uv run pytest -q \
-    tests/test_benchmark_plan.py \
-    tests/test_evidence_compare.py \
-    tests/test_model_compare.py \
-    tests/test_runtime_compare.py \
-    tests/test_paths.py \
-    2>&1 | tail -8
+  tests/test_benchmark_plan.py \
+  tests/test_evidence_compare.py \
+  tests/test_model_compare.py \
+  tests/test_runtime_compare.py \
+  tests/test_paths.py \
+  2>&1 | tail -8
 
 printf '\n=== full suite (wall clock) ===\n'
 /usr/bin/time -p uv run pytest -q 2>&1 | tail -5

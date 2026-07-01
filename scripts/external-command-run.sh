@@ -10,7 +10,7 @@ readonly REPO_ROOT
 cd "${REPO_ROOT}"
 
 usage() {
-    cat >&2 <<'EOF'
+  cat >&2 <<'EOF'
 Usage: scripts/external-command-run.sh --config CONFIG [args...]
 
 Runs a structured BenchEval external-command profile. The profile owns the
@@ -30,9 +30,9 @@ Example:
 EOF
 }
 
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-    usage
-    exit 0
+if [[ ${1:-} == "-h" || ${1:-} == "--help" ]]; then
+  usage
+  exit 0
 fi
 
 uv run --no-sync bencheval run "$@"
