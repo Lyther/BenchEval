@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import shlex
 import shutil
 import subprocess
 import sys
@@ -170,6 +171,34 @@ def test_momo_cybench_runs_claude_inside_isolated_container() -> None:
     assert "--model {runtime_model_id}" in command
     assert "--model {model_id}" not in command
     assert "{prompt}" not in command
+
+
+def test_momo_cybench_container_command_has_deterministic_cleanup() -> None:
+    """F001: a timed-out or killed attempt must not strand a dockerd-managed container.
+
+    The runtime command wraps ``docker run`` in a shell with a named/labeled container,
+    a pre-run force-remove (self-heals a same-id leak a prior SIGKILL may have left), and
+    a ``trap`` that force-removes the container on EXIT/INT/TERM. MOMO's supervisor
+    SIGTERMs the whole process group with a grace period before SIGKILL, so the trap fires
+    on timeout. The value must shlex-split into a ``sh -c <script>`` wrapper.
+    """
+    cfg = load_external_run_config(Path("config/runs/momo-cybench.yaml"))
+    command = cfg.command.env["MOMO_CLAUDE_CODE_COMMAND"]
+    argv = shlex.split(
+        command.replace("{instance_id}", "lootstash")
+        .replace("{host_uid}", "1000")
+        .replace("{host_gid}", "1000")
+        .replace("{work_dir}", "/w")
+        .replace("{run_root}", "/rr")
+        .replace("{runtime_model_id}", "glm-5.2"),
+    )
+    assert argv[:2] == ["sh", "-c"]  # shell wrapper so the trap can run
+    script = argv[2]
+    assert "--name $cid" in script
+    assert "--label momo-cybench=lootstash" in script
+    assert "docker rm -f $cid" in script  # pre-run self-heal AND trap cleanup
+    assert "trap " in script
+    assert "EXIT INT TERM" in script
 
 
 def test_momo_cybench_prompt_suppresses_known_hosts_writes(tmp_path: Path) -> None:
