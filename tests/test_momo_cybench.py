@@ -178,9 +178,12 @@ def test_momo_cybench_container_command_has_deterministic_cleanup() -> None:
 
     The runtime command wraps ``docker run`` in a shell with a named/labeled container,
     a pre-run force-remove (self-heals a same-id leak a prior SIGKILL may have left), and
-    a ``trap`` that force-removes the container on EXIT/INT/TERM. MOMO's supervisor
-    SIGTERMs the whole process group with a grace period before SIGKILL, so the trap fires
-    on timeout. The value must shlex-split into a ``sh -c <script>`` wrapper.
+    a ``trap`` that force-removes the container on EXIT/INT/TERM. docker run is
+    BACKGROUNDED and waited on so the trap fires immediately on SIGTERM (a foreground
+    docker run would defer the trap until it returns; a SIGTERM-ignoring container would
+    then be stranded by MOMO's SIGKILL). ``exec 3<&0`` + ``<&3`` forward MOMO's piped
+    prompt stdin to the backgrounded container. The value shlex-splits into ``sh -c
+    <script>``. Cleanup + stdin were verified live on dev-box-gpu.
     """
     cfg = load_external_run_config(Path("config/runs/momo-cybench.yaml"))
     command = cfg.command.env["MOMO_CLAUDE_CODE_COMMAND"]
@@ -199,6 +202,9 @@ def test_momo_cybench_container_command_has_deterministic_cleanup() -> None:
     assert "docker rm -f $cid" in script  # pre-run self-heal AND trap cleanup
     assert "trap " in script
     assert "EXIT INT TERM" in script
+    assert "exec 3<&0" in script  # save MOMO's piped stdin for the backgrounded container
+    assert "<&3 &" in script  # background docker run so the trap can fire immediately
+    assert "wait $!" in script
 
 
 def test_momo_cybench_prompt_suppresses_known_hosts_writes(tmp_path: Path) -> None:

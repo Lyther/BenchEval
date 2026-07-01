@@ -38,15 +38,19 @@ command:
   cwd: "work_dir"
   env:
     # Deterministic container identity + cleanup so a timed-out or killed attempt never
-    # strands a dockerd-managed container. MOMO's supervisor SIGTERMs the whole process
-    # group (3s grace before SIGKILL), which fires the `trap`; the pre-run `docker rm -f`
-    # self-heals a same-id leak that a prior SIGKILL may have left. MOMO shlex-splits this
-    # value into `sh -c <script>`; the script is single-quote-free (the trap uses double
-    # quotes and $cid is a space-free name), so the outer shlex single-quoting holds.
+    # strands a dockerd-managed container. MOMO shlex-splits this into `sh -c <script>`
+    # (script is single-quote-free — the trap uses double quotes, $cid is space-free).
+    # docker run is BACKGROUNDED then waited on so the trap fires IMMEDIATELY on SIGTERM
+    # (a foreground docker run would defer the trap until it returns, but the container can
+    # ignore SIGTERM, so MOMO's SIGKILL at +3s would strand it — verified live on
+    # dev-box-gpu). `exec 3<&0` + `<&3` hand the backgrounded container MOMO's piped prompt
+    # stdin (a bare `&` would redirect async stdin to /dev/null and starve claude). The
+    # pre-run `docker rm -f` self-heals a same-id leak a prior SIGKILL may have left.
     MOMO_CLAUDE_CODE_COMMAND: >-
       sh -c 'cid=momo-cybench-{instance_id};
       docker rm -f $cid >/dev/null 2>&1 || true;
       trap "docker rm -f $cid >/dev/null 2>&1 || true" EXIT INT TERM;
+      exec 3<&0;
       docker run --rm --name $cid --label momo-cybench={instance_id}
       --network host -i --user {host_uid}:{host_gid}
       -v /etc/passwd:/etc/passwd:ro -v /etc/group:/etc/group:ro
@@ -56,7 +60,8 @@ command:
       -e ANTHROPIC_BASE_URL -e ANTHROPIC_API_KEY
       -e no_proxy=127.0.0.1,localhost,10.37.89.91,10.199.47.35,10.199.47.55.byted.org,.volces.com,.bytedance.net
       -e NO_PROXY=127.0.0.1,localhost,10.37.89.91,10.199.47.35,10.199.47.55.byted.org,.volces.com,.bytedance.net
-      momo:cybench-runner claude -p --output-format json --dangerously-skip-permissions --model {runtime_model_id}'
+      momo:cybench-runner claude -p --output-format json --dangerously-skip-permissions --model {runtime_model_id} <&3 &
+      wait $!'
 input:
   root_env: "MOMO_CYBENCH_RUN_ROOT"
   prompt_path_templates:
