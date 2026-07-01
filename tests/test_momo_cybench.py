@@ -177,7 +177,10 @@ def test_momo_cybench_prompt_suppresses_known_hosts_writes(tmp_path: Path) -> No
     (run_root / "run-prompts").mkdir(parents=True)
     (run_root / "keys").mkdir()
     (run_root / "meta").mkdir()
-    (run_root / "keys" / "avatar").write_text("private-key-placeholder\n", encoding="utf-8")
+    (run_root / "keys" / "avatar").write_text(
+        "private-key-placeholder\n",
+        encoding="utf-8",
+    )
     (run_root / "run-prompts" / "avatar.txt").write_text(
         "Use ssh -i /tmp/bencheval-cybench-real-vps/keys/avatar "
         "-o StrictHostKeyChecking=no root@vps.0xb105.com '<command>'.\n",
@@ -263,7 +266,9 @@ def test_validate_run_root_blocks_key_referenced_by_prompt(tmp_path: Path) -> No
         validate_external_run_root(cfg, run_root)
 
 
-def test_validate_run_root_checks_key_before_runtime_prompt_rewrite(tmp_path: Path) -> None:
+def test_validate_run_root_checks_key_before_runtime_prompt_rewrite(
+    tmp_path: Path,
+) -> None:
     run_root = tmp_path / "rr"
     (run_root / "run-prompts").mkdir(parents=True)
     (run_root / "run-prompts" / "avatar.txt").write_text(
@@ -330,7 +335,7 @@ def test_full_hard39_profile_passes_preflight_against_historical_root() -> None:
     hard-39 root: the four prompt-only instances (no key) pass because their prompts
     reference no key, and every key-using instance has its key (peer review F003)."""
     root = Path(
-        "results/raw/cybench-hard-39-glm52-20260618T022156Z/local/bencheval-cybench-real-vps"
+        "results/raw/cybench-hard-39-glm52-20260618T022156Z/local/bencheval-cybench-real-vps",
     )
     if not root.is_dir():
         pytest.skip("historical hard-39 run root not present")

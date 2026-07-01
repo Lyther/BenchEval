@@ -193,9 +193,15 @@ class ExternalRunConfig(BaseModel):
     slice_id: str | None = None
     adapter_id: str = "external-command"
     harness_kind: str = "local-harness"
-    runtime_id: str = Field(validation_alias=AliasChoices("runtime_id", "runtime"), min_length=1)
+    runtime_id: str = Field(
+        validation_alias=AliasChoices("runtime_id", "runtime"),
+        min_length=1,
+    )
     runtime_kind: RuntimeKind = "cli_agent"
-    model_id: str = Field(validation_alias=AliasChoices("model_id", "model"), min_length=1)
+    model_id: str = Field(
+        validation_alias=AliasChoices("model_id", "model"),
+        min_length=1,
+    )
     variant: str | None = None
     backend: ExecutionBackend = LOCAL_BACKEND
     execution_profile: Literal["E0", "E1", "E2", "E3", "E4"] = "E2"
@@ -210,7 +216,9 @@ class ExternalRunConfig(BaseModel):
     command: ExternalCommandConfig
     input: ExternalInputConfig = Field(default_factory=ExternalInputConfig)
     stream: ExternalStreamConfig = Field(default_factory=ExternalStreamConfig)
-    verification: ExternalVerificationConfig = Field(default_factory=ExternalVerificationConfig)
+    verification: ExternalVerificationConfig = Field(
+        default_factory=ExternalVerificationConfig,
+    )
     snapshot: ExternalSnapshotConfig = Field(default_factory=ExternalSnapshotConfig)
     concurrency: int = Field(default=1, ge=1, le=10)
     max_attempts: int = Field(default=1, ge=1, le=10)
@@ -427,7 +435,10 @@ def make_external_run_paths(results_root: Path, run_id: str) -> ExternalRunPaths
     )
 
 
-def validate_external_run_root(config: ExternalRunConfig, run_root: Path | None) -> None:
+def validate_external_run_root(
+    config: ExternalRunConfig,
+    run_root: Path | None,
+) -> None:
     """Check that the run root has the configured prompts and required files."""
     if run_root is None:
         if config.input.root_env:
@@ -436,7 +447,9 @@ def validate_external_run_root(config: ExternalRunConfig, run_root: Path | None)
             )
         return
     if not run_root.is_dir():
-        raise BenchEvalError(f"external run root does not exist or is not a dir: {run_root}")
+        raise BenchEvalError(
+            f"external run root does not exist or is not a dir: {run_root}",
+        )
     missing: list[str] = []
     for instance in config.instances:
         if not _prompt_path(config, run_root, instance).is_file():
@@ -448,7 +461,13 @@ def validate_external_run_root(config: ExternalRunConfig, run_root: Path | None)
         for template in config.input.required_path_templates:
             rel = _format_template(
                 template,
-                _template_context(config, run_root, instance, attempt=1, work_dir=run_root),
+                _template_context(
+                    config,
+                    run_root,
+                    instance,
+                    attempt=1,
+                    work_dir=run_root,
+                ),
             )
             # Require private material only when the SELECTED prompt actually references
             # it (e.g. `ssh -i .../keys/<id>`). A prompt-only challenge that never SSHes
@@ -605,8 +624,18 @@ def main(argv: list[str] | None = None) -> int:
         action="store_false",
         help="disable configured host snapshot for this run",
     )
-    parser.add_argument("--replay", type=Path, default=None, help="replay an events.jsonl file")
-    parser.add_argument("--speed", type=float, default=1.0, help="replay speed multiplier")
+    parser.add_argument(
+        "--replay",
+        type=Path,
+        default=None,
+        help="replay an events.jsonl file",
+    )
+    parser.add_argument(
+        "--speed",
+        type=float,
+        default=1.0,
+        help="replay speed multiplier",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -678,7 +707,10 @@ async def _run_instance(
         )
         attempts.append(result)
         if result.passed:
-            return ExternalInstanceResult(instance_id=instance.id, attempts=tuple(attempts))
+            return ExternalInstanceResult(
+                instance_id=instance.id,
+                attempts=tuple(attempts),
+            )
         if not result.valid:
             sink.emit(
                 "invalid",
@@ -688,7 +720,10 @@ async def _run_instance(
             )
             continue
         if attempt >= config.pass_at_k_budget:
-            return ExternalInstanceResult(instance_id=instance.id, attempts=tuple(attempts))
+            return ExternalInstanceResult(
+                instance_id=instance.id,
+                attempts=tuple(attempts),
+            )
     return ExternalInstanceResult(instance_id=instance.id, attempts=tuple(attempts))
 
 
@@ -710,10 +745,18 @@ async def _run_attempt(
         raw_log = raw_log.with_suffix(".jsonl")
     stderr_log = stream_dir / f"attempt{attempt}.stderr"
     prompt = _prompt_text(config, run_root, instance)
-    context = _template_context(config, run_root, instance, attempt=attempt, work_dir=work_dir)
+    context = _template_context(
+        config,
+        run_root,
+        instance,
+        attempt=attempt,
+        work_dir=work_dir,
+    )
     context["prompt"] = prompt
     env = os.environ.copy()
-    env.update({key: _format_template(value, context) for key, value in config.command.env.items()})
+    env.update(
+        {key: _format_template(value, context) for key, value in config.command.env.items()},
+    )
     cmd = [
         *config.command.argv_prefix,
         *(_format_template(part, context) for part in config.command.args_template),
@@ -721,7 +764,12 @@ async def _run_attempt(
     cwd = _cwd_for_attempt(config, run_root, work_dir)
     started_at = datetime.now(UTC)
     monotonic_start = time.monotonic()
-    sink.emit("start", "launching external command", instance_id=instance.id, attempt=attempt)
+    sink.emit(
+        "start",
+        "launching external command",
+        instance_id=instance.id,
+        attempt=attempt,
+    )
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         cwd=cwd,
@@ -782,7 +830,12 @@ async def _run_attempt(
         failure_class = "model_wrong_solution"
     if passed:
         status = "match" if value_match else "observed"
-        sink.emit("pass", f"result verified ({status})", instance_id=instance.id, attempt=attempt)
+        sink.emit(
+            "pass",
+            f"result verified ({status})",
+            instance_id=instance.id,
+            attempt=attempt,
+        )
     elif valid:
         sink.emit(
             "fail",
@@ -913,7 +966,12 @@ def _handle_kilo_json_line(
                 kind: ExternalEventKind = (
                     "break" if _extract_observed_value(text, observed_regex) else "llm"
                 )
-                sink.emit(kind, _compact(text), instance_id=instance_id, attempt=attempt)
+                sink.emit(
+                    kind,
+                    _compact(text),
+                    instance_id=instance_id,
+                    attempt=attempt,
+                )
             return
         if part.get("type") == "tool":
             message, output = _tool_message(part)
@@ -921,9 +979,19 @@ def _handle_kilo_json_line(
                 combined_text.append(output)
             sink.emit("tool", message, instance_id=instance_id, attempt=attempt)
             if output:
-                sink.emit("debug", _compact(output), instance_id=instance_id, attempt=attempt)
+                sink.emit(
+                    "debug",
+                    _compact(output),
+                    instance_id=instance_id,
+                    attempt=attempt,
+                )
             return
-    sink.emit("debug", f"runtime_event={event_type}", instance_id=instance_id, attempt=attempt)
+    sink.emit(
+        "debug",
+        f"runtime_event={event_type}",
+        instance_id=instance_id,
+        attempt=attempt,
+    )
 
 
 def _part_text(part: dict[object, object]) -> str:
@@ -1187,7 +1255,10 @@ def _write_sha256s(paths: ExternalRunPaths) -> None:
     for path in sorted(p for p in paths.run_dir.rglob("*") if p.is_file()):
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         lines.append(f"{digest}  {path.relative_to(paths.run_dir)}")
-    (paths.run_dir / "SHA256SUMS.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (paths.run_dir / "SHA256SUMS.txt").write_text(
+        "\n".join(lines) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _create_output_dirs(paths: ExternalRunPaths) -> None:
@@ -1214,8 +1285,16 @@ def _prompt_path(
             return run_root / path
         return path
     if run_root is None:
-        raise BenchEvalError("run root is required when instance.prompt_file is not absolute")
-    context = _template_context(config, run_root, instance, attempt=1, work_dir=run_root)
+        raise BenchEvalError(
+            "run root is required when instance.prompt_file is not absolute",
+        )
+    context = _template_context(
+        config,
+        run_root,
+        instance,
+        attempt=1,
+        work_dir=run_root,
+    )
     for template in config.input.prompt_path_templates:
         rel = _format_template(template, context)
         path = Path(rel)
@@ -1237,7 +1316,7 @@ def _prompt_text(
         run_root,
         instance,
         attempt=1,
-        work_dir=run_root or Path("."),
+        work_dir=run_root or Path(),
     )
     replacements = {
         _format_template(old, context): _format_template(new, context)
@@ -1432,7 +1511,9 @@ def _cwd_for_attempt(
     if config.command.cwd == "repo_root":
         return repo_root()
     if run_root is None:
-        raise BenchEvalError("command.cwd=run_root requires --run-root or input.root_env")
+        raise BenchEvalError(
+            "command.cwd=run_root requires --run-root or input.root_env",
+        )
     return run_root
 
 
