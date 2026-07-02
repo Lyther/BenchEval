@@ -1,0 +1,24 @@
+# gitleaks configuration for BenchEval.
+#
+# Keeps the full default ruleset (extend.useDefault) and adds a TIGHT allowlist for the
+# deliberately-fake, secret-looking values that exist ONLY as test fixtures for the
+# redaction / public-presentation tests — those tests feed a secret-shaped string in and
+# assert the code redacts/scrubs it. These are not real secrets.
+#
+# The allowlist matches the exact fake marker values (not whole files), so a real secret
+# accidentally added to the same test files is still caught. Verify with:
+#   gitleaks detect --source . --no-banner
+title = "BenchEval gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fake secret-shaped values used only as redaction test fixtures."
+regexTarget = "match"
+regexes = [
+  # tests/test_replay.py — redaction test secret marker (_SECRET_MARKER)
+  '''sk-abcd1234567890efgh''',
+  # tests/test_live_run_manifest.py — redaction fixtures (`token=sk-...`, `x-sk-...y`)
+  '''sk-abcdef123456''',
+]
