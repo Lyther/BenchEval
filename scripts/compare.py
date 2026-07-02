@@ -51,10 +51,7 @@ def _fmt_ci(lo: float | None, hi: float | None) -> str:
 
 def _render_markdown(report: ComparisonReport) -> str:
     gen = report.generated_at
-    if gen.tzinfo is None:
-        gen = gen.replace(tzinfo=UTC)
-    else:
-        gen = gen.astimezone(UTC)
+    gen = gen.replace(tzinfo=UTC) if gen.tzinfo is None else gen.astimezone(UTC)
     gen_s = gen.isoformat().replace("+00:00", "Z")
     note_line = report.equivalence_note if report.equivalence_note is not None else "`(none)`"
     lines = [
