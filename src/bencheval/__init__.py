@@ -26,6 +26,11 @@ from bencheval.exceptions import (
     SummaryValidationError,
     TaskContractError,
 )
+from bencheval.external_command_adapter import (
+    ExternalRunConfig,
+    load_external_run_config,
+    run_external_command,
+)
 from bencheval.live_run_manifest import (
     LIVE_RUN_SCHEMA_VERSION,
     LiveRunRecord,
@@ -62,6 +67,7 @@ __all__ = [
     "EvalLogError",
     "EvidenceRecord",
     "EvidenceValidationError",
+    "ExternalRunConfig",
     "GuardedComparisonReporter",
     "JsonlSummarySink",
     "LiveRunManifestError",
@@ -85,6 +91,7 @@ __all__ = [
     "append_live_run",
     "default_runs_manifest_path",
     "load_benchmark_catalog",
+    "load_external_run_config",
     "load_pricing",
     "load_runtime_catalog",
     "load_runtime_profile",
@@ -92,4 +99,5 @@ __all__ = [
     "read_evidence_jsonl",
     "read_live_runs",
     "read_summary_jsonl",
+    "run_external_command",
 ]

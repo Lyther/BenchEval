@@ -29,6 +29,7 @@ results/evidence/*
 results/preflight/*
 results/compare/*
 results/bundles/*
+results/videos/*
 results/archives/*
 results/reports/*
 !results/reports/.gitkeep

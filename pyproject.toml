@@ -33,9 +33,43 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# config/selftest/**/workspaces/**/repo is intentional fixture data (mini-repos staged by
+# the selftests, some deliberately representing OLD/backward-compatible configs). Never lint
+# or reformat fixtures — modernizing them defeats their purpose.
+extend-exclude = ["config/selftest"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "W"]
+# Strict for correctness + hygiene, minus the noisy rules. Kept in sync with MOMO's
+# pyproject.toml. Single source of truth for the gate and the editor (the ruff extension
+# reads it) — do NOT re-add a global `ruff.lint.select` in editor settings. Excluded:
+# S/bandit (assert nagging), PLR2004 (magic numbers), ANN, D, COM/ISC001, FBT/EM/TRY.
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes (undefined names, unused imports) — correctness
+    "I",   # isort (import order)
+    "UP",  # pyupgrade (modern syntax)
+    "B",   # flake8-bugbear (real bug patterns)
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "PIE", # flake8-pie
+    "PT",  # flake8-pytest-style
+    "TID", # flake8-tidy-imports (no relative imports)
+    "PGH", # pygrep-hooks (blanket noqa / type: ignore)
+    "PLE", # pylint errors only (real errors, not refactor/convention)
+    "DTZ", # flake8-datetimez (tz-aware datetimes) — correctness
+    "RUF", # ruff-specific
+]
+ignore = [
+    "PT011",  # pytest.raises(...) without match= — too noisy to require everywhere
+    "PT017",  # assertion on the exception inside an `except` block — a valid pattern
+    "PT018",  # "break up `assert a and b`" — a compound assert is often clearer as-is
+    "B017",   # pytest.raises(Exception) — sometimes you only assert that *something* raises
+    "SIM105", # contextlib.suppress over try/except/pass — try/except reads fine
+    "SIM102", # nested `if` vs a single `and` — nesting is often the clearer read
+    "RUF002", # ambiguous unicode in docstrings — `×` / en-dash are intentional in prose
+    "RUF003", # ambiguous unicode in comments — same
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

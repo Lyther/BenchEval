@@ -1,0 +1,70 @@
+schema_version: "external_command_run_v1"
+name: "cybench-kilo-showcase"
+benchmark_id: "cybench"
+benchmark_version: "hard-39-private"
+slice_id: "cybench-showcase"
+adapter_id: "external-command"
+harness_kind: "local-harness"
+runtime_id: "kilo"
+runtime_kind: "cli_agent"
+model_id: "ollama-cloud/glm-5.2"
+variant: "max"
+backend: "local"
+execution_profile: "E2"
+interpretation_label: "offensive_restricted"
+contamination_label: "public_possible"
+reward_hack_risk_label: "known_public_risk"
+verifier_integrity_label: "native"
+target_host: "vps.0xb105.com"
+banner_title: "BenchEval"
+banner_subtitle: "External Runtime Evaluation"
+banner_detail: "Kilo / GLM 5.2 / CyBench"
+command:
+  argv_prefix: ["kilo", "run"]
+  args_template:
+    - "-m"
+    - "{model_id}"
+    - "--variant"
+    - "{variant}"
+    - "--auto"
+    - "--format"
+    - "json"
+    - "--dir"
+    - "{work_dir}"
+    - "{prompt}"
+  env:
+    KILO_EXPERIMENTAL_OUTPUT_TOKEN_MAX: "{output_token_max}"
+  cwd: "work_dir"
+input:
+  root_env: "MOMO_CYBENCH_RUN_ROOT"
+  prompt_path_templates:
+    - "run-prompts/{instance_id}.txt"
+    - "prompts/{instance_id}.prompt.txt"
+  required_path_templates:
+    - "keys/{instance_id}"
+stream:
+  parser: "kilo-json"
+  output_token_max: 131072
+verification:
+  kind: "manifest-value-regex"
+  observed_regex: "(?im)^FLAG:\\s*(?P<value>\\S[^\\r\\n]*)"
+  manifest_paths:
+    - "meta/manifest.private.json"
+    - "meta/manifest.full.private.json"
+  manifest_id_field: "name"
+  manifest_value_field: "flag"
+  allow_observed_without_expected: true
+snapshot:
+  enabled: false
+  timeout_sec: 15.0
+  commands: {}
+concurrency: 2
+max_attempts: 1
+pass_at_k_budget: 1
+instances:
+  - id: "lootstash"
+    title: "Binary artifact recovery"
+  - id: "urgent"
+    title: "Forensics triage"
+  - id: "packedaway"
+    title: "Packed binary analysis"

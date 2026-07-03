@@ -44,7 +44,7 @@ class TestProtocolConformance:
     def test_runtime_registry_satisfies_catalog_source(self) -> None:
         # load_catalog(dir_path=None) and load_profile(path) match RuntimeCatalogSource.
         _load_runtime_catalog()
-        assert hasattr(_load_runtime_catalog, "__call__")
+        assert callable(_load_runtime_catalog)
         assert callable(load_runtime_profile)
 
     def test_slice_manifest_satisfies_source(self) -> None:

@@ -19,7 +19,7 @@ _CORE16_ADMISSION = load_admission_document(admission_path_for_suite("core-16"))
 
 @pytest.mark.parametrize(
     ("relative_path", "expected"),
-    (
+    [
         ("prompt.json", False),
         ("prompt_variants.json", False),
         ("reference.json", True),
@@ -32,7 +32,7 @@ _CORE16_ADMISSION = load_admission_document(admission_path_for_suite("core-16"))
         ("compatibility/check_imports.py", True),
         ("invariants.json", True),
         ("repo/src/app.py", False),
-    ),
+    ],
 )
 def test_is_verifier_only_relative_path(relative_path: str, expected: bool) -> None:
     assert is_verifier_only_relative_path(relative_path) is expected

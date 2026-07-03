@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
+import os
 import socket
 import sys
 from datetime import UTC, datetime
@@ -15,7 +17,12 @@ from bencheval.admission import (
     audit_suite_admission,
     audit_task_admission,
 )
-from bencheval.backends import HARBOR_BACKEND, INSPECT_BACKEND, LOCAL_BACKEND, ExecutionBackend
+from bencheval.backends import (
+    HARBOR_BACKEND,
+    INSPECT_BACKEND,
+    LOCAL_BACKEND,
+    ExecutionBackend,
+)
 from bencheval.benchmark_plan import (
     dry_run_slice_resolution,
     list_adapter_descriptors,
@@ -42,6 +49,13 @@ from bencheval.doctor import run_doctor, run_pilot_doctor
 from bencheval.evidence import read_evidence_jsonl
 from bencheval.exceptions import BenchEvalError, TaskContractError
 from bencheval.executor import execute_task
+from bencheval.external_command_adapter import (
+    apply_deadline_overrides,
+    deadline_overrides_from_args,
+    load_external_run_config,
+    plan_external_run,
+    run_external_command,
+)
 from bencheval.lifecycle import CleanupPolicy, RunMode, cleanup_transient_artifacts
 from bencheval.live_run_manifest import (
     LiveRunRecord,
@@ -106,7 +120,12 @@ def _task_validate(args: argparse.Namespace) -> int:
         "execution_profile": contract.execution.profile,
         "budget_class": contract.constraints.budget_class,
         "issues": [
-            {"severity": i.severity, "code": i.code, "message": i.message, "path": i.path}
+            {
+                "severity": i.severity,
+                "code": i.code,
+                "message": i.message,
+                "path": i.path,
+            }
             for i in report.issues
         ],
     }
@@ -121,7 +140,10 @@ def _task_audit(args: argparse.Namespace) -> int:
         report = audit_suite_admission(target)
         payload = report.to_dict()
     else:
-        report = audit_task_admission(target, admission_path=admission_path_for_task(target))
+        report = audit_task_admission(
+            target,
+            admission_path=admission_path_for_task(target),
+        )
         payload = report.to_dict()
     sys.stdout.write(json.dumps(payload, indent=2) + "\n")
     admitted = payload.get("admitted", False)
@@ -219,7 +241,9 @@ def _runtime_list(args: argparse.Namespace) -> int:
         return 0
     for rp in catalog.runtimes:
         sys.stdout.write(
-            "\t".join((rp.runtime.id, rp.runtime.kind, rp.admission, rp.runtime.display_name))
+            "\t".join(
+                (rp.runtime.id, rp.runtime.kind, rp.admission, rp.runtime.display_name),
+            )
             + "\n",
         )
     return 0
@@ -312,7 +336,122 @@ def _reject_partial_control_plane_axes(args: argparse.Namespace) -> int | None:
     return 2
 
 
+def _config_run_selected(args: argparse.Namespace) -> bool:
+    return getattr(args, "config", None) is not None
+
+
+def _external_run_root(
+    args: argparse.Namespace,
+    config_path: Path,
+) -> tuple[object, Path | None]:
+    config = load_external_run_config(config_path)
+    run_root = getattr(args, "run_root", None)
+    if run_root is None and config.input.root_env:
+        value = os.environ.get(config.input.root_env, "").strip()
+        run_root = Path(value).expanduser() if value else None
+    return config, run_root
+
+
+def _run_config_dry(args: argparse.Namespace) -> int:
+    config_err = _reject_config_run_conflicts(args)
+    if config_err is not None:
+        return config_err
+    config, run_root = _external_run_root(args, Path(args.config))
+    # Preflight validates launch-time deadline overrides too (an invalid
+    # --wall-clock-sec must fail the dry-run, not only live execution).
+    config = apply_deadline_overrides(config, deadline_overrides_from_args(args))
+    # Dry-run is a plan command: it validates the config and, when a root is
+    # supplied, validates inputs. It does not require private material merely to
+    # show the resolved run shape.
+    if run_root is not None:
+        from bencheval.external_command_adapter import validate_external_run_root
+
+        validate_external_run_root(config, run_root)
+    payload = plan_external_run(
+        config=config,
+        run_root=run_root,
+        results_root=args.results_root,
+        run_id=args.run_id,
+    )
+    # If the config declares a run root (``input.root_env``) but none was supplied, the
+    # plan is SHAPE-ONLY: private material (prompts/keys/manifest) was not validated.
+    # Label it loudly so an omitted ``--run-root`` can't read as "plan looks launch-ready".
+    if run_root is None and config.input.root_env:
+        payload["shape_only"] = True
+        payload["private_material_validated"] = False
+        payload["note"] = (
+            f"shape-only: no run root ({config.input.root_env} unset and --run-root "
+            "omitted); prompts/keys/manifest were NOT validated. Supply --run-root for a "
+            "launch-ready preflight."
+        )
+        sys.stderr.write(
+            f"warning: shape-only dry-run — {config.input.root_env} unset and --run-root "
+            "omitted; private material not validated\n",
+        )
+    sys.stdout.write(json.dumps(payload, indent=2) + "\n")
+    return 0
+
+
+def _run_config_execute(args: argparse.Namespace) -> int:
+    config_err = _reject_config_run_conflicts(args)
+    if config_err is not None:
+        return config_err
+    config, run_root = _external_run_root(args, Path(args.config))
+    return asyncio.run(
+        run_external_command(
+            config=config,
+            run_root=run_root,
+            results_root=args.results_root,
+            run_id=args.run_id,
+            color=not args.no_color,
+            snapshot=args.snapshot,
+            producer_command="bencheval run --config",
+            deadline_overrides=deadline_overrides_from_args(args),
+        ),
+    )
+
+
+def _require_model_arg(args: argparse.Namespace) -> int | None:
+    if getattr(args, "model", None):
+        return None
+    sys.stderr.write("error: --model is required unless --config is used\n")
+    return 2
+
+
+def _reject_config_run_conflicts(args: argparse.Namespace) -> int | None:
+    conflicts: list[str] = []
+    for attr, flag, default in (
+        ("benchmark", "--benchmark", None),
+        ("slice", "--slice", None),
+        ("runtime", "--runtime", None),
+        ("task", "--task", None),
+        ("suite", "--suite", None),
+        ("manifest", "--manifest", None),
+        ("model", "--model", None),
+        ("backend", "--backend", None),
+        ("output", "--output", None),
+        ("artifacts_dir", "--artifacts-dir", None),
+        ("mode", "--mode", None),
+        ("cleanup", "--cleanup", None),
+    ):
+        if getattr(args, attr, default) != default:
+            conflicts.append(flag)
+    if not conflicts:
+        return None
+    joined = ", ".join(conflicts)
+    sys.stderr.write(
+        "error: --config reads benchmark/runtime/model/output settings from the profile; "
+        f"remove conflicting flag(s): {joined}\n",
+    )
+    return 2
+
+
 def _run_dry(args: argparse.Namespace) -> int:
+    if _config_run_selected(args):
+        return _run_config_dry(args)
+    model_err = _require_model_arg(args)
+    if model_err is not None:
+        return model_err
     partial_err = _reject_partial_control_plane_axes(args)
     if partial_err is not None:
         return partial_err
@@ -322,7 +461,7 @@ def _run_dry(args: argparse.Namespace) -> int:
             slice_id=args.slice,
             runtime_id=args.runtime,
             model_id=args.model,
-            cleanup_policy=args.cleanup,
+            cleanup_policy=args.cleanup or "never",
         )
         resolution = dry_run_slice_resolution(
             benchmark_id=args.benchmark,
@@ -342,9 +481,9 @@ def _run_dry(args: argparse.Namespace) -> int:
         payload = {
             "dry_run": True,
             "model_id": args.model,
-            "backend": args.backend,
-            "mode": args.mode,
-            "cleanup": args.cleanup,
+            "backend": args.backend or LOCAL_BACKEND,
+            "mode": args.mode or "batch",
+            "cleanup": args.cleanup or "never",
             "manifest": str(Path(args.manifest).resolve()),
             "benchmark": digest.benchmark,
             "task_manifest_hash": digest.content_sha256,
@@ -357,9 +496,9 @@ def _run_dry(args: argparse.Namespace) -> int:
         payload = {
             "dry_run": True,
             "model_id": args.model,
-            "backend": args.backend,
-            "mode": args.mode,
-            "cleanup": args.cleanup,
+            "backend": args.backend or LOCAL_BACKEND,
+            "mode": args.mode or "batch",
+            "cleanup": args.cleanup or "never",
             "task_count": 1,
             "task_ids": [args.task],
         }
@@ -374,7 +513,9 @@ def _run_dry(args: argparse.Namespace) -> int:
 def _selected_task_ids(args: argparse.Namespace) -> tuple[list[str], dict[str, object]]:
     selected = sum(x is not None for x in (args.task, args.suite, args.manifest))
     if selected != 1:
-        raise ValueError("non-dry-run requires exactly one of --task, --suite, or --manifest")
+        raise ValueError(
+            "non-dry-run requires exactly one of --task, --suite, or --manifest",
+        )
     if args.task is not None:
         return [args.task], {}
     if args.suite is not None:
@@ -405,19 +546,26 @@ def _artifacts_dir_for_task(
 
 
 def _run_execute(args: argparse.Namespace) -> int:
+    if _config_run_selected(args):
+        return _run_config_execute(args)
+    model_err = _require_model_arg(args)
+    if model_err is not None:
+        return model_err
     partial_err = _reject_partial_control_plane_axes(args)
     if partial_err is not None:
         return partial_err
     if _control_plane_run_selected(args):
         if args.output is None:
-            sys.stderr.write("error: four-axis run requires --output evidence JSONL path\n")
+            sys.stderr.write(
+                "error: four-axis run requires --output evidence JSONL path\n",
+            )
             return 2
         plan = plan_control_plane(
             benchmark_id=args.benchmark,
             slice_id=args.slice,
             runtime_id=args.runtime,
             model_id=args.model,
-            cleanup_policy=args.cleanup,
+            cleanup_policy=args.cleanup or "never",
         )
         summary = execute_control_plane_run(
             plan=plan,
@@ -444,12 +592,12 @@ def _run_execute(args: argparse.Namespace) -> int:
     if args.output is None:
         sys.stderr.write("error: non-dry-run requires --output evidence JSONL path\n")
         return 2
-    mode = cast("RunMode", args.mode)
-    cleanup_policy = cast("CleanupPolicy", args.cleanup)
+    mode = cast("RunMode", args.mode or "batch")
+    cleanup_policy = cast("CleanupPolicy", args.cleanup or "never")
     if cleanup_policy != "never" and mode != "single":
         sys.stderr.write("error: --cleanup is only supported with --mode single\n")
         return 2
-    backend: ExecutionBackend = args.backend
+    backend: ExecutionBackend = args.backend or LOCAL_BACKEND
     if backend == LOCAL_BACKEND and args.model != LOCAL_HARNESS_MODEL_ID:
         sys.stderr.write(
             f"error: local backend requires --model {LOCAL_HARNESS_MODEL_ID!r}; "
@@ -542,7 +690,9 @@ def _doctor_run(args: argparse.Namespace) -> int:
         report = run_pilot_doctor(model_id=args.model)
     else:
         if args.backend is None:
-            sys.stderr.write("error: --backend is required unless --profile pilot is used\n")
+            sys.stderr.write(
+                "error: --backend is required unless --profile pilot is used\n",
+            )
             return 2
         report = run_doctor(
             args.backend,
@@ -585,6 +735,53 @@ def _export_run_bundle(args: argparse.Namespace) -> int:
     }
     sys.stdout.write(json.dumps(payload, indent=2) + "\n")
     return 0
+
+
+def _replay_run(args: argparse.Namespace) -> int:
+    from bencheval.replay import load_run_record, replay, verify_bound_evidence
+
+    if args.verify_evidence is not None:
+        # nargs="?" means: None -> flag absent; "" -> derive by convention; path -> explicit.
+        evidence_arg = args.verify_evidence or None
+        rows = verify_bound_evidence(
+            args.record,
+            evidence_path=evidence_arg,
+            allow_missing_evidence=args.allow_missing_evidence,
+        )
+        if args.format == "json":
+            payload = {
+                "record": str(Path(args.record).resolve()),
+                "row_count": len(rows),
+                "rows": [json.loads(r.model_dump_json()) for r in rows],
+            }
+            sys.stdout.write(json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+        else:
+            run_record = load_run_record(args.record)
+            binding = "legacy_unbound" if run_record.is_legacy_unbound else "v1_bound"
+            if not rows and args.allow_missing_evidence:
+                sys.stdout.write(
+                    f"No evidence file found for run record {run_record.path} "
+                    f"(schema {run_record.schema_version}, {binding}); "
+                    f"--allow-missing-evidence was set.\n",
+                )
+            else:
+                sys.stdout.write(
+                    f"Verified {len(rows)} evidence row(s) bound to run record "
+                    f"{run_record.path} (schema {run_record.schema_version}, {binding}).\n",
+                )
+            for r in rows:
+                status = "PASS" if r.primary_pass else "FAIL"
+                sys.stdout.write(
+                    f"  {r.task_id} | {r.model_id} | {status} | "
+                    f"cost=${r.cost_usd:.4f} | {r.latency_sec:.2f}s\n",
+                )
+        return 0
+    return replay(
+        args.record,
+        color=not args.no_color,
+        speed=args.speed,
+        max_delay_sec=args.max_delay,
+    )
 
 
 def _compare_run(args: argparse.Namespace) -> int:
@@ -812,10 +1009,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "audit",
         help="Audit Core-8/Core-16 admission gates (exit 1 when not fully admitted)",
     )
-    audit.add_argument("target", help="Task id or suite name (e.g. core-8, core-16, smoke)")
+    audit.add_argument(
+        "target",
+        help="Task id or suite name (e.g. core-8, core-16, smoke)",
+    )
     audit.set_defaults(handler=_task_audit)
 
-    benchmark = sub.add_parser("benchmark", help="External benchmark catalog operations")
+    benchmark = sub.add_parser(
+        "benchmark",
+        help="External benchmark catalog operations",
+    )
     benchmark_sub = benchmark.add_subparsers(dest="benchmark_command", required=True)
 
     benchmark_list = benchmark_sub.add_parser(
@@ -905,6 +1108,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
     run = sub.add_parser("run", help="Run planning and execution")
     run.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help=(
+            "Structured run config (recommended for external command runtimes). "
+            "When set, --model/--benchmark/--slice/--runtime are read from the config."
+        ),
+    )
+    run.add_argument(
         "--dry-run",
         action="store_true",
         help="Estimate run envelope without executing",
@@ -914,21 +1126,42 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Benchmark id for four-axis control-plane run (with --slice, --runtime, --model)",
     )
-    run.add_argument("--slice", default=None, help="Slice id for four-axis control-plane run")
-    run.add_argument("--runtime", default=None, help="Runtime id for four-axis control-plane run")
-    run.add_argument("--suite", default=None, help="Suite name for dry-run or batch execution")
-    run.add_argument("--task", default=None, help="Single task id for non-dry-run execution")
+    run.add_argument(
+        "--slice",
+        default=None,
+        help="Slice id for four-axis control-plane run",
+    )
+    run.add_argument(
+        "--runtime",
+        default=None,
+        help="Runtime id for four-axis control-plane run",
+    )
+    run.add_argument(
+        "--suite",
+        default=None,
+        help="Suite name for dry-run or batch execution",
+    )
+    run.add_argument(
+        "--task",
+        default=None,
+        help="Single task id for non-dry-run execution",
+    )
     run.add_argument(
         "--manifest",
         type=Path,
         default=None,
         help="Task-id manifest for sequential execution (one id per non-comment line)",
     )
-    run.add_argument("--model", dest="model", required=True, help="Model identifier")
+    run.add_argument(
+        "--model",
+        dest="model",
+        default=None,
+        help="Model identifier (required unless --config is used)",
+    )
     run.add_argument(
         "--backend",
         choices=(LOCAL_BACKEND, INSPECT_BACKEND, HARBOR_BACKEND),
-        default=LOCAL_BACKEND,
+        default=None,
         help="Execution backend (default: local reference harness)",
     )
     run.add_argument(
@@ -944,23 +1177,75 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Directory for verifier logs (default: results/raw/<run_id>/)",
     )
     run.add_argument(
+        "--run-root",
+        type=Path,
+        default=None,
+        help="Prepared external benchmark root for --config runs",
+    )
+    run.add_argument(
+        "--results-root",
+        type=Path,
+        default=_repo_root() / "results",
+        help="Results root for --config runs (default: results/)",
+    )
+    run.add_argument("--run-id", default=None, help="Run id override for --config runs")
+    run.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable ANSI colors for --config live terminal output",
+    )
+    run.add_argument(
+        "--snapshot",
+        dest="snapshot",
+        action="store_true",
+        default=None,
+        help="Force configured host snapshot for --config runs",
+    )
+    run.add_argument(
+        "--no-snapshot",
+        dest="snapshot",
+        action="store_false",
+        help="Disable configured host snapshot for --config runs",
+    )
+    run.add_argument(
+        "--no-progress-sec",
+        type=float,
+        default=None,
+        help="Override the progress-aware stall timeout for --config runs (seconds)",
+    )
+    run.add_argument(
+        "--wall-clock-sec",
+        type=float,
+        default=None,
+        help="Impose an absolute per-attempt wall-clock ceiling for --config runs (seconds)",
+    )
+    run.add_argument(
+        "--grace-period-sec",
+        type=float,
+        default=None,
+        help="Override the SIGTERM->SIGKILL grace window for --config runs (seconds)",
+    )
+    run.add_argument(
         "--mode",
         choices=("batch", "single"),
-        default="batch",
+        default=None,
         help=(
             "Execution lifecycle mode. 'single' runs one task lifecycle at a time "
-            "and enables transient cleanup."
+            "and enables transient cleanup. Default: batch."
         ),
     )
     run.add_argument(
         "--cleanup",
         choices=("never", "on-success", "always"),
-        default="never",
+        default=None,
         help="Transient cleanup policy for --mode single (default: never)",
     )
     run.set_defaults(handler=_run_handler)
 
-    report = sub.add_parser("report", help="Generate Markdown report from evidence JSONL")
+    report = sub.add_parser(
+        "report",
+        help="Generate Markdown report from evidence JSONL",
+    )
     report.add_argument("evidence", type=Path, help="Evidence JSONL input path")
     report.add_argument(
         "--output",
@@ -970,7 +1255,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     report.set_defaults(handler=_report_generate)
 
-    doctor = sub.add_parser("doctor", help="Preflight checks for live execution backends")
+    doctor = sub.add_parser(
+        "doctor",
+        help="Preflight checks for live execution backends",
+    )
     doctor.add_argument(
         "--backend",
         choices=(INSPECT_BACKEND, HARBOR_BACKEND),
@@ -1096,7 +1384,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "export-run",
         help="Bundle evidence, report, raw artifacts, manifest, and tar.gz",
     )
-    export_run.add_argument("--evidence", type=Path, required=True, help="Evidence JSONL path")
+    export_run.add_argument(
+        "--evidence",
+        type=Path,
+        required=True,
+        help="Evidence JSONL path",
+    )
     export_run.add_argument(
         "--output",
         type=Path,
@@ -1134,6 +1427,57 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Optional compare report markdown copied as compare_report.md",
     )
     export_run.set_defaults(handler=_export_run_bundle)
+
+    replay = sub.add_parser(
+        "replay",
+        help="Replay a captured run record (events.jsonl) to the terminal",
+    )
+    replay.add_argument(
+        "record",
+        type=Path,
+        help="Run record JSONL (events.jsonl) produced by a live run or adapter",
+    )
+    replay.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable ANSI color in the replayed output",
+    )
+    replay.add_argument(
+        "--speed",
+        type=float,
+        default=1.0,
+        help="Replay speed multiplier (default: 1.0; >1 speeds up, <1 slows down)",
+    )
+    replay.add_argument(
+        "--max-delay",
+        type=float,
+        default=2.0,
+        help="Cap per-event sleep at this many seconds (default: 2.0)",
+    )
+    replay.add_argument(
+        "--verify-evidence",
+        nargs="?",
+        const="",
+        default=None,
+        type=str,
+        help=(
+            "Verify evidence rows bound to this run record. Without a path argument, "
+            "derives the sibling evidence file by convention. With a path, uses it "
+            "explicitly. Prints a summary (text) or full rows (json)."
+        ),
+    )
+    replay.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help="Output format for --verify-evidence (default: text)",
+    )
+    replay.add_argument(
+        "--allow-missing-evidence",
+        action="store_true",
+        help="Do not fail when the evidence file is missing (dry inspection; default: fail)",
+    )
+    replay.set_defaults(handler=_replay_run)
 
     return parser
 

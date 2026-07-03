@@ -28,6 +28,9 @@ BenchEval has **no public HTTP surface**. Boundaries are **Python protocols** (c
 | [`src/bencheval/benchmark_registry.py`](../../src/bencheval/benchmark_registry.py) | `config/benchmarks.yaml` → `BenchmarkCatalog` (implements `BenchmarkCatalogSource`) |
 | [`src/bencheval/planner.py`](../../src/bencheval/planner.py) | Four-axis `RunPlan` builder (implements `RunPlanner`) |
 | [`src/bencheval/executor.py`](../../src/bencheval/executor.py) | Adapter dispatch (implements `AdapterDispatcher`) |
+| [`src/bencheval/external_command_adapter.py`](../../src/bencheval/external_command_adapter.py) | Generic external-command runner for config-driven external projects; writes raw run records + `EvidenceRecord` JSONL |
+| [`src/bencheval/replay.py`](../../src/bencheval/replay.py) | General-purpose raw run record/replay: v1 `RecordHeader`/`RecordEvent`/`RecordFooter` + legacy `LegacyMomoEvent`, `RunRecordWriter`, `load_run_record`, `replay`, `verify_bound_evidence` |
+| [`src/bencheval/presentation.py`](../../src/bencheval/presentation.py) | Derived public presentation helpers: `redact_for_public_presentation`, `strip_ansi` |
 
 ## CLI command surface (v0.3, frozen during impl)
 
@@ -42,13 +45,65 @@ bencheval runtime list|show <id>                 # discovery (NEW)
 bencheval model list|show <id>                   # discovery (NEW)
 bencheval adapter list                           # discovery (NEW)
 bencheval doctor [--benchmark <id>] [--runtime <id>]
+bencheval run --config <run-profile.yaml> [--run-root <path>] [--dry-run]          # external command profile (recommended)
 bencheval run --dry-run --benchmark <id> --slice <id> --runtime <id> --model <id>   # plan (NEW)
 bencheval run --benchmark <id> --slice <id> --runtime <id> --model <id> --output <evidence.jsonl> [--cleanup always]   # execute (NEW)
 bencheval run --task|--suite|--manifest ... --backend local|inspect|harbor           # selftest compat (v0.2, unchanged)
 bencheval report <evidence.jsonl> --output <report.md>
 bencheval compare <baseline.jsonl> <current.jsonl> --format md|json
 bencheval export <evidence.jsonl> --format parquet|duckdb --output <warehouse/...>
+bencheval export-run --evidence <evidence.jsonl> --output <bundle-dir> [--raw-dir ...] [--redaction public|private]
+bencheval evidence register --evidence <evidence.jsonl> [--artifacts-dir ...] [--notes ...]
+bencheval replay <events.jsonl> [--no-color] [--speed N] [--max-delay S] [--verify-evidence [evidence.jsonl]] [--format text|json]
 ```
+
+### External command profiles and run record / replay
+
+`bencheval run --config <profile.yaml>` runs an external project through the
+generic external-command adapter. The profile contains benchmark/runtime/model
+identity, command template, stream parser, verification policy, and artifact
+layout. This is the preferred CLI for large external benchmark integrations
+whose native harness already owns materialization, sandboxing, and cleanup.
+
+`bencheval replay` replays a captured **run record** (`events.jsonl`) to the terminal with original timing and colors, and can verify `EvidenceRecord` rows bound to that run. This lane is **benchmark-agnostic**: any external runner may emit `bencheval_run_record_v1` and optionally bind evidence — it is not tied to a Production v1 adapter.
+
+Two CyBench profiles consume this API: `config/runs/momo-cybench.yaml` — the
+**primary/active** profile (MOMO solver driving a Claude Code mixed-model
+runtime; operator runbook [`docs/ops/momo-cybench.md`](../ops/momo-cybench.md)) —
+and `config/runs/cybench-kilo-showcase.yaml`, the **legacy demo** Kilo profile.
+The compatibility entrypoint `bencheval.momo_cybench` delegates to the generic
+adapter and contains no separate runner implementation.
+
+#### Canonical vs derived lanes (integrity policy)
+
+There are two lanes that must never be confused:
+
+- **Canonical run record** (`events.jsonl`): **raw, private, integrity-preserving**. It is the scoring/audit source of truth. It MAY contain flags, secrets, prompts, model outputs, tool calls, stack traces, filesystem paths, and challenge content. Redaction is forbidden here by default. `replay()` operates on this lane and prints exactly what was recorded.
+- **Derived public artifacts** (public reports, demo videos, shareable transcripts): MAY redact sensitive material via `redact_for_public_presentation()`, but they are never used as scoring truth and must carry provenance (source path/hash, redaction mode, generated time).
+
+#### Schema
+
+- **`bencheval_run_record_v1`** — production schema with `header`/`event`/`footer` record types, integrity binding (`run_id`, `benchmark_id`, optional `evidence_sha256` in header or footer), per-event monotonically increasing `seq`, and `redaction_policy: "none"` for canonical records.
+- **`momo_event_v1`** — legacy flat event stream with no header, emitted by early reference integrations. Accepted for backward compatibility; flagged `legacy_unbound` (no integrity binding). "Legacy flat event" is a descriptive compatibility lane, not a separate schema identifier.
+- Schema-less lines are tolerated as legacy flat events so older captured files keep replaying. Mixed-schema files are rejected fast.
+
+#### Backward compatibility
+
+Reference integrations may delegate replay to the general module. Producers
+write **raw** canonical records to `events.jsonl`; redaction is reserved for
+explicit derived public artifacts, never canonical evidence.
+
+#### `--verify-evidence [path]`
+
+`nargs="?"` — without a path argument, derives the sibling evidence file by convention (`<results_root>/evidence/<run_id>.jsonl`). With a path, uses it explicitly. Loads and cross-checks evidence rows against the run record (run_id, benchmark_id, instance_id, evidence_sha256). Prints a summary (`text`) or `{record, row_count, rows}` (`json`). This **verifies** bound evidence; it does not rerun verifiers or regenerate evidence.
+
+#### Redaction
+
+`redact_for_public_presentation()` lives in `bencheval.presentation` and is the helper for derived public artifacts only. It is NOT called by `replay()` or `load_run_record()`. The deprecated alias `sanitize_for_replay()` still works from `bencheval.replay` for old imports, but new code should import presentation helpers from `bencheval.presentation`.
+
+#### Idempotency
+
+`replay` writes only to stdout; no files mutated. `verify_bound_evidence` is read-only over evidence files. Both are safe to retry.
 
 ### Exit-code contract (frozen)
 
@@ -69,6 +124,7 @@ Discovery and dry-run commands emit a single JSON object to **stdout** (indented
 - `runtime list --format json` → `{ "runtimes": [ { "id", "kind", "display_name", "admission" }, ... ] }`
 - `runtime show <id> --format json` → `<RuntimeProfile dict>` (no secrets — env var names only, never values)
 - `run --dry-run ...` → `<RunPlan dict>` (see `domain.RunPlan`; `comparison_validity` is one of `model_comparison|runtime_comparison|adapter_smoke|diagnostic_only|invalid`)
+- `run --config ... --dry-run` → `<ExternalRunConfig-derived plan dict>` (`benchmark_id`, `slice_id`, `runtime_id`, `model_id`, `instances`, `events`, `evidence`, `snapshot_enabled`)
 
 **Never leaked** in any JSON output: secret values (`*_API_KEY` contents), artifact file contents, raw model outputs, `password_hash`-equivalents. Env vars are represented by **name only**.
 
@@ -79,6 +135,8 @@ Discovery and dry-run commands emit a single JSON object to **stdout** (indented
 `schema_version`, `benchmark_id`, `benchmark_version`, `slice_id`, `adapter_id`, `harness_kind`, `runtime_id`, `runtime_kind`, `model_id`, `model_binding`, `instance_count`, `instances`, `budget_class`, `max_cost_usd`, `max_wall_clock_sec`, `requires_harbor`, `requires_sandbox`, `network_policy`, `cleanup_policy`, `caveats`, `comparison_validity`, plus additive `slice_resolution` (instance manifest SHA256, `execution_support`, resolved ids).
 
 Evidence JSONL v0.3 additive fields may include `attempt_validity`, `invalid_reason`, `counts_toward_pass_at_k`, `physical_launch_id`, `logical_attempt_number`, `runtime_output_cap`, and extended `failure_class` values (`runtime_output_cap_reached`, `operator_interrupted`, …). See `docs/context/runtime-invocation-contracts.md`.
+
+The external-command adapter also writes a free-form `adapter_metadata` dict on each `EvidenceRecord` (`external_command_adapter._write_evidence`). Alongside `run_kind`, `runtime_id`, `stream_parser`, `verification_kind`, `target_host`, `raw_log`, `stderr_log`, and `result_check`, it now carries four join/attribution keys: `variant` (e.g. `claude-code-mixed-model`), `configured_model_id` (the requested primary `model_id`, e.g. `bytellm/glm-5.2`), and the per-attempt `telemetry_id` / `trace_id` (`{run_id}:{instance_id}:attempt{N}`) that bind a row to its ByteLLM telemetry. See [`docs/ops/momo-cybench.md`](../ops/momo-cybench.md).
 
 ## Coupling rules
 

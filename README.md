@@ -26,7 +26,7 @@ uv run bencheval run --dry-run \
   --benchmark terminal-bench --slice smoke-5 \
   --runtime claude-code --model <model-id>
 
-# 5. Live run (needs provider creds + Docker + Harbor; tiers in docs/context/production-readiness.md; procedure docs/ops/dev-box-pilot.md)
+# 5. Live run (dev-box: provider creds + eval extra; harness owns sandbox — docs/ops/dev-box-pilot.md)
 uv run bencheval run \
   --benchmark terminal-bench --slice smoke-5 \
   --runtime claude-code --model <model-id> \
@@ -57,8 +57,8 @@ Non-executable benchmarks (e.g. CyBench) fail on `run` before subprocess dispatc
 - `BENCHEVAL_HOME` — wheel-only bundle root: `config/benchmarks.yaml`, `config/models.yaml`, `config/suites.yaml`, `config/runtimes/`, `config/slices/`, `config/manifests/` (see `scripts/export-config-bundle.sh`); `config/pricing/` stays editable-checkout only unless you extend the export script
 - `config/suites.yaml` — suite membership (core-8, core-16, smoke, calibration, stretch)
 - `config/` — legacy manifests, pricing YAML, models YAML (no secrets)
-- `src/bencheval/` — library: task contract, registry, planner, evidence JSONL, report/export/compare, legacy summary/compare
-- `scripts/` — `check-production-v1.sh`, `run-live-pilot-matrix.sh`, `write_preflight.py`, `compare.py`, `extract_summary.py`, `export-config-bundle.sh`, `check-domain-coverage.sh`, `verify-performance.sh`, `preflight_disk.sh`, `verify_auth.sh`, `run_provider_smoke.sh` (see `scripts/README.md`)
+- `src/bencheval/` — library: task contract, registry, planner, evidence JSONL, run record/replay, report/export/compare, legacy summary/compare
+- `scripts/` — production gates, live pilot matrix, legacy summary scripts, optional external-project recording helpers (see `scripts/README.md`)
 - `tests/` — pytest suite
 - `results/` — run artifacts (gitignored where noted)
 - `docs/` — architecture, roadmap, context specs, ops runbooks
@@ -73,9 +73,26 @@ Use `uv sync --extra eval` only when running real Inspect / Harbor evals.
 
 Internal pilot gates and live matrix: [`docs/context/production-v1-pilot.md`](docs/context/production-v1-pilot.md) (`make check-production-v1`).
 
+## CLI overview
+
+`bencheval` is grouped by concern. Use `--help` on any subcommand; JSON output is available on most discovery/plan commands via `--format json`.
+
+| Group | Commands | Typical use |
+| --- | --- | --- |
+| **Catalog** | `benchmark`, `runtime`, `model`, `adapter` | List/show benchmarks, runtimes, models, planned adapters |
+| **Plan & run** | `run` | `--dry-run` (no network) or live execution → `EvidenceRecord` JSONL |
+| **Evidence** | `report`, `compare`, `export`, `export-run`, `evidence register` | Reports, deltas, Parquet/DuckDB, publishable bundles, runs manifest |
+| **Run record** | `replay` | Terminal replay of `events.jsonl` + optional evidence binding check |
+| **Preflight** | `doctor` | Backend/runtime checks before live runs (never prints secrets) |
+| **Selftest** | `task` | Internal Core-8/16 contracts only ([appendix](#internal-selftest-only-appendix)) |
+
+> **CLI ergonomics:** The flat `run` flag surface is large. Structured flag groups, profiles, and shorter entrypoints are **in active refactor** (peer lane); library APIs (`planner`, `replay`, `evidence`) remain stable meanwhile.
+
+BenchEval does **not** ship a separate Docker orchestration plane. Isolation comes from the **benchmark’s official harness/runtime** (Harbor, Inspect sandbox, upstream images). Tier 0 development needs no Docker; Tier 1 live proof is expected on **dev-box-cpu** (or equivalent operator host), not every laptop — see [`docs/ops/dev-box-pilot.md`](docs/ops/dev-box-pilot.md).
+
 ## Control-plane commands
 
-Public control-plane surface: catalog, plan, run, report, compare, export. (Selftest-only commands live in the [Internal selftest only](#internal-selftest-only-appendix) appendix.)
+Public control-plane surface: catalog, plan, run, report, compare, export, bundles, replay. (Selftest-only commands live in the [Internal selftest only](#internal-selftest-only-appendix) appendix.)
 
 ```bash
 # External benchmark catalog (support metadata, not Core scoring)
@@ -125,7 +142,67 @@ uv run bencheval report results/evidence/run-001.jsonl \
 uv run bencheval compare results/evidence/baseline.jsonl results/evidence/current.jsonl \
   --format md \
   --output results/reports/delta.md
+
+# Bundle evidence + report + optional raw tree for handoff (public redaction available)
+uv run bencheval export-run \
+  --evidence results/evidence/run-001.jsonl \
+  --raw-dir results/raw/run-001 \
+  --output results/bundles/run-001 \
+  --redaction private
+
+# Append a completed live run to the runs manifest JSONL
+uv run bencheval evidence register \
+  --run-id run-001 \
+  --model openai/gpt-test \
+  --benchmark terminal-bench \
+  --slice smoke-5 \
+  --runtime claude-code \
+  --evidence results/evidence/run-001.jsonl \
+  --report results/reports/run-001.md
+
+# Replay a canonical run record (stdout only; optional evidence cross-check)
+uv run bencheval replay results/raw/run-001/events.jsonl
+uv run bencheval replay results/raw/run-001/events.jsonl --verify-evidence
+
+# Config-first external runtime run (recommended for external projects).
+# momo-cybench.yaml is the primary/active CyBench profile (docs/ops/momo-cybench.md);
+# cybench-kilo-showcase.yaml is the legacy demo profile.
+uv run bencheval run \
+  --config config/runs/momo-cybench.yaml \
+  --dry-run
+
+uv run bencheval run \
+  --config config/runs/momo-cybench.yaml \
+  --run-root /path/to/prepared/benchmark/root
 ```
+
+## External command runs and run records
+
+BenchEval can run external projects through a structured profile:
+`uv run bencheval run --config <yaml>`. The profile owns the benchmark id,
+runtime id, model id, command template, stream parser, verification policy, and
+artifact layout. This keeps the CLI short while preserving the full four-axis
+metadata in evidence.
+
+Any external runner can emit **`bencheval_run_record_v1`** JSONL (`events.jsonl`: header/event/footer, raw audit lane) and bind rows in `EvidenceRecord` JSONL. The control plane exposes this without requiring a Production v1 benchmark adapter:
+
+- **Library:** `bencheval.external_command_adapter` (`ExternalRunConfig`, `run_external_command`) and `bencheval.replay` (`RunRecordWriter`, `load_run_record`, `replay`, `verify_bound_evidence`).
+- **CLI:** `bencheval run --config`, `bencheval replay`, `bencheval export-run`.
+- **Contract:** [`docs/api/internal-contracts.md`](docs/api/internal-contracts.md) § Replay.
+
+Two CyBench external-command profiles ship as examples.
+`config/runs/momo-cybench.yaml` is the **primary/active** profile: the MOMO
+solver driving a Claude Code mixed-model runtime inside a profile-owned
+container — operator runbook [`docs/ops/momo-cybench.md`](docs/ops/momo-cybench.md).
+`config/runs/cybench-kilo-showcase.yaml` is the **legacy demo** (Kilo) profile.
+Neither is a fourth Production v1 adapter, and neither is weighted into public
+benchmark comparisons unless the benchmark is separately admitted with real
+native evidence.
+
+Optional derived artifacts (MP4, public transcripts) use presentation helpers
+or `scripts/render-run-video.py` (`--ass-only` works without OpenCV). Canonical
+logs/evidence remain raw and private; redaction belongs only to explicitly
+derived public artifacts.
 
 ## Internal selftest only (appendix)
 
@@ -174,7 +251,7 @@ uv run bencheval run \
 
 ## Provider smoke (live, credential-gated)
 
-Bounded Inspect E0 smoke for real providers. Skips models with known preflight blockers (missing credentials, Docker, Inspect dependency). Invalid config and unknown doctor failures exit non-zero.
+Bounded Inspect E0 smoke for real providers. Skips models with known preflight blockers (missing credentials, harness sandbox unavailable, Inspect dependency). Invalid config and unknown doctor failures exit non-zero.
 
 ```bash
 uv sync --extra eval
@@ -245,7 +322,9 @@ uv run bencheval task audit core-8
 uv run bencheval task audit core-16  # 16 tasks; exits 1 until expansion sign-off (8/16 admitted today)
 ```
 
-Live Inspect/Harbor proof requires `uv sync --extra eval`, provider credentials, Docker (E1), and Harbor CLI (S4 live). See [`docs/roadmap.md`](docs/roadmap.md) live blockers.
+Tier 0 (default): `uv sync` + `make check-production-v1` — no credentials, no harness sandbox.
+
+Tier 1 live proof: run on **dev-box** per [`docs/ops/dev-box-pilot.md`](docs/ops/dev-box-pilot.md) (`uv sync --extra eval`, provider credentials, harness CLIs such as Harbor/BFCL where the adapter requires them). BenchEval itself does not add a parallel Docker control plane.
 
 ## License
 

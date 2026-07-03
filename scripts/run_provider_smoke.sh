@@ -58,8 +58,8 @@ EOF
 }
 
 validate_config() {
-  [[ "${BACKEND}" == "inspect" ]] || die "unsupported BENCHEVAL_SMOKE_BACKEND=${BACKEND} (inspect only)"
-  [[ "${PROFILE}" == "E0" || "${PROFILE}" == "E1" || "${PROFILE}" == "E2" ]] \
+  [[ ${BACKEND} == "inspect" ]] || die "unsupported BENCHEVAL_SMOKE_BACKEND=${BACKEND} (inspect only)"
+  [[ ${PROFILE} == "E0" || ${PROFILE} == "E1" || ${PROFILE} == "E2" ]] \
     || die "unsupported BENCHEVAL_SMOKE_PROFILE=${PROFILE} (expected E0, E1, or E2)"
 }
 
@@ -114,7 +114,7 @@ collect_models() {
     done
     return 0
   fi
-  if [[ -n "${BENCHEVAL_MODELS:-}" ]]; then
+  if [[ -n ${BENCHEVAL_MODELS:-} ]]; then
     # shellcheck disable=SC2206
     MODELS=(${BENCHEVAL_MODELS})
     return 0
@@ -182,14 +182,14 @@ main() {
 
   log "summary ran=${ran} skipped=${skipped} failed=${failed}"
 
-  if [[ "${failed}" -gt 0 ]]; then
+  if [[ ${failed} -gt 0 ]]; then
     exit 1
   fi
-  if [[ "${ran}" -eq 0 && "${skipped}" -gt 0 ]]; then
+  if [[ ${ran} -eq 0 && ${skipped} -gt 0 ]]; then
     log "no runnable models; all skipped due to preflight blockers"
     exit 0
   fi
-  if [[ "${ran}" -eq 0 ]]; then
+  if [[ ${ran} -eq 0 ]]; then
     die "no models processed"
   fi
 }

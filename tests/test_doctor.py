@@ -32,10 +32,12 @@ def _patch_binaries(
 def _patch_pilot_host(
     monkeypatch: pytest.MonkeyPatch,
     *,
-    present: set[str] = set(_PILOT_BINARIES),
+    present: set[str] | None = None,
     docker_ok: bool = True,
     versions: dict[str, str] | None = None,
 ) -> None:
+    if present is None:
+        present = set(_PILOT_BINARIES)
     versions = versions or {}
     _patch_binaries(monkeypatch, present=present, versions=versions)
 
