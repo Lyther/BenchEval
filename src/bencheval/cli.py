@@ -50,6 +50,8 @@ from bencheval.evidence import read_evidence_jsonl
 from bencheval.exceptions import BenchEvalError, TaskContractError
 from bencheval.executor import execute_task
 from bencheval.external_command_adapter import (
+    apply_deadline_overrides,
+    deadline_overrides_from_args,
     load_external_run_config,
     plan_external_run,
     run_external_command,
@@ -355,6 +357,9 @@ def _run_config_dry(args: argparse.Namespace) -> int:
     if config_err is not None:
         return config_err
     config, run_root = _external_run_root(args, Path(args.config))
+    # Preflight validates launch-time deadline overrides too (an invalid
+    # --wall-clock-sec must fail the dry-run, not only live execution).
+    config = apply_deadline_overrides(config, deadline_overrides_from_args(args))
     # Dry-run is a plan command: it validates the config and, when a root is
     # supplied, validates inputs. It does not require private material merely to
     # show the resolved run shape.
@@ -401,6 +406,7 @@ def _run_config_execute(args: argparse.Namespace) -> int:
             color=not args.no_color,
             snapshot=args.snapshot,
             producer_command="bencheval run --config",
+            deadline_overrides=deadline_overrides_from_args(args),
         ),
     )
 
@@ -1200,6 +1206,24 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="snapshot",
         action="store_false",
         help="Disable configured host snapshot for --config runs",
+    )
+    run.add_argument(
+        "--no-progress-sec",
+        type=float,
+        default=None,
+        help="Override the progress-aware stall timeout for --config runs (seconds)",
+    )
+    run.add_argument(
+        "--wall-clock-sec",
+        type=float,
+        default=None,
+        help="Impose an absolute per-attempt wall-clock ceiling for --config runs (seconds)",
+    )
+    run.add_argument(
+        "--grace-period-sec",
+        type=float,
+        default=None,
+        help="Override the SIGTERM->SIGKILL grace window for --config runs (seconds)",
     )
     run.add_argument(
         "--mode",

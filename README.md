@@ -164,13 +164,15 @@ uv run bencheval evidence register \
 uv run bencheval replay results/raw/run-001/events.jsonl
 uv run bencheval replay results/raw/run-001/events.jsonl --verify-evidence
 
-# Config-first external runtime run (recommended for external projects)
+# Config-first external runtime run (recommended for external projects).
+# momo-cybench.yaml is the primary/active CyBench profile (docs/ops/momo-cybench.md);
+# cybench-kilo-showcase.yaml is the legacy demo profile.
 uv run bencheval run \
-  --config config/runs/cybench-kilo-showcase.yaml \
+  --config config/runs/momo-cybench.yaml \
   --dry-run
 
 uv run bencheval run \
-  --config config/runs/cybench-kilo-showcase.yaml \
+  --config config/runs/momo-cybench.yaml \
   --run-root /path/to/prepared/benchmark/root
 ```
 
@@ -188,10 +190,14 @@ Any external runner can emit **`bencheval_run_record_v1`** JSONL (`events.jsonl`
 - **CLI:** `bencheval run --config`, `bencheval replay`, `bencheval export-run`.
 - **Contract:** [`docs/api/internal-contracts.md`](docs/api/internal-contracts.md) § Replay.
 
-`config/runs/cybench-kilo-showcase.yaml` is an example external-command profile
-for a private CyBench/Kilo run. It is **not** a fourth Production v1 adapter and
-is **not** weighted into public benchmark comparisons unless the benchmark is
-separately admitted with real native evidence.
+Two CyBench external-command profiles ship as examples.
+`config/runs/momo-cybench.yaml` is the **primary/active** profile: the MOMO
+solver driving a Claude Code mixed-model runtime inside a profile-owned
+container — operator runbook [`docs/ops/momo-cybench.md`](docs/ops/momo-cybench.md).
+`config/runs/cybench-kilo-showcase.yaml` is the **legacy demo** (Kilo) profile.
+Neither is a fourth Production v1 adapter, and neither is weighted into public
+benchmark comparisons unless the benchmark is separately admitted with real
+native evidence.
 
 Optional derived artifacts (MP4, public transcripts) use presentation helpers
 or `scripts/render-run-video.py` (`--ass-only` works without OpenCV). Canonical

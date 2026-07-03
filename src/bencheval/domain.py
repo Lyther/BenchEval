@@ -143,6 +143,12 @@ FailureLabel = Literal[
     "runtime_config_drift",
     "runtime_budget_exceeded",
     "runtime_output_cap_reached",
+    # Infrastructure stalls: the solver wedged (no progress) or ran past its
+    # wall-clock deadline and BenchEval terminated it. Distinct from a
+    # task-difficulty failure so a benchmark number never conflates infra
+    # flakiness with capability.
+    "runtime_no_progress_stall",
+    "runtime_wall_clock_timeout",
     "materialization_failure",
     "model_wrong_solution",
     "model_output_invalid",

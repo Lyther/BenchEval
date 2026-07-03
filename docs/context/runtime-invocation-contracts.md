@@ -1,6 +1,10 @@
 # Runtime invocation contracts (operational)
 
-**Status:** production v1 pins executable paths only; CyBench/Kilo remain design backlog.
+**Status:** production v1 pins executable paths only. CyBench has no native
+four-axis adapter (`metadata_only`), but it runs today through the config-driven
+**external-command** adapter: the active `config/runs/momo-cybench.yaml` profile
+drives Claude Code in a profile-owned container (see § Claude Code in container).
+The Kilo demo (`config/runs/cybench-kilo-showcase.yaml`) is the same adapter path.
 **Scope:** per-runtime fields BenchEval adapters must honor—see also `config/runtimes/*.yaml`.
 
 ## Harbor + Terminal-Bench (`terminal-bench-harbor` adapter)
@@ -49,15 +53,36 @@ Runtime profile: `mini-swe-agent` (`config/runtimes/mini-swe-agent.yaml`).
 
 Runtime profile: `native-api` (`config/runtimes/native-api.yaml`).
 
-## Kilo CLI
+## Claude Code in container (active CyBench external-command profile)
 
-**Status:** `adapter_pending` — not a production v1 executable runtime until a Harbor/selftest adapter exists and live proof is recorded.
+**Status:** config-driven `external-command` adapter path (`adapter_id:
+external-command`), **not** a native four-axis runtime adapter. Active profile:
+`config/runs/momo-cybench.yaml`; operator runbook
+[`docs/ops/momo-cybench.md`](../ops/momo-cybench.md).
+
+| Field | Contract |
+|-------|----------|
+| Solver CLI | `momo solve` (`command.argv_prefix`); the runtime is selected inside MOMO and passed through `{runtime_id}` = `claude-code` |
+| Runtime command | `claude -p --output-format stream-json --include-partial-messages --verbose --dangerously-skip-permissions --model {runtime_model_id}` (profile env `MOMO_CLAUDE_CODE_COMMAND`) |
+| Container | Profile launches `docker run` (foreground `exec`, `--rm`, named `momo-cybench-{instance_id}`) with a pre-run same-id self-heal. Abnormal-exit removal is BenchEval's first-class `cleanup:` block (`docker rm -f`, run after every attempt), **not** a shell `trap`: `killpg` reaps native children but cannot reach dockerd containers, so cleanup is a separate step. BenchEval core ships no Docker plane |
+| Termination | Progress-aware `deadline.no_progress_sec` (committed 900s, adaptive to streaming cadence) terminates a wedged solver container-safe (process-group SIGTERM→grace→SIGKILL) and classifies it `runtime_no_progress_stall` (invalid, excluded from pass@k), distinct from a task-difficulty fail. An absolute `wall_clock_sec` ceiling is operator-supplied at launch (`--wall-clock-sec`), not committed |
+| Variant | `claude-code-mixed-model`: `model_id: bytellm/glm-5.2` is the requested primary; Claude Code may issue auxiliary ByteLLM-routed model calls, so the run is reported mixed-model, not GLM-5.2-only |
+| Provenance | Evidence `adapter_metadata` carries `configured_model_id`, `served_model_id`, and `model_attribution` (`authoritative` / `mixed_model` / `attribution_not_captured`). Plain-lines streams capture nothing, so this profile reports `attribution_not_captured` — never silently the requested model |
+| Telemetry | `X-Experiment-ID`/`X-Request-ID` injected via `ANTHROPIC_CUSTOM_HEADERS`; `telemetry_id`/`trace_id` = `{run_id}:{instance_id}:attempt{N}` recorded in evidence `adapter_metadata`; ByteLLM telemetry is source of truth for the actual model mix |
+| Stream | `parser: plain-lines` — MOMO emits progress plus a verbatim final answer, not kilo-json |
+| Verification | `manifest-value-regex`, strict (`allow_observed_without_expected: false`); BenchEval owns flag extraction against the private manifest |
+| Output cap | `stream.output_token_max` (131072) → `runtime_output_cap_reached` → `attempt_validity=invalid` |
+
+## Kilo CLI (legacy demo)
+
+**Status:** legacy demo profile (`config/runs/cybench-kilo-showcase.yaml`), same
+`external-command` adapter path; `adapter_pending` for any native four-axis runtime.
 
 | Field | Requirement (target) |
 |-------|----------------------|
 | Permission model | `--auto` is autonomous mode, **not** output budget |
 | Output cap | `KILO_EXPERIMENTAL_OUTPUT_TOKEN_MAX` when needed |
-| Format | `--format json` |
+| Format | `--format json` (`parser: kilo-json`) |
 | Workdir | `--dir <attempt-workdir>` per instance |
 | Evidence | `runtime_output_cap_reached` → `attempt_validity=invalid`, `counts_toward_pass_at_k=false` by default |
 

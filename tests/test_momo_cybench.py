@@ -3,10 +3,12 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 import shlex
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -120,12 +122,58 @@ def test_momo_cybench_profile_has_full_hard_39_slice() -> None:
     assert cfg.name == "momo-cybench"
     assert cfg.benchmark_version == "hard-39-private"
     assert cfg.model_id == "bytellm/glm-5.2"
+    assert cfg.variant == "claude-code-mixed-model"
+    assert cfg.banner_detail is not None
+    assert "mixed-model runtime" in cfg.banner_detail
+    assert "requested GLM 5.2" in cfg.banner_detail
     assert cfg.concurrency == 1
     ids = [instance.id for instance in cfg.instances]
     assert len(ids) == 39
     assert len(set(ids)) == 39  # no duplicates
     # Spot-check authoritative endpoints of the sorted slice + a mid entry.
     assert {"avatar", "lootstash", "were_pickle_phreaks_revenge"} <= set(ids)
+
+
+def test_momo_cybench_profile_has_progress_aware_deadline() -> None:
+    """The profile's committed deadline is the adaptive no-progress guard only.
+
+    no_progress_sec keys off the runtime's streaming cadence (not solve time), so it
+    needs no per-benchmark guess. An absolute wall_clock ceiling depends on the
+    solve-time distribution and is operator-owned at launch (--wall-clock-sec), so it
+    is deliberately NOT hard-coded in the committed profile
+    (docs/issues/solver-stall-and-attribution.md).
+    """
+    cfg = load_external_run_config(Path("config/runs/momo-cybench.yaml"))
+    assert cfg.deadline.no_progress_sec is not None
+    assert cfg.deadline.no_progress_sec > 0
+    # No committed absolute ceiling — the operator supplies one per run if wanted.
+    assert cfg.deadline.wall_clock_sec is None
+    assert cfg.deadline.grace_period_sec > 0
+
+
+def test_momo_cybench_deadline_wall_clock_is_operator_overridable() -> None:
+    """An operator imposes an absolute ceiling at launch without editing the profile."""
+    cfg = load_external_run_config(Path("config/runs/momo-cybench.yaml"))
+    overridden = external_command_adapter.apply_deadline_overrides(
+        cfg,
+        {"wall_clock_sec": 3600.0, "no_progress_sec": None, "grace_period_sec": None},
+    )
+    assert overridden.deadline.wall_clock_sec == 3600.0
+    # Unset overrides leave the committed values intact.
+    assert overridden.deadline.no_progress_sec == cfg.deadline.no_progress_sec
+    assert overridden.deadline.grace_period_sec == cfg.deadline.grace_period_sec
+    # A non-positive override is rejected cleanly (re-validated, never a raw traceback).
+    with pytest.raises(BenchEvalError, match="invalid deadline override"):
+        external_command_adapter.apply_deadline_overrides(cfg, {"wall_clock_sec": 0.0})
+
+
+def test_momo_cybench_profile_has_first_class_container_cleanup() -> None:
+    """Cleanup is a first-class adapter capability, not a per-attempt shell trap."""
+    cfg = load_external_run_config(Path("config/runs/momo-cybench.yaml"))
+    assert cfg.cleanup.commands, "expected a container cleanup command"
+    joined = " ".join(cfg.cleanup.commands)
+    assert "docker rm -f momo-cybench-{instance_id}" in joined
+    assert cfg.cleanup.timeout_sec > 0
 
 
 def test_momo_cybench_scorer_is_strict_no_observed_without_expected() -> None:
@@ -159,31 +207,50 @@ def test_momo_cybench_scorer_is_strict_no_observed_without_expected() -> None:
     assert ok_match is True
 
 
+def test_momo_cybench_profile_extracts_from_original_solver_output() -> None:
+    """MOMO should emit its final answer; the profile owns CyBench value extraction."""
+    cfg = load_external_run_config(Path("config/runs/momo-cybench.yaml"))
+
+    observed = external_command_adapter._extract_observed_value(
+        "Analysis complete.\nThe recovered value is HTB{real_flag}.\n",
+        cfg.verification.observed_regex,
+    )
+
+    assert observed == "HTB{real_flag}"
+
+
 def test_momo_cybench_runs_claude_inside_isolated_container() -> None:
     cfg = load_external_run_config(Path("config/runs/momo-cybench.yaml"))
     command = cfg.command.env["MOMO_CLAUDE_CODE_COMMAND"]
     assert "docker run --rm" in command
     assert "-v /etc/passwd:/etc/passwd:ro" in command
     assert "-v /etc/group:/etc/group:ro" in command
-    assert "-v {work_dir}:{work_dir}" in command
-    assert "-v {run_root}/keys/{instance_id}:/tmp/momo-cybench-key:ro" in command
-    assert "momo:cybench-runner claude -p --output-format json" in command
+    # Shell-quoted path fields (F006): paths interpolated into the sh -c script use the
+    # `_sh` variants so a run/results root with spaces cannot split Docker args.
+    assert "-v {work_dir_sh}:{work_dir_sh}" in command
+    assert "-v {run_root_sh}/keys/{instance_id}:/tmp/momo-cybench-key:ro" in command
+    assert "momo:cybench-runner claude -p --output-format stream-json" in command
+    assert "--include-partial-messages" in command
+    assert "--verbose" in command
     assert "--model {runtime_model_id}" in command
     assert "--model {model_id}" not in command
+    assert "ANTHROPIC_CUSTOM_HEADERS" in command
+    assert "X-Experiment-ID: {telemetry_id}" in command
+    assert "X-Request-ID: {trace_id}" in command
     assert "{prompt}" not in command
 
 
-def test_momo_cybench_container_command_has_deterministic_cleanup() -> None:
-    """F001: a timed-out or killed attempt must not strand a dockerd-managed container.
+def test_momo_cybench_container_command_is_trap_free_foreground_exec() -> None:
+    """A killed attempt must not strand a container — via first-class cleanup, no trap.
 
-    The runtime command wraps ``docker run`` in a shell with a named/labeled container,
-    a pre-run force-remove (self-heals a same-id leak a prior SIGKILL may have left), and
-    a ``trap`` that force-removes the container on EXIT/INT/TERM. docker run is
-    BACKGROUNDED and waited on so the trap fires immediately on SIGTERM (a foreground
-    docker run would defer the trap until it returns; a SIGTERM-ignoring container would
-    then be stranded by MOMO's SIGKILL). ``exec 3<&0`` + ``<&3`` forward MOMO's piped
-    prompt stdin to the backgrounded container. The value shlex-splits into ``sh -c
-    <script>``. Cleanup + stdin were verified live on dev-box-gpu.
+    Abnormal-exit container removal moved out of a per-attempt shell ``trap`` into
+    BenchEval's ``cleanup`` block (see
+    test_momo_cybench_profile_has_first_class_container_cleanup). The runtime command
+    is therefore a trap-free ``exec docker run`` in the FOREGROUND: exec replaces the
+    shell so BenchEval's SIGTERM reaches ``docker run`` directly, and ``-i`` forwards
+    MOMO's piped prompt on inherited stdin — no ``trap`` / backgrounding / fd juggling.
+    A named+labeled container plus a pre-run force-remove (same-id leak self-heal)
+    remain. The value shlex-splits into ``sh -c <script>``.
     """
     cfg = load_external_run_config(Path("config/runs/momo-cybench.yaml"))
     command = cfg.command.env["MOMO_CLAUDE_CODE_COMMAND"]
@@ -193,18 +260,21 @@ def test_momo_cybench_container_command_has_deterministic_cleanup() -> None:
         .replace("{host_gid}", "1000")
         .replace("{work_dir}", "/w")
         .replace("{run_root}", "/rr")
-        .replace("{runtime_model_id}", "glm-5.2"),
+        .replace("{runtime_model_id}", "glm-5.2")
+        .replace("{telemetry_id}", "run-1:lootstash:attempt1")
+        .replace("{trace_id}", "run-1:lootstash:attempt1"),
     )
-    assert argv[:2] == ["sh", "-c"]  # shell wrapper so the trap can run
+    assert argv[:2] == ["sh", "-c"]
     script = argv[2]
     assert "--name $cid" in script
     assert "--label momo-cybench=lootstash" in script
-    assert "docker rm -f $cid" in script  # pre-run self-heal AND trap cleanup
-    assert "trap " in script
-    assert "EXIT INT TERM" in script
-    assert "exec 3<&0" in script  # save MOMO's piped stdin for the backgrounded container
-    assert "<&3 &" in script  # background docker run so the trap can fire immediately
-    assert "wait $!" in script
+    assert "docker rm -f $cid" in script  # pre-run same-id leak self-heal
+    assert "exec docker run" in script  # foreground exec; SIGTERM reaches docker run
+    # The trap + backgrounding scar tissue is gone (cleanup is first-class now).
+    assert "trap " not in script
+    assert "EXIT INT TERM" not in script
+    assert "<&3 &" not in script
+    assert "wait $!" not in script
 
 
 def test_momo_cybench_prompt_suppresses_known_hosts_writes(tmp_path: Path) -> None:
@@ -249,11 +319,15 @@ def test_template_context_exposes_host_uid_gid(tmp_path: Path) -> None:
         cfg.instances[0],
         attempt=1,
         work_dir=tmp_path / "work",
+        run_id="run/x 1",
     )
     assert context["host_uid"].isdigit()
     assert context["host_gid"].isdigit()
     assert context["model_id"] == "bytellm/glm-5.2"
     assert context["runtime_model_id"] == "glm-5.2"
+    assert context["run_id"] == "run/x 1"
+    assert context["telemetry_id"] == "run-x-1:avatar:attempt1"
+    assert context["trace_id"] == "run-x-1:avatar:attempt1"
 
 
 def test_validate_run_root_reports_missing_private_material(tmp_path: Path) -> None:
@@ -475,6 +549,10 @@ def test_external_command_live_with_fake_kilo_writes_evidence(
     assert len(rows) == 1
     assert rows[0].primary_pass is True
     assert rows[0].adapter_metadata["result_check"] == "value_match"
+    assert rows[0].adapter_metadata["configured_model_id"] == "ollama-cloud/glm-5.2"
+    assert rows[0].adapter_metadata["variant"] == "max"
+    assert rows[0].adapter_metadata["telemetry_id"] == "external-test-run:lootstash:attempt1"
+    assert rows[0].adapter_metadata["trace_id"] == "external-test-run:lootstash:attempt1"
     assert paths.events_jsonl.is_file()
     # The canonical events.jsonl must preserve the raw flag (no redaction).
     events_text = paths.events_jsonl.read_text(encoding="utf-8")
@@ -491,6 +569,7 @@ def test_external_command_live_with_fake_kilo_writes_evidence(
     ).hexdigest()
     assert record.footer.evidence_sha256 == expected_evidence_sha
     assert paths.summary_json.is_file()
+    assert "- Variant: `max`" in paths.summary_md.read_text(encoding="utf-8")
 
 
 def test_external_command_legacy_config_still_preserves_raw_canonical(
@@ -599,6 +678,635 @@ def test_external_command_nonzero_exit_is_runtime_tool_failure(tmp_path: Path) -
     )
     assert rows[0].failure_class == "runtime_tool_failure"
     assert rows[0].invalid_reason == "process_exit=7"
+
+
+def _write_stall_tool(path: Path, *, sleep_sec: int = 120) -> None:
+    """A tool that prints one line then wedges — simulating a stalled upstream."""
+    path.write_text(
+        "\n".join(
+            [
+                "import time",
+                "print('tool started, waiting on upstream', flush=True)",
+                f"time.sleep({sleep_sec})",
+                "print('FLAG: FLAG{never_reached}', flush=True)",
+            ],
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_orphaning_stall_tool(path: Path, *, sleep_sec: int = 120) -> None:
+    """A tool that spawns a child holding stdout open, then wedges.
+
+    If termination kills only the parent (not the process group), the child keeps
+    the stdout pipe open and the reader blocks until the child exits — the
+    stranded-children bug. Group-safe termination reaps both and lets the run
+    finish promptly.
+    """
+    path.write_text(
+        "\n".join(
+            [
+                "import subprocess, sys, time",
+                "subprocess.Popen(",
+                f"    [sys.executable, '-c', 'import time; time.sleep({sleep_sec})'],",
+                ")",
+                "print('tool started with child', flush=True)",
+                f"time.sleep({sleep_sec})",
+            ],
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_graceful_sigterm_stall_tool(path: Path, *, sleep_sec: int = 120) -> None:
+    """A wedged tool that traps SIGTERM and exits 0 during the grace window.
+
+    A watchdog-terminated stall whose process exits 0 (via a SIGTERM handler, or a
+    container PID-1 graceful shutdown) must STILL be reported as an infra stall — not
+    laundered into a normal completion because returncode happened to be 0.
+    """
+    path.write_text(
+        "\n".join(
+            [
+                "import signal, sys, time",
+                "signal.signal(signal.SIGTERM, lambda *_a: sys.exit(0))",
+                "print('started; exits 0 on SIGTERM', flush=True)",
+                f"time.sleep({sleep_sec})",
+            ],
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_chatty_forever_tool(path: Path) -> None:
+    """A tool that keeps emitting output (progress never stalls) but never exits."""
+    path.write_text(
+        "\n".join(
+            [
+                "import time",
+                "while True:",
+                "    print('still working', flush=True)",
+                "    time.sleep(0.02)",
+            ],
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_served_model_kilo(path: Path, served_model: str) -> None:
+    events_literal = repr(
+        [
+            {"type": "system", "model": served_model},
+            {"type": "text", "part": {"type": "text", "text": "FLAG: FLAG{ok}"}},
+        ],
+    )
+    path.write_text(
+        "\n".join(
+            [
+                "import json",
+                f"events = {events_literal}",
+                "for event in events:",
+                "    print(json.dumps(event), flush=True)",
+            ],
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _run_deadline_config(
+    tmp_path: Path,
+    tool: Path,
+    *,
+    deadline_yaml: list[str],
+    parser: str = "plain-lines",
+    extra_yaml: list[str] | None = None,
+    extra_args: list[str] | None = None,
+) -> tuple[int, Path]:
+    run_root = tmp_path / "run-root"
+    _write_run_root(run_root)
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "\n".join(
+            [
+                'schema_version: "external_command_run_v1"',
+                'name: "deadline-test"',
+                'benchmark_id: "cybench"',
+                'runtime_id: "python-subprocess"',
+                'model_id: "external/proof-runtime"',
+                "command:",
+                f'  argv_prefix: ["{sys.executable}", "{tool}"]',
+                "  args_template: []",
+                "input:",
+                '  prompt_path_templates: ["run-prompts/{instance_id}.txt"]',
+                '  required_path_templates: ["keys/{instance_id}"]',
+                "stream:",
+                f'  parser: "{parser}"',
+                "verification:",
+                '  kind: "none"',
+                *deadline_yaml,
+                *(extra_yaml or []),
+                "instances:",
+                '  - id: "lootstash"',
+            ],
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    run_id = "deadline-test"
+    code = main(
+        [
+            "run",
+            "--config",
+            str(config),
+            "--run-root",
+            str(run_root),
+            "--results-root",
+            str(tmp_path / "results"),
+            "--run-id",
+            run_id,
+            "--no-color",
+            *(extra_args or []),
+        ],
+    )
+    return code, make_external_run_paths(tmp_path / "results", run_id).evidence_jsonl
+
+
+def test_no_progress_stall_classified_distinctly(tmp_path: Path) -> None:
+    """A wedged solver (no output for N s) is a distinct infra stall, not a failure."""
+    tool = tmp_path / "stall.py"
+    _write_stall_tool(tool)
+    started = time.monotonic()
+    code, evidence = _run_deadline_config(
+        tmp_path,
+        tool,
+        deadline_yaml=["deadline:", "  no_progress_sec: 0.5", "  grace_period_sec: 1.0"],
+    )
+    elapsed = time.monotonic() - started
+    assert elapsed < 30  # watchdog killed the wedged solver, did not wait 120s
+    assert code == 1
+    rows = read_evidence_jsonl(evidence)
+    assert rows[0].failure_class == "runtime_no_progress_stall"
+    assert rows[0].failure_class != "model_wrong_solution"
+    assert rows[0].attempt_validity == "invalid"
+    assert rows[0].counts_toward_pass_at_k is False
+    assert "no_progress" in (rows[0].invalid_reason or "")
+
+
+def test_wall_clock_timeout_classified_distinctly(tmp_path: Path) -> None:
+    """A solver that keeps chattering but never finishes trips the wall-clock deadline."""
+    tool = tmp_path / "chatty.py"
+    _write_chatty_forever_tool(tool)
+    started = time.monotonic()
+    code, evidence = _run_deadline_config(
+        tmp_path,
+        tool,
+        deadline_yaml=[
+            "deadline:",
+            "  no_progress_sec: 30.0",
+            "  wall_clock_sec: 0.5",
+            "  grace_period_sec: 1.0",
+        ],
+    )
+    elapsed = time.monotonic() - started
+    assert elapsed < 30
+    assert code == 1
+    rows = read_evidence_jsonl(evidence)
+    assert rows[0].failure_class == "runtime_wall_clock_timeout"
+    assert rows[0].attempt_validity == "invalid"
+    assert rows[0].counts_toward_pass_at_k is False
+
+
+def test_stall_termination_reaps_orphaned_children(tmp_path: Path) -> None:
+    """Container-safe termination: a stalled solver's children are reaped too.
+
+    The tool spawns a child that inherits stdout and sleeps. Group-safe kill reaps
+    both so the reader unblocks; a parent-only kill would strand the child holding
+    the pipe and hang the run.
+    """
+    tool = tmp_path / "orphan.py"
+    _write_orphaning_stall_tool(tool)
+    started = time.monotonic()
+    code, evidence = _run_deadline_config(
+        tmp_path,
+        tool,
+        deadline_yaml=["deadline:", "  no_progress_sec: 0.5", "  grace_period_sec: 1.0"],
+    )
+    elapsed = time.monotonic() - started
+    assert elapsed < 30  # no hang: the orphan holding stdout was reaped
+    assert code == 1
+    rows = read_evidence_jsonl(evidence)
+    assert rows[0].failure_class == "runtime_no_progress_stall"
+
+
+def test_model_attribution_defaults_to_not_captured(tmp_path: Path) -> None:
+    """With no served-model signal, attribution is 'not captured', never the request."""
+    tool = tmp_path / "fake_kilo.py"
+    _write_fake_kilo(tool)
+    code, evidence = _run_deadline_config(
+        tmp_path,
+        tool,
+        deadline_yaml=[],
+        parser="kilo-json",
+    )
+    assert code == 0
+    rows = read_evidence_jsonl(evidence)
+    meta = rows[0].adapter_metadata
+    assert meta["model_attribution"] == "attribution_not_captured"
+    assert meta["served_model_id"] == "attribution_not_captured"
+    assert meta["configured_model_id"] == "external/proof-runtime"
+
+
+def test_model_attribution_reports_served_model(tmp_path: Path) -> None:
+    """A served-model signal that matches the request is authoritative, not best-effort."""
+    tool = tmp_path / "served_kilo.py"
+    _write_served_model_kilo(tool, "external/proof-runtime")
+    code, evidence = _run_deadline_config(
+        tmp_path,
+        tool,
+        deadline_yaml=[],
+        parser="kilo-json",
+    )
+    assert code == 0
+    rows = read_evidence_jsonl(evidence)
+    meta = rows[0].adapter_metadata
+    assert meta["served_model_id"] == "external/proof-runtime"
+    assert meta["model_attribution"] == "authoritative"
+
+
+def test_model_attribution_flags_mixed_model(tmp_path: Path) -> None:
+    """A served model different from the request is reported as mixed-model, not over-claimed."""
+    tool = tmp_path / "mixed_kilo.py"
+    _write_served_model_kilo(tool, "bytellm/some-other-model")
+    code, evidence = _run_deadline_config(
+        tmp_path,
+        tool,
+        deadline_yaml=[],
+        parser="kilo-json",
+    )
+    assert code == 0
+    rows = read_evidence_jsonl(evidence)
+    meta = rows[0].adapter_metadata
+    assert meta["model_attribution"] == "mixed_model"
+    assert "bytellm/some-other-model" in meta["served_model_id"]
+
+
+def test_container_cleanup_runs_after_successful_attempt(tmp_path: Path) -> None:
+    """The first-class cleanup runs after an attempt and its result is recorded."""
+    tool = tmp_path / "ok.py"
+    tool.write_text("print('done', flush=True)\n", encoding="utf-8")
+    sentinel = tmp_path / "cleaned.marker"
+    code, evidence = _run_deadline_config(
+        tmp_path,
+        tool,
+        deadline_yaml=[],
+        extra_yaml=[
+            "cleanup:",
+            "  commands:",
+            f'    - "touch {sentinel}"',
+            "  timeout_sec: 10",
+        ],
+    )
+    assert code == 0
+    assert sentinel.exists(), "cleanup command did not run after the attempt"
+    rows = read_evidence_jsonl(evidence)
+    assert rows[0].cleanup_result == "success"
+
+
+def test_container_cleanup_runs_even_after_stall_kill(tmp_path: Path) -> None:
+    """Cleanup reaches the container plane even when the attempt was stall-killed.
+
+    killpg reaps native children but not dockerd containers; cleanup must run after a
+    stall-kill so a container is never stranded — the whole point of making it a
+    first-class capability instead of a shell trap.
+    """
+    tool = tmp_path / "stall.py"
+    _write_stall_tool(tool)
+    sentinel = tmp_path / "cleaned_after_stall.marker"
+    started = time.monotonic()
+    code, evidence = _run_deadline_config(
+        tmp_path,
+        tool,
+        deadline_yaml=["deadline:", "  no_progress_sec: 0.5", "  grace_period_sec: 1.0"],
+        extra_yaml=[
+            "cleanup:",
+            "  commands:",
+            f'    - "touch {sentinel}"',
+            "  timeout_sec: 10",
+        ],
+    )
+    assert time.monotonic() - started < 30
+    assert code == 1
+    assert sentinel.exists(), "cleanup did not run after a stall-kill"
+    rows = read_evidence_jsonl(evidence)
+    assert rows[0].failure_class == "runtime_no_progress_stall"
+    assert rows[0].cleanup_result == "success"
+
+
+def test_cli_wall_clock_override_kills_run_without_profile_ceiling(tmp_path: Path) -> None:
+    """--wall-clock-sec imposes a ceiling at launch even when the config sets none."""
+    tool = tmp_path / "chatty.py"
+    _write_chatty_forever_tool(tool)
+    started = time.monotonic()
+    code, evidence = _run_deadline_config(
+        tmp_path,
+        tool,
+        # No deadline in the config at all — the operator supplies it at launch.
+        deadline_yaml=[],
+        extra_args=["--wall-clock-sec", "0.5", "--grace-period-sec", "1.0"],
+    )
+    assert time.monotonic() - started < 30
+    assert code == 1
+    rows = read_evidence_jsonl(evidence)
+    assert rows[0].failure_class == "runtime_wall_clock_timeout"
+
+
+def test_watchdog_killed_stall_stays_stall_even_when_process_exits_zero(
+    tmp_path: Path,
+) -> None:
+    """A watchdog-terminated stall that exits 0 (SIGTERM handler) is still a stall.
+
+    Guards the deadline-edge guard from laundering an actively-killed infra stall into
+    a normal completion just because the process happened to return 0.
+    """
+    tool = tmp_path / "graceful_stall.py"
+    _write_graceful_sigterm_stall_tool(tool)
+    started = time.monotonic()
+    code, evidence = _run_deadline_config(
+        tmp_path,
+        tool,
+        deadline_yaml=["deadline:", "  no_progress_sec: 0.5", "  grace_period_sec: 2.0"],
+    )
+    assert time.monotonic() - started < 30
+    assert code == 1
+    rows = read_evidence_jsonl(evidence)
+    assert rows[0].failure_class == "runtime_no_progress_stall"
+    assert rows[0].attempt_validity == "invalid"
+    assert rows[0].counts_toward_pass_at_k is False
+
+
+def test_cleanup_failure_is_recorded_and_does_not_abort_run(tmp_path: Path) -> None:
+    """A cleanup command that exits non-zero degrades to a failed cleanup, run survives."""
+    tool = tmp_path / "ok.py"
+    tool.write_text("print('done', flush=True)\n", encoding="utf-8")
+    code, evidence = _run_deadline_config(
+        tmp_path,
+        tool,
+        deadline_yaml=[],
+        extra_yaml=[
+            "cleanup:",
+            "  commands:",
+            '    - "exit 3"',
+            "  timeout_sec: 10",
+        ],
+    )
+    assert code == 0  # the attempt itself succeeded; cleanup failure must not abort it
+    rows = read_evidence_jsonl(evidence)
+    assert rows[0].cleanup_result == "failed"
+
+
+def test_cleanup_bad_template_field_does_not_strand_or_abort(tmp_path: Path) -> None:
+    """An unknown {field} in a cleanup command degrades to failed, never aborts the run."""
+    tool = tmp_path / "ok.py"
+    tool.write_text("print('done', flush=True)\n", encoding="utf-8")
+    code, evidence = _run_deadline_config(
+        tmp_path,
+        tool,
+        deadline_yaml=[],
+        extra_yaml=[
+            "cleanup:",
+            "  commands:",
+            '    - "echo {nonexistent_field}"',
+            "  timeout_sec: 10",
+        ],
+    )
+    assert code == 0
+    rows = read_evidence_jsonl(evidence)
+    assert rows[0].cleanup_result == "failed"
+
+
+def test_cleanup_partial_when_one_of_many_commands_fails(tmp_path: Path) -> None:
+    tool = tmp_path / "ok.py"
+    tool.write_text("print('done', flush=True)\n", encoding="utf-8")
+    sentinel = tmp_path / "ok.marker"
+    code, evidence = _run_deadline_config(
+        tmp_path,
+        tool,
+        deadline_yaml=[],
+        extra_yaml=[
+            "cleanup:",
+            "  commands:",
+            f'    - "touch {sentinel}"',
+            '    - "exit 1"',
+            "  timeout_sec: 10",
+        ],
+    )
+    assert code == 0
+    assert sentinel.exists()
+    rows = read_evidence_jsonl(evidence)
+    assert rows[0].cleanup_result == "partial"
+
+
+def test_events_jsonl_preserves_full_raw_output_not_compacted(tmp_path: Path) -> None:
+    """F001: the canonical events.jsonl keeps raw model output, not a _compact() tail.
+
+    The console/replay `display` may be compacted, but the record `message` is the
+    integrity lane and must survive whole.
+    """
+    long_line = "Z" * 400
+    tool = tmp_path / "long.py"
+    tool.write_text(f"print({long_line!r}, flush=True)\n", encoding="utf-8")
+    code, _ = _run_deadline_config(tmp_path, tool, deadline_yaml=[])
+    assert code == 0
+    events = make_external_run_paths(tmp_path / "results", "deadline-test").events_jsonl
+    text = events.read_text(encoding="utf-8")
+    assert long_line in text  # raw, un-truncated
+    assert "..." not in text.split(long_line)[0][-8:]  # the record wasn't compacted
+
+
+def test_new_run_id_is_unique_across_immediate_calls() -> None:
+    """F002: consecutive run ids must not collide (would merge/overwrite artifacts)."""
+    ids = {external_command_adapter.new_run_id("momo-cybench") for _ in range(100)}
+    assert len(ids) == 100
+
+
+def test_rerun_onto_existing_evidence_is_rejected(tmp_path: Path) -> None:
+    """F002: reusing a run id whose artifacts exist must fail, not silently merge."""
+    run_root = tmp_path / "run-root"
+    _write_run_root(run_root)
+    tool = tmp_path / "ok.py"
+    tool.write_text("print('done', flush=True)\n", encoding="utf-8")
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        "\n".join(
+            [
+                'schema_version: "external_command_run_v1"',
+                'name: "rerun-test"',
+                'benchmark_id: "cybench"',
+                'runtime_id: "python-subprocess"',
+                'model_id: "external/proof-runtime"',
+                "command:",
+                f'  argv_prefix: ["{sys.executable}", "{tool}"]',
+                "  args_template: []",
+                "input:",
+                '  prompt_path_templates: ["run-prompts/{instance_id}.txt"]',
+                "verification:",
+                '  kind: "none"',
+                "instances:",
+                '  - id: "lootstash"',
+            ],
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    args = [
+        "run",
+        "--config",
+        str(config),
+        "--run-root",
+        str(run_root),
+        "--results-root",
+        str(tmp_path / "results"),
+        "--run-id",
+        "rerun-fixed-id",
+        "--no-color",
+    ]
+    assert main(args) == 0
+    # Second launch onto the same run id / results root must refuse to merge.
+    assert main(args) == 1
+
+
+def test_preflight_fails_when_scoring_manifest_missing(tmp_path: Path) -> None:
+    """F003: a manifest-value-regex run root with prompts but no manifest is not ready."""
+    run_root = tmp_path / "rr"
+    (run_root / "run-prompts").mkdir(parents=True)
+    (run_root / "run-prompts" / "lootstash.txt").write_text("solve\n", encoding="utf-8")
+    cfg = ExternalRunConfig(
+        name="manifest-preflight",
+        benchmark_id="cybench",
+        runtime_id="claude-code",
+        model_id="bytellm/glm-5.2",
+        command={"argv_prefix": ["true"]},
+        input={"prompt_path_templates": ["run-prompts/{instance_id}.txt"]},
+        verification={
+            "kind": "manifest-value-regex",
+            "manifest_paths": ["meta/manifest.private.json"],
+        },
+        instances=[{"id": "lootstash"}],
+    )
+    with pytest.raises(BenchEvalError, match="manifest:"):
+        validate_external_run_root(cfg, run_root)
+    # Provide the manifest → preflight passes.
+    (run_root / "meta").mkdir()
+    (run_root / "meta" / "manifest.private.json").write_text(
+        json.dumps([{"name": "lootstash", "flag": "FLAG{x}"}]),
+        encoding="utf-8",
+    )
+    validate_external_run_root(cfg, run_root)
+
+
+def test_preflight_fails_when_strict_manifest_lacks_selected_expected_values(
+    tmp_path: Path,
+) -> None:
+    """A strict scorer needs expected values for every selected instance."""
+    cfg = load_external_run_config(Path("config/runs/momo-cybench.yaml"))
+    run_root = tmp_path / "rr"
+    (run_root / "run-prompts").mkdir(parents=True)
+    (run_root / "meta").mkdir()
+    for instance in cfg.instances:
+        (run_root / "run-prompts" / f"{instance.id}.txt").write_text(
+            "solve\n",
+            encoding="utf-8",
+        )
+    first = cfg.instances[0]
+    missing = cfg.instances[1]
+    (run_root / "meta" / "manifest.private.json").write_text(
+        json.dumps([{"name": first.id, "flag": "FLAG{first}"}]),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(BenchEvalError, match=f"manifest_expected:{missing.id}"):
+        validate_external_run_root(cfg, run_root)
+
+
+def test_dry_run_rejects_invalid_deadline_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """F004: an invalid --wall-clock-sec must fail the dry-run preflight, not only live."""
+    monkeypatch.delenv("MOMO_CYBENCH_RUN_ROOT", raising=False)
+    code = main(
+        [
+            "run",
+            "--config",
+            "config/runs/momo-cybench.yaml",
+            "--dry-run",
+            "--wall-clock-sec",
+            "0",
+        ],
+    )
+    assert code != 0
+
+
+def test_dry_run_plan_reports_resolved_deadline(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """F004: dry-run surfaces the resolved deadline, including launch overrides."""
+    monkeypatch.delenv("MOMO_CYBENCH_RUN_ROOT", raising=False)
+    code = main(
+        [
+            "run",
+            "--config",
+            "config/runs/momo-cybench.yaml",
+            "--dry-run",
+            "--wall-clock-sec",
+            "1234",
+        ],
+    )
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["deadline"]["wall_clock_sec"] == 1234
+    assert payload["deadline"]["no_progress_sec"] == 900
+
+
+def test_deadline_and_cleanup_reject_non_finite_values() -> None:
+    """F005: inf/nan timeouts must be rejected, not accepted as 'validated'."""
+    for kwargs in (
+        {"no_progress_sec": math.inf},
+        {"wall_clock_sec": math.inf},
+        {"grace_period_sec": math.inf},
+        {"no_progress_sec": math.nan},
+    ):
+        # pydantic ValidationError subclasses ValueError.
+        with pytest.raises(ValueError):
+            external_command_adapter.ExternalDeadlineConfig(**kwargs)
+    with pytest.raises(ValueError):
+        external_command_adapter.ExternalCleanupConfig(timeout_sec=math.inf)
+
+
+def test_docker_command_quotes_paths_with_spaces(tmp_path: Path) -> None:
+    """F006: a run/results root with spaces renders as single, unsplit Docker args."""
+    cfg = load_external_run_config(Path("config/runs/momo-cybench.yaml"))
+    instance = cfg.instances[0]
+    work = tmp_path / "work dir with space"
+    root = tmp_path / "run root with space"
+    context = _template_context(cfg, root, instance, attempt=1, work_dir=work, run_id="r")
+    context["prompt"] = "p"
+    rendered = external_command_adapter._format_template(
+        cfg.command.env["MOMO_CLAUDE_CODE_COMMAND"],
+        context,
+    )
+    argv = shlex.split(rendered)
+    assert argv[:2] == ["sh", "-c"]
+    script_argv = shlex.split(argv[2])  # the spaced paths must NOT split here
+    work_abs = str(work.resolve())
+    assert f"{work_abs}:{work_abs}" in script_argv  # one -v token, not split on space
+    assert "-w" in script_argv
+    assert work_abs in script_argv  # -w <work_dir> is a single token
 
 
 def test_output_cap_uses_total_when_output_missing() -> None:

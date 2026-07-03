@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import hashlib
 import json
 import os
 import re
 import shutil
+import signal
 import sys
 import time
 import warnings
@@ -25,6 +27,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from string import Formatter
 from typing import Literal
+from uuid import uuid4
 
 import yaml
 from pydantic import (
@@ -90,6 +93,18 @@ ANSI_COLORS: dict[ExternalEventKind, str] = {
 DEFAULT_FLAG_REGEX = r"(?im)^FLAG:\s*(?P<value>\S[^\r\n]*)"
 LEGACY_PRIVATE_ROOT_ALIAS = "/tmp/bencheval-cybench-real-vps"
 
+# Termination / watchdog / cleanup tuning. Named so the stall-handling path carries
+# no bare magic numbers; all values are seconds unless noted.
+DEFAULT_GRACE_PERIOD_SEC = 10.0
+DEFAULT_CLEANUP_TIMEOUT_SEC = 30.0
+# The watchdog polls at a fraction of the tightest deadline so a small timeout is
+# detected promptly, clamped so a large timeout does not spin and a tiny one does
+# not busy-loop.
+_WATCHDOG_INTERVAL_DIVISOR = 5
+_WATCHDOG_MIN_INTERVAL_SEC = 0.02
+_WATCHDOG_MAX_INTERVAL_SEC = 0.5
+_WATCHDOG_FALLBACK_INTERVAL_SEC = 1.0
+
 
 class ExternalInstance(BaseModel):
     """One instance selected for an external command run."""
@@ -119,8 +134,9 @@ class ExternalCommandConfig(BaseModel):
     """External process argv/env template.
 
     Template fields are resolved per attempt from ``model_id``, ``runtime_id``,
-    ``variant``, ``instance_id``, ``attempt``, ``run_root``, ``work_dir``,
-    ``prompt`` and ``output_token_max``.
+    ``variant``, ``run_id``, ``instance_id``, ``attempt``, ``telemetry_id``,
+    ``trace_id``, ``run_root``, ``work_dir``, ``prompt`` and
+    ``output_token_max``.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -138,6 +154,60 @@ class ExternalStreamConfig(BaseModel):
 
     parser: StreamParserKind = "plain-lines"
     output_token_max: int | None = Field(default=None, ge=1)
+    # Optional regex to recover the model that actually served the request from a
+    # plain-lines stream (must expose a ``value`` group or group 1). kilo-json
+    # streams carry served-model fields natively and need no regex.
+    served_model_regex: str | None = None
+
+    @field_validator("served_model_regex")
+    @classmethod
+    def _served_regex_compiles(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            re.compile(value)
+        except re.error as exc:
+            raise ValueError(f"invalid served_model_regex: {exc}") from exc
+        return value
+
+
+class ExternalDeadlineConfig(BaseModel):
+    """Layered, coordinated deadlines for one external-command attempt.
+
+    ``no_progress_sec`` is the progress-aware watchdog: if no stdout/stderr
+    activity is seen for that long, the solver is treated as wedged (an infra
+    stall), not merely slow. ``wall_clock_sec`` is the absolute ceiling. Whichever
+    trips first owns the kill; both terminate the whole process group (SIGTERM
+    then, after ``grace_period_sec``, SIGKILL) so container launchers and their
+    children are reaped rather than stranded. Both timeouts default to ``None``
+    (disabled), preserving the prior read-until-EOF behavior.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid", validate_default=True)
+
+    no_progress_sec: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    wall_clock_sec: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    grace_period_sec: float = Field(
+        default=DEFAULT_GRACE_PERIOD_SEC,
+        gt=0,
+        allow_inf_nan=False,
+    )
+
+
+class ExternalCleanupConfig(BaseModel):
+    """First-class, container-safe cleanup run after every attempt.
+
+    ``killpg`` reaps native children but cannot reach dockerd-managed containers,
+    which live in a separate process tree. These commands (trusted, profile-owned
+    strings executed through the local shell, templated per attempt) run in a
+    ``finally`` after each attempt — success, failure, or stall-kill — so a
+    container is never stranded and operators need not reinvent a shell ``trap``.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    commands: tuple[str, ...] = ()
+    timeout_sec: float = Field(default=DEFAULT_CLEANUP_TIMEOUT_SEC, gt=0, allow_inf_nan=False)
 
 
 class ExternalVerificationConfig(BaseModel):
@@ -216,6 +286,8 @@ class ExternalRunConfig(BaseModel):
     command: ExternalCommandConfig
     input: ExternalInputConfig = Field(default_factory=ExternalInputConfig)
     stream: ExternalStreamConfig = Field(default_factory=ExternalStreamConfig)
+    deadline: ExternalDeadlineConfig = Field(default_factory=ExternalDeadlineConfig)
+    cleanup: ExternalCleanupConfig = Field(default_factory=ExternalCleanupConfig)
     verification: ExternalVerificationConfig = Field(
         default_factory=ExternalVerificationConfig,
     )
@@ -276,6 +348,12 @@ class ExternalAttemptResult:
     latency_sec: float
     steps: int
     token_usage: dict[str, int]
+    telemetry_id: str
+    trace_id: str
+    served_model_id: str
+    model_attribution: str
+    termination_reason: str | None
+    cleanup_result: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -377,7 +455,10 @@ class ExternalEventSink:
             prefix += f" {instance_id}"
             if attempt is not None:
                 prefix += f"#{attempt}"
-        display = f"{prefix}  {message}"
+        # The canonical record keeps the FULL raw ``message``/``data`` (integrity
+        # lane); only the human-facing ``display`` is compacted for the console and
+        # replay. Callers pass raw text and must not pre-compact it.
+        display = f"{prefix}  {_compact(message)}"
         self._writer.write_event(
             kind=kind,
             message=message,
@@ -411,10 +492,39 @@ def load_external_run_config(path: Path) -> ExternalRunConfig:
         raise BenchEvalError(f"invalid external run config {path}: {exc}") from exc
 
 
+def apply_deadline_overrides(
+    config: ExternalRunConfig,
+    overrides: Mapping[str, float | None] | None,
+) -> ExternalRunConfig:
+    """Return a config with launch-time deadline overrides applied.
+
+    Deadlines are operator-owned at launch: the committed profile carries an
+    adaptive default (``no_progress_sec``), and an operator imposes an absolute
+    ceiling per run with ``--wall-clock-sec`` etc. instead of editing tracked
+    config. Overrides are re-validated (``gt=0``), never bypassing the model.
+    """
+    if not overrides:
+        return config
+    clean = {key: value for key, value in overrides.items() if value is not None}
+    if not clean:
+        return config
+    merged = {**config.deadline.model_dump(), **clean}
+    try:
+        new_deadline = ExternalDeadlineConfig.model_validate(merged)
+    except ValidationError as exc:
+        raise BenchEvalError(f"invalid deadline override: {exc}") from exc
+    return config.model_copy(update={"deadline": new_deadline})
+
+
 def new_run_id(prefix: str = "external-run") -> str:
-    """Create a display-safe run id."""
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    return f"{prefix}-{stamp}"
+    """Create a display-safe, collision-resistant run id.
+
+    Microsecond precision plus a random suffix so two runs started in the same
+    second cannot share a run directory / evidence path and overwrite each other
+    (matches the local harness ``runner.new_run_id``).
+    """
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S-%fZ")
+    return f"{prefix}-{stamp}-{uuid4().hex[:8]}"
 
 
 def make_external_run_paths(results_root: Path, run_id: str) -> ExternalRunPaths:
@@ -480,9 +590,46 @@ def validate_external_run_root(
             candidate = path if path.is_absolute() else run_root / path
             if not candidate.is_file():
                 missing.append(f"required:{instance.id}:{rel}")
+    missing.extend(_missing_manifest(config, run_root))
     if missing:
         joined = ", ".join(missing)
         raise BenchEvalError(f"external run root is incomplete: {joined}")
+
+
+def _missing_manifest(config: ExternalRunConfig, run_root: Path) -> list[str]:
+    """Report manifest gaps for scorers that need private expected values.
+
+    A ``manifest-value-regex`` run scores against a private manifest. A run root with
+    prompts but no readable manifest, or with a strict manifest that omits selected
+    instances, is not launch-ready because it cannot score those instances.
+    """
+    if config.verification.kind != "manifest-value-regex":
+        return []
+    if not config.verification.manifest_paths:
+        return ["manifest:none-configured"]
+    payloads: list[object] = []
+    for rel in config.verification.manifest_paths:
+        path = Path(rel)
+        manifest_path = path if path.is_absolute() else run_root / path
+        if not manifest_path.is_file():
+            continue
+        try:
+            payloads.append(json.loads(manifest_path.read_text(encoding="utf-8")))
+        except (OSError, json.JSONDecodeError):
+            continue
+    if payloads:
+        if config.verification.allow_observed_without_expected:
+            return []
+        return [
+            f"manifest_expected:{instance.id}"
+            for instance in config.instances
+            if not any(
+                _find_manifest_value(payload, config.verification, instance.id)
+                for payload in payloads
+            )
+        ]
+    joined = "|".join(config.verification.manifest_paths)
+    return [f"manifest:{joined}"]
 
 
 def plan_external_run(
@@ -521,6 +668,11 @@ def plan_external_run(
         "events": str(paths.events_jsonl.resolve()),
         "evidence": str(paths.evidence_jsonl.resolve()),
         "snapshot_enabled": config.snapshot.enabled,
+        "deadline": {
+            "no_progress_sec": config.deadline.no_progress_sec,
+            "wall_clock_sec": config.deadline.wall_clock_sec,
+            "grace_period_sec": config.deadline.grace_period_sec,
+        },
     }
 
 
@@ -533,10 +685,13 @@ async def run_external_command(
     color: bool = True,
     snapshot: bool | None = None,
     producer_command: str | None = None,
+    deadline_overrides: Mapping[str, float | None] | None = None,
 ) -> int:
     """Execute a configured external-command run and write evidence artifacts."""
+    config = apply_deadline_overrides(config, deadline_overrides)
     resolved_run_id = run_id or new_run_id(config.name)
     paths = make_external_run_paths(results_root, resolved_run_id)
+    _reject_existing_run_artifacts(paths)
     _create_output_dirs(paths)
     validate_external_run_root(config, run_root)
 
@@ -624,6 +779,7 @@ def main(argv: list[str] | None = None) -> int:
         action="store_false",
         help="disable configured host snapshot for this run",
     )
+    _add_deadline_override_args(parser)
     parser.add_argument(
         "--replay",
         type=Path,
@@ -643,6 +799,9 @@ def main(argv: list[str] | None = None) -> int:
             return replay(args.replay, color=not args.no_color, speed=args.speed)
 
         config = load_external_run_config(args.config)
+        # Validate launch-time deadline overrides in the preflight too, not only at
+        # live execution, so an invalid --wall-clock-sec fails the dry-run as well.
+        config = apply_deadline_overrides(config, deadline_overrides_from_args(args))
         run_root = args.run_root or _env_path(config.input.root_env)
         if args.dry_run:
             validate_external_run_root(config, run_root)
@@ -668,6 +827,37 @@ def main(argv: list[str] | None = None) -> int:
     except BenchEvalError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+
+
+def _add_deadline_override_args(parser: argparse.ArgumentParser) -> None:
+    """Launch-time deadline overrides (operator owns the kill clock per run)."""
+    parser.add_argument(
+        "--no-progress-sec",
+        type=float,
+        default=None,
+        help="override the progress-aware stall timeout (seconds of no output)",
+    )
+    parser.add_argument(
+        "--wall-clock-sec",
+        type=float,
+        default=None,
+        help="impose an absolute per-attempt wall-clock ceiling (seconds)",
+    )
+    parser.add_argument(
+        "--grace-period-sec",
+        type=float,
+        default=None,
+        help="override the SIGTERM->SIGKILL grace window (seconds)",
+    )
+
+
+def deadline_overrides_from_args(args: argparse.Namespace) -> dict[str, float | None]:
+    """Collect deadline overrides from parsed CLI args (None = leave config value)."""
+    return {
+        "no_progress_sec": getattr(args, "no_progress_sec", None),
+        "wall_clock_sec": getattr(args, "wall_clock_sec", None),
+        "grace_period_sec": getattr(args, "grace_period_sec", None),
+    }
 
 
 async def _run_instances(
@@ -751,6 +941,7 @@ async def _run_attempt(
         instance,
         attempt=attempt,
         work_dir=work_dir,
+        run_id=paths.run_id,
     )
     context["prompt"] = prompt
     env = os.environ.copy()
@@ -776,95 +967,446 @@ async def _run_attempt(
         env=env,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        # Own process group so a stall kill reaps container launchers and their
+        # children instead of stranding them (container-safe termination).
+        start_new_session=os.name == "posix",
     )
     combined_text: list[str] = []
     counters = {"steps": 0}
     token_usage: dict[str, int] = {}
-    stderr_task = asyncio.create_task(_copy_stream(proc.stderr, stderr_log))
-    with raw_log.open("w", encoding="utf-8") as raw_file:
-        assert proc.stdout is not None
-        async for raw_line in _iter_unbounded_lines(proc.stdout):
-            text_line = raw_line.decode("utf-8", errors="replace")
-            raw_file.write(text_line)
-            raw_file.flush()
-            _handle_stream_line(
-                text_line,
-                parser=config.stream.parser,
+    served_models: set[str] = set()
+    progress = _ProgressClock(monotonic_start)
+    termination: dict[str, str | bool | None] = {"reason": None, "killed": False}
+    cleaned = False
+    watchdog: asyncio.Task[None] | None = None
+    stderr_task: asyncio.Task[None] | None = None
+    try:
+        watchdog = _start_deadline_watchdog(
+            proc,
+            config.deadline,
+            progress,
+            monotonic_start,
+            termination,
+        )
+        stderr_task = asyncio.create_task(
+            _copy_stream(proc.stderr, stderr_log, progress=progress),
+        )
+        with raw_log.open("w", encoding="utf-8") as raw_file:
+            assert proc.stdout is not None
+            async for raw_line in _iter_unbounded_lines(proc.stdout):
+                progress.mark()
+                text_line = raw_line.decode("utf-8", errors="replace")
+                raw_file.write(text_line)
+                raw_file.flush()
+                _handle_stream_line(
+                    text_line,
+                    parser=config.stream.parser,
+                    instance_id=instance.id,
+                    attempt=attempt,
+                    sink=sink,
+                    combined_text=combined_text,
+                    counters=counters,
+                    token_usage=token_usage,
+                    observed_regex=config.verification.observed_regex,
+                    served_models=served_models,
+                )
+        returncode = await proc.wait()
+        await stderr_task
+        if watchdog is not None:
+            watchdog.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await watchdog
+        termination_reason = termination["reason"]
+        # Deadline-edge race: the watchdog can trip in the same tick the process exits
+        # on its own. Only spare a clean exit (returncode 0) that we did NOT actually
+        # signal — that is a genuine finish at the boundary. If we did terminate a live
+        # process, the stall stands even when it exits 0 via a SIGTERM handler,
+        # otherwise a watchdog-killed stall would be laundered into a normal completion.
+        if termination_reason is not None and returncode == 0 and not termination["killed"]:
+            termination_reason = None
+        ended_at = datetime.now(UTC)
+        latency_sec = time.monotonic() - monotonic_start
+        if config.stream.served_model_regex:
+            # Collect EVERY match, not just the last: a plain stream that names two
+            # models must surface as mixed_model, never be masked to authoritative.
+            served_models.update(
+                _extract_all_values(
+                    "\n".join(combined_text),
+                    config.stream.served_model_regex,
+                ),
+            )
+        served_model_id, model_attribution = _resolve_model_attribution(
+            config,
+            served_models,
+        )
+        observed = _extract_observed_value(
+            "\n".join(combined_text),
+            config.verification.observed_regex,
+        )
+        passed, value_match = _classify_result(
+            config=config,
+            returncode=returncode,
+            observed=observed,
+            expected=expected_value,
+        )
+        output_cap = _hit_output_cap(token_usage, config.stream.output_token_max)
+        valid = not output_cap and returncode == 0 and termination_reason is None
+        failure_class: FailureLabel | None = None
+        invalid_reason: str | None = None
+        if termination_reason is not None:
+            failure_class, invalid_reason = _stall_failure(
+                termination_reason,
+                config.deadline,
+            )
+            valid = False
+            passed = False
+            sink.emit(
+                "invalid",
+                f"infra stall: {invalid_reason}; terminated container-safe",
                 instance_id=instance.id,
                 attempt=attempt,
-                sink=sink,
-                combined_text=combined_text,
-                counters=counters,
-                token_usage=token_usage,
-                observed_regex=config.verification.observed_regex,
             )
-    returncode = await proc.wait()
-    await stderr_task
-    ended_at = datetime.now(UTC)
-    latency_sec = time.monotonic() - monotonic_start
-    observed = _extract_observed_value(
-        "\n".join(combined_text),
-        config.verification.observed_regex,
-    )
-    passed, value_match = _classify_result(
-        config=config,
-        returncode=returncode,
-        observed=observed,
-        expected=expected_value,
-    )
-    output_cap = _hit_output_cap(token_usage, config.stream.output_token_max)
-    valid = not output_cap and returncode == 0
-    failure_class: FailureLabel | None = None
-    invalid_reason: str | None = None
-    if output_cap:
-        failure_class = "runtime_output_cap_reached"
-        invalid_reason = f"output_tokens>={config.stream.output_token_max}"
-        valid = False
-        passed = False
-    elif returncode != 0:
-        failure_class = "runtime_tool_failure"
-        invalid_reason = f"process_exit={returncode}"
-        valid = False
-        passed = False
-    elif not passed:
-        failure_class = "model_wrong_solution"
-    if passed:
-        status = "match" if value_match else "observed"
-        sink.emit(
-            "pass",
-            f"result verified ({status})",
+        elif output_cap:
+            failure_class = "runtime_output_cap_reached"
+            invalid_reason = f"output_tokens>={config.stream.output_token_max}"
+            valid = False
+            passed = False
+        elif returncode != 0:
+            failure_class = "runtime_tool_failure"
+            invalid_reason = f"process_exit={returncode}"
+            valid = False
+            passed = False
+        elif not passed:
+            failure_class = "model_wrong_solution"
+        if passed:
+            status = "match" if value_match else "observed"
+            sink.emit(
+                "pass",
+                f"result verified ({status})",
+                instance_id=instance.id,
+                attempt=attempt,
+            )
+        elif valid:
+            sink.emit(
+                "fail",
+                "completed without verified result",
+                instance_id=instance.id,
+                attempt=attempt,
+            )
+        cleanup_result = await _run_cleanup(
+            config,
+            context,
+            sink,
             instance_id=instance.id,
             attempt=attempt,
         )
-    elif valid:
-        sink.emit(
-            "fail",
-            "completed without verified result",
+        cleaned = True
+        return ExternalAttemptResult(
             instance_id=instance.id,
             attempt=attempt,
+            valid=valid,
+            passed=passed,
+            observed_value=observed,
+            expected_value=expected_value,
+            value_match=value_match,
+            failure_class=failure_class,
+            invalid_reason=invalid_reason,
+            raw_log=raw_log,
+            stderr_log=stderr_log,
+            work_dir=work_dir,
+            started_at=started_at,
+            ended_at=ended_at,
+            latency_sec=latency_sec,
+            steps=counters["steps"],
+            token_usage=token_usage,
+            telemetry_id=context["telemetry_id"],
+            trace_id=context["trace_id"],
+            served_model_id=served_model_id,
+            model_attribution=model_attribution,
+            termination_reason=termination_reason,
+            cleanup_result=cleanup_result,
         )
-    return ExternalAttemptResult(
-        instance_id=instance.id,
+    finally:
+        # If the attempt aborted before the normal teardown ran (reader-loop
+        # exception, or a Ctrl-C cancellation), reap the solver, its helper tasks, and
+        # the container so nothing is stranded. start_new_session detaches the solver
+        # from the terminal's SIGINT, so we kill its group explicitly. The kill is
+        # synchronous (no await) so it still runs under cancellation, where awaiting
+        # would re-raise immediately.
+        if not cleaned:
+            if proc.returncode is None:
+                _signal_process_group(proc, signal.SIGKILL)
+            for task in (watchdog, stderr_task):
+                if task is not None:
+                    task.cancel()
+                    with contextlib.suppress(BaseException):
+                        await task
+            if config.cleanup.commands:
+                with contextlib.suppress(Exception):
+                    await _run_cleanup(
+                        config,
+                        context,
+                        sink,
+                        instance_id=instance.id,
+                        attempt=attempt,
+                    )
+
+
+class _ProgressClock:
+    """Monotonic timestamp of the last stdout/stderr activity for one attempt."""
+
+    __slots__ = ("last",)
+
+    def __init__(self, start: float) -> None:
+        self.last = start
+
+    def mark(self) -> None:
+        self.last = time.monotonic()
+
+
+def _start_deadline_watchdog(
+    proc: asyncio.subprocess.Process,
+    deadline: ExternalDeadlineConfig,
+    progress: _ProgressClock,
+    start: float,
+    termination: dict[str, str | None],
+) -> asyncio.Task[None] | None:
+    if deadline.no_progress_sec is None and deadline.wall_clock_sec is None:
+        return None
+    return asyncio.create_task(
+        _deadline_watchdog(proc, deadline, progress, start, termination),
+    )
+
+
+async def _deadline_watchdog(
+    proc: asyncio.subprocess.Process,
+    deadline: ExternalDeadlineConfig,
+    progress: _ProgressClock,
+    start: float,
+    termination: dict[str, str | bool | None],
+) -> None:
+    interval = _watchdog_interval(deadline)
+    while True:
+        await asyncio.sleep(interval)
+        if proc.returncode is not None:
+            return
+        now = time.monotonic()
+        if deadline.wall_clock_sec is not None and now - start >= deadline.wall_clock_sec:
+            termination["reason"] = "wall_clock_timeout"
+        elif (
+            deadline.no_progress_sec is not None and now - progress.last >= deadline.no_progress_sec
+        ):
+            termination["reason"] = "no_progress_timeout"
+        else:
+            continue
+        # _terminate_process_group records `killed` the instant it delivers SIGTERM to
+        # a LIVE process (before the grace sleep, so it survives the main loop
+        # cancelling this watchdog once the process exits). If the process had already
+        # exited (true deadline-edge race), no signal lands and `killed` stays False,
+        # so a clean returncode 0 is spared; if we did terminate a live process, the
+        # stall stands even when it exits 0 via a SIGTERM handler.
+        await _terminate_process_group(
+            proc,
+            deadline.grace_period_sec,
+            termination=termination,
+        )
+        return
+
+
+def _watchdog_interval(deadline: ExternalDeadlineConfig) -> float:
+    candidates = [
+        value for value in (deadline.no_progress_sec, deadline.wall_clock_sec) if value is not None
+    ]
+    smallest = min(candidates) if candidates else _WATCHDOG_FALLBACK_INTERVAL_SEC
+    return max(
+        _WATCHDOG_MIN_INTERVAL_SEC,
+        min(_WATCHDOG_MAX_INTERVAL_SEC, smallest / _WATCHDOG_INTERVAL_DIVISOR),
+    )
+
+
+async def _terminate_process_group(
+    proc: asyncio.subprocess.Process,
+    grace_period_sec: float,
+    *,
+    termination: dict[str, str | bool | None] | None = None,
+) -> bool:
+    """SIGTERM the process group, then SIGKILL after a grace window.
+
+    Reaping is the reader's job (stdout EOF unblocks it); this coroutine only
+    escalates signals. Group-signaling reaps container launchers and children.
+    Returns True if a signal was delivered to a still-live process, and — before the
+    grace sleep, so it is durable even if the caller is cancelled mid-grace — records
+    ``killed`` in ``termination`` when given.
+
+    Known limitation: a descendant that double-forks into its own session (``setsid``)
+    escapes the group signal; if it also holds stdout open, the reader can still block.
+    dockerd-managed containers are the common such case, which is why container cleanup
+    is a separate first-class step (``ExternalCleanupConfig``) rather than a group kill.
+    """
+    if proc.returncode is not None:
+        return False
+    if not _signal_process_group(proc, signal.SIGTERM):
+        return False
+    if termination is not None:
+        termination["killed"] = True
+    await asyncio.sleep(grace_period_sec)
+    if proc.returncode is None:
+        _signal_process_group(proc, signal.SIGKILL)
+    return True
+
+
+def _signal_process_group(
+    proc: asyncio.subprocess.Process,
+    sig: signal.Signals,
+) -> bool:
+    """Signal the whole process group; return False if it is already gone."""
+    try:
+        if os.name == "posix":
+            os.killpg(os.getpgid(proc.pid), sig)
+        else:  # pragma: no cover - non-posix fallback
+            proc.send_signal(sig)
+    except ProcessLookupError:
+        return False
+    except (OSError, PermissionError):  # pragma: no cover - defensive fallback
+        # Group signaling failed (e.g. no permission); fall back to the single
+        # process, and never let a second signal error escape the watchdog.
+        with contextlib.suppress(OSError, ProcessLookupError):
+            proc.send_signal(sig)
+    return True
+
+
+async def _run_cleanup(
+    config: ExternalRunConfig,
+    context: Mapping[str, str],
+    sink: ExternalEventSink,
+    *,
+    instance_id: str,
+    attempt: int,
+) -> str:
+    """Run configured cleanup commands after an attempt; return a CleanupResult.
+
+    These reach the container plane (``docker rm -f``) that a process-group kill
+    cannot, and run whether the attempt passed, failed, or was stall-killed.
+    """
+    commands = config.cleanup.commands
+    if not commands:
+        return "skipped"
+    outcomes: list[bool] = []
+    for command in commands:
+        # A cleanup problem (bad template field, launch/timeout failure) must degrade
+        # to a failed cleanup, never abort the run and leave the container stranded.
+        try:
+            rendered = _format_template(command, context)
+        except BenchEvalError as exc:
+            sink.emit(
+                "invalid",
+                f"cleanup command has an unknown field, skipped: {exc}",
+                instance_id=instance_id,
+                attempt=attempt,
+            )
+            outcomes.append(False)
+            continue
+        outcomes.append(
+            await _run_cleanup_command(
+                rendered,
+                config.cleanup.timeout_sec,
+                sink,
+                instance_id=instance_id,
+                attempt=attempt,
+            ),
+        )
+    if all(outcomes):
+        return "success"
+    if any(outcomes):
+        return "partial"
+    return "failed"
+
+
+async def _run_cleanup_command(
+    command: str,
+    timeout_sec: float,
+    sink: ExternalEventSink,
+    *,
+    instance_id: str,
+    attempt: int,
+) -> bool:
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "sh",
+            "-c",
+            command,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+            start_new_session=os.name == "posix",
+        )
+    except OSError as exc:  # pragma: no cover - launch failure is platform dependent
+        sink.emit(
+            "artifact",
+            f"cleanup launch failed: {exc}",
+            instance_id=instance_id,
+            attempt=attempt,
+        )
+        return False
+    try:
+        await asyncio.wait_for(proc.communicate(), timeout=timeout_sec)
+    except TimeoutError:
+        _signal_process_group(proc, signal.SIGKILL)
+        with contextlib.suppress(Exception):
+            await proc.wait()
+        sink.emit(
+            "artifact",
+            f"cleanup timed out after {timeout_sec:g}s: {command}",
+            instance_id=instance_id,
+            attempt=attempt,
+        )
+        return False
+    ok = proc.returncode == 0
+    detail = "ok" if ok else f"exit={proc.returncode}"
+    sink.emit(
+        "artifact",
+        f"cleanup {detail}: {command}",
+        instance_id=instance_id,
         attempt=attempt,
-        valid=valid,
-        passed=passed,
-        observed_value=observed,
-        expected_value=expected_value,
-        value_match=value_match,
-        failure_class=failure_class,
-        invalid_reason=invalid_reason,
-        raw_log=raw_log,
-        stderr_log=stderr_log,
-        work_dir=work_dir,
-        started_at=started_at,
-        ended_at=ended_at,
-        latency_sec=latency_sec,
-        steps=counters["steps"],
-        token_usage=token_usage,
     )
+    return ok
 
 
-async def _copy_stream(stream: asyncio.StreamReader | None, path: Path) -> None:
+def _stall_failure(
+    reason: str,
+    deadline: ExternalDeadlineConfig,
+) -> tuple[FailureLabel, str]:
+    if reason == "wall_clock_timeout":
+        budget = deadline.wall_clock_sec
+        return "runtime_wall_clock_timeout", f"wall_clock_timeout after {budget:g}s"
+    budget = deadline.no_progress_sec
+    return "runtime_no_progress_stall", f"no_progress_stall after {budget:g}s"
+
+
+def _resolve_model_attribution(
+    config: ExternalRunConfig,
+    served_models: set[str],
+) -> tuple[str, str]:
+    """Return (served_model_id, model_attribution).
+
+    Attribution is part of the evidence contract, not a best-effort side-channel:
+    with no served-model signal it reports ``attribution_not_captured`` — never the
+    requested model. A served model outside the requested set is ``mixed_model``.
+    """
+    if not served_models:
+        return "attribution_not_captured", "attribution_not_captured"
+    served_model_id = ",".join(sorted(served_models))
+    configured = {config.model_id, _runtime_model_id(config.model_id)}
+    if served_models <= configured:
+        return served_model_id, "authoritative"
+    return served_model_id, "mixed_model"
+
+
+async def _copy_stream(
+    stream: asyncio.StreamReader | None,
+    path: Path,
+    *,
+    progress: _ProgressClock | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("wb") as f:
         if stream is None:
@@ -873,6 +1415,8 @@ async def _copy_stream(stream: asyncio.StreamReader | None, path: Path) -> None:
             chunk = await stream.read(8192)
             if not chunk:
                 break
+            if progress is not None:
+                progress.mark()
             f.write(chunk)
             f.flush()
 
@@ -911,6 +1455,7 @@ def _handle_stream_line(
     counters: dict[str, int],
     token_usage: dict[str, int],
     observed_regex: str,
+    served_models: set[str],
 ) -> None:
     stripped = line.strip()
     if not stripped:
@@ -920,7 +1465,7 @@ def _handle_stream_line(
         kind: ExternalEventKind = (
             "break" if _extract_observed_value(stripped, observed_regex) else "llm"
         )
-        sink.emit(kind, _compact(stripped), instance_id=instance_id, attempt=attempt)
+        sink.emit(kind, stripped, instance_id=instance_id, attempt=attempt)
         counters["steps"] += 1
         return
     _handle_kilo_json_line(
@@ -932,6 +1477,7 @@ def _handle_stream_line(
         counters=counters,
         token_usage=token_usage,
         observed_regex=observed_regex,
+        served_models=served_models,
     )
 
 
@@ -945,6 +1491,7 @@ def _handle_kilo_json_line(
     counters: dict[str, int],
     token_usage: dict[str, int],
     observed_regex: str,
+    served_models: set[str],
 ) -> None:
     try:
         event = json.loads(stripped)
@@ -956,6 +1503,7 @@ def _handle_kilo_json_line(
         return
     counters["steps"] += 1
     _merge_token_usage(token_usage, event)
+    _collect_served_model(event, served_models)
     event_type = str(event.get("type", "event"))
     part = event.get("part")
     if isinstance(part, dict):
@@ -968,7 +1516,7 @@ def _handle_kilo_json_line(
                 )
                 sink.emit(
                     kind,
-                    _compact(text),
+                    text,
                     instance_id=instance_id,
                     attempt=attempt,
                 )
@@ -981,7 +1529,7 @@ def _handle_kilo_json_line(
             if output:
                 sink.emit(
                     "debug",
-                    _compact(output),
+                    output,
                     instance_id=instance_id,
                     attempt=attempt,
                 )
@@ -1023,6 +1571,20 @@ def _tool_message(part: dict[object, object]) -> tuple[str, str]:
     return title, ""
 
 
+def _collect_served_model(
+    event: dict[object, object],
+    served_models: set[str],
+) -> None:
+    """Record any model identifier the runtime reports as having served the call."""
+    for key in ("model", "modelID", "model_id"):
+        value = event.get(key)
+        if isinstance(value, str) and value.strip():
+            served_models.add(value.strip())
+    info = event.get("info")
+    if isinstance(info, dict):
+        _collect_served_model(info, served_models)
+
+
 def _merge_token_usage(target: dict[str, int], event: dict[object, object]) -> None:
     tokens_obj = event.get("tokens")
     if not isinstance(tokens_obj, dict):
@@ -1050,13 +1612,21 @@ def _write_evidence(
         metadata = {
             "run_kind": "external_command",
             "runtime_id": config.runtime_id,
+            "variant": config.variant or "",
+            "configured_model_id": config.model_id,
+            "served_model_id": final.served_model_id,
+            "model_attribution": final.model_attribution,
             "stream_parser": config.stream.parser,
             "verification_kind": config.verification.kind,
             "target_host": config.target_host or "",
             "raw_log": str(final.raw_log.relative_to(paths.run_dir)),
             "stderr_log": str(final.stderr_log.relative_to(paths.run_dir)),
             "result_check": _result_check_label(final),
+            "telemetry_id": final.telemetry_id,
+            "trace_id": final.trace_id,
         }
+        if final.termination_reason is not None:
+            metadata["termination_reason"] = final.termination_reason
         record = EvidenceRecord(
             run_id=paths.run_id,
             task_id=f"{config.benchmark_id}/{result.instance_id}",
@@ -1094,7 +1664,7 @@ def _write_evidence(
                 config.verifier_integrity_label
                 or ("native" if final.value_match is not None else "unknown")
             ),
-            cleanup_result="skipped",
+            cleanup_result=final.cleanup_result,
             failure_class=final.failure_class,
             attempt_validity="valid" if final.valid else "invalid",
             invalid_reason=final.invalid_reason,
@@ -1167,6 +1737,7 @@ def _write_summary(
         f"- Slice: `{config.slice_id or ''}`",
         f"- Target: `{config.target_host or ''}`",
         f"- Model: `{config.model_id}`",
+        f"- Variant: `{config.variant or ''}`",
         f"- Runtime: `{config.runtime_id}`",
         f"- Result: `{passed}/{len(rows)}` passed",
         "",
@@ -1259,6 +1830,20 @@ def _write_sha256s(paths: ExternalRunPaths) -> None:
         "\n".join(lines) + "\n",
         encoding="utf-8",
     )
+
+
+def _reject_existing_run_artifacts(paths: ExternalRunPaths) -> None:
+    """Refuse to launch onto a run id whose canonical artifacts already exist.
+
+    Evidence is appended and the run record is written in place, so reusing a run id
+    would merge or overwrite two distinct runs. There is no resume mode here.
+    """
+    for path in (paths.events_jsonl, paths.evidence_jsonl):
+        if path.exists() and path.stat().st_size > 0:
+            raise BenchEvalError(
+                f"run artifacts already exist for run_id={paths.run_id!r} at {path}; "
+                "refusing to overwrite/merge — pass a fresh --run-id",
+            )
 
 
 def _create_output_dirs(paths: ExternalRunPaths) -> None:
@@ -1412,6 +1997,20 @@ def _extract_observed_value(text: str, pattern: str) -> str | None:
     return last.group(0).strip()
 
 
+def _match_value(match: re.Match[str]) -> str:
+    if "value" in match.groupdict():
+        return (match.group("value") or "").strip()
+    if match.groups():
+        return (match.group(1) or "").strip()
+    return match.group(0).strip()
+
+
+def _extract_all_values(text: str, pattern: str) -> set[str]:
+    """Every distinct capture of ``pattern`` (unlike the last-only observed value)."""
+    regex = re.compile(pattern)
+    return {value for match in regex.finditer(text) if (value := _match_value(match))}
+
+
 def _classify_result(
     *,
     config: ExternalRunConfig,
@@ -1462,11 +2061,20 @@ def _template_context(
     *,
     attempt: int,
     work_dir: Path,
+    run_id: str = "",
 ) -> dict[str, str]:
+    telemetry_id = _telemetry_id(
+        run_id=run_id,
+        instance_id=instance.id,
+        attempt=attempt,
+    )
+    run_root_str = str(run_root.resolve()) if run_root else ""
+    work_dir_str = str(work_dir.resolve())
     return {
         "name": config.name,
         "benchmark_id": config.benchmark_id,
         "slice_id": config.slice_id or "",
+        "run_id": run_id,
         "model_id": config.model_id,
         "runtime_model_id": _runtime_model_id(config.model_id),
         "runtime_id": config.runtime_id,
@@ -1474,12 +2082,42 @@ def _template_context(
         "target_host": config.target_host or "",
         "instance_id": instance.id,
         "attempt": str(attempt),
-        "run_root": str(run_root.resolve()) if run_root else "",
-        "work_dir": str(work_dir.resolve()),
+        "telemetry_id": telemetry_id,
+        "trace_id": telemetry_id,
+        "run_root": run_root_str,
+        "work_dir": work_dir_str,
+        # Shell-quoted variants for paths interpolated into a `sh -c` script: a
+        # results/run root containing spaces (or shell metacharacters) must not split
+        # Docker args or inject into the profile command. Double-quoted (not
+        # single-quoted) so they remain valid inside a single-quoted `sh -c '...'`
+        # wrapper. Profiles that build shell strings must use these, not the raw fields.
+        "run_root_sh": _shell_double_quote(run_root_str),
+        "work_dir_sh": _shell_double_quote(work_dir_str),
         "output_token_max": str(config.stream.output_token_max or ""),
         "host_uid": str(os.getuid()),
         "host_gid": str(os.getgid()),
     }
+
+
+def _shell_double_quote(value: str) -> str:
+    """Double-quote a value for safe embedding inside a single-quoted `sh -c '...'`.
+
+    Double quotes (not ``shlex.quote``'s single quotes) so the result stays valid
+    inside the profile's single-quoted wrapper. Escapes the characters that keep
+    special meaning inside double quotes so a path with spaces / ``$`` / `` ` `` / ``"``
+    cannot split an argument or inject a command. Literal single quotes are safe
+    because these values are embedded as double-quoted shell words.
+    """
+    escaped = (
+        value.replace("\\", "\\\\").replace('"', '\\"').replace("$", "\\$").replace("`", "\\`")
+    )
+    return f'"{escaped}"'
+
+
+def _telemetry_id(*, run_id: str, instance_id: str, attempt: int) -> str:
+    raw = f"{run_id}:{instance_id}:attempt{attempt}"
+    value = re.sub(r"[^A-Za-z0-9_.:-]+", "-", raw).strip("-")
+    return value or f"{instance_id}:attempt{attempt}"
 
 
 def _runtime_model_id(model_id: str) -> str:
@@ -1667,7 +2305,9 @@ def _env_path(name: str | None) -> Path | None:
 
 __all__ = [
     "ExternalAttemptResult",
+    "ExternalCleanupConfig",
     "ExternalCommandConfig",
+    "ExternalDeadlineConfig",
     "ExternalEventSink",
     "ExternalInputConfig",
     "ExternalInstance",
@@ -1678,6 +2318,8 @@ __all__ = [
     "ExternalStreamConfig",
     "ExternalVerificationConfig",
     "TeeConsole",
+    "apply_deadline_overrides",
+    "deadline_overrides_from_args",
     "load_external_run_config",
     "main",
     "make_external_run_paths",
