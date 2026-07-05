@@ -295,6 +295,14 @@ class ExternalRunConfig(BaseModel):
     concurrency: int = Field(default=1, ge=1, le=10)
     max_attempts: int = Field(default=1, ge=1, le=10)
     pass_at_k_budget: int = Field(default=1, ge=1, le=10)
+    # General exit-code semantics (benchmark-owned, solver-agnostic): map a
+    # nonzero solver exit code to a valid-failure FailureLabel. Such an exit is
+    # scored as a FAIL that consumes Pass@k budget (the agent ran and did not
+    # solve — e.g. wall-clock/budget exhaustion), not an infra INVALID. Any
+    # nonzero code the profile does not list stays INVALID (the default). Each
+    # benchmark declares its own exit-code meanings in its own profile; the
+    # adapter never hard-codes a solver's codes.
+    exit_code_policy: dict[int, FailureLabel] = Field(default_factory=dict)
     instances: list[ExternalInstance] = Field(
         validation_alias=AliasChoices("instances", "challenges"),
         min_length=1,
@@ -1072,9 +1080,10 @@ async def _run_attempt(
             valid = False
             passed = False
         elif returncode != 0:
-            failure_class = "runtime_tool_failure"
-            invalid_reason = f"process_exit={returncode}"
-            valid = False
+            valid, failure_class, invalid_reason = _classify_nonzero_exit(
+                returncode,
+                config.exit_code_policy,
+            )
             passed = False
         elif not passed:
             failure_class = "model_wrong_solution"
@@ -2009,6 +2018,25 @@ def _extract_all_values(text: str, pattern: str) -> set[str]:
     """Every distinct capture of ``pattern`` (unlike the last-only observed value)."""
     regex = re.compile(pattern)
     return {value for match in regex.finditer(text) if (value := _match_value(match))}
+
+
+def _classify_nonzero_exit(
+    returncode: int,
+    exit_code_policy: Mapping[int, FailureLabel],
+) -> tuple[bool, FailureLabel, str | None]:
+    """Classify a nonzero solver exit into ``(valid, failure_class, invalid_reason)``.
+
+    A benchmark profile may declare, per exit code, that a nonzero exit is a
+    *valid* solver failure — the agent ran and did not solve, so the attempt is
+    scored as a FAIL that consumes Pass@k budget (e.g. wall-clock/budget
+    exhaustion) — rather than an infrastructure INVALID. Any exit code the
+    profile does not list stays INVALID (retry does not consume budget), the
+    backward-compatible default.
+    """
+    fail_label = exit_code_policy.get(returncode)
+    if fail_label is not None:
+        return True, fail_label, None
+    return False, "runtime_tool_failure", f"process_exit={returncode}"
 
 
 def _classify_result(
