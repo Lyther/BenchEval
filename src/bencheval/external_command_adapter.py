@@ -18,6 +18,7 @@ import os
 import re
 import shutil
 import signal
+import sqlite3
 import sys
 import time
 import warnings
@@ -108,6 +109,16 @@ MANIFEST_VERIFICATION_KINDS = frozenset(
 # no bare magic numbers; all values are seconds unless noted.
 DEFAULT_GRACE_PERIOD_SEC = 10.0
 DEFAULT_CLEANUP_TIMEOUT_SEC = 30.0
+# High-volume mid-step stream kinds. These are routed to the mutable live-state
+# view only (real-time "is it stuck" signal) and are never appended to the
+# canonical events.jsonl, which stays the complete integrity-preserving record.
+HIGH_VOLUME_EVENT_KINDS: frozenset[ExternalEventKind] = frozenset(
+    {
+        "llm",
+        "debug",
+        "tool",
+    },
+)
 # The watchdog polls at a fraction of the tightest deadline so a small timeout is
 # detected promptly, clamped so a large timeout does not spin and a tiny one does
 # not busy-loop.
@@ -338,6 +349,7 @@ class ExternalRunPaths:
     console_ansi_log: Path
     console_plain_log: Path
     events_jsonl: Path
+    live_state_db: Path
     evidence_jsonl: Path
     summary_json: Path
     summary_md: Path
@@ -393,23 +405,91 @@ class TeeConsole:
     def __init__(self, ansi_log: Path, plain_log: Path, *, color: bool = True) -> None:
         self._color = color
         ansi_log.parent.mkdir(parents=True, exist_ok=True)
-        self._ansi = ansi_log.open("w", encoding="utf-8")
+        self._ansi = ansi_log.open("w", encoding="utf-8") if color else None
         self._plain = plain_log.open("w", encoding="utf-8")
 
     def close(self) -> None:
-        self._ansi.flush()
+        if self._ansi is not None:
+            self._ansi.flush()
+            self._ansi.close()
         self._plain.flush()
-        self._ansi.close()
         self._plain.close()
 
     def line(self, text: str, *, kind: ExternalEventKind = "system") -> None:
         colored = _colorize(text, kind, enabled=self._color)
         sys.stdout.write(colored + "\n")
         sys.stdout.flush()
-        self._ansi.write(colored + "\n")
-        self._ansi.flush()
+        if self._ansi is not None:
+            self._ansi.write(colored + "\n")
+            self._ansi.flush()
         self._plain.write(_strip_ansi(colored) + "\n")
         self._plain.flush()
+
+
+class LiveStateStore:
+    """Small mutable SQLite view of the latest event per active attempt."""
+
+    def __init__(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(str(path))
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS attempt_live_state (
+                instance_id TEXT NOT NULL,
+                attempt INTEGER NOT NULL,
+                kind TEXT NOT NULL,
+                message_preview TEXT NOT NULL,
+                elapsed_sec REAL NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (instance_id, attempt)
+            )
+            """,
+        )
+        self._conn.commit()
+
+    def close(self) -> None:
+        self._conn.close()
+
+    def update(
+        self,
+        *,
+        instance_id: str | None,
+        attempt: int | None,
+        kind: ExternalEventKind,
+        message: str,
+        elapsed_sec: float,
+        updated_at: datetime,
+    ) -> None:
+        if instance_id is None or attempt is None:
+            return
+        self._conn.execute(
+            """
+            INSERT INTO attempt_live_state (
+                instance_id,
+                attempt,
+                kind,
+                message_preview,
+                elapsed_sec,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(instance_id, attempt) DO UPDATE SET
+                kind = excluded.kind,
+                message_preview = excluded.message_preview,
+                elapsed_sec = excluded.elapsed_sec,
+                updated_at = excluded.updated_at
+            """,
+            (
+                instance_id,
+                attempt,
+                kind,
+                _compact(message),
+                elapsed_sec,
+                updated_at.isoformat(),
+            ),
+        )
+        self._conn.commit()
 
 
 class ExternalEventSink:
@@ -419,6 +499,7 @@ class ExternalEventSink:
         self,
         console: TeeConsole,
         path: Path,
+        live_state_path: Path,
         started_monotonic: float,
         *,
         config: ExternalRunConfig,
@@ -429,6 +510,7 @@ class ExternalEventSink:
 
         self._console = console
         self._started_monotonic = started_monotonic
+        self._live_state = LiveStateStore(live_state_path)
         self._writer = RunRecordWriter(
             path,
             run_id=run_id,
@@ -444,6 +526,7 @@ class ExternalEventSink:
 
     def close(self) -> None:
         self._writer.close()
+        self._live_state.close()
 
     def write_footer(
         self,
@@ -467,27 +550,44 @@ class ExternalEventSink:
         attempt: int | None = None,
         data: dict[str, JsonValue] | None = None,
     ) -> None:
-        elapsed = time.monotonic() - self._started_monotonic
+        now = time.monotonic()
+        elapsed = now - self._started_monotonic
+        timestamp = datetime.now(UTC)
         label = kind.upper().ljust(8)
         prefix = f"[{_format_elapsed(elapsed)}] {label}"
         if instance_id:
             prefix += f" {instance_id}"
             if attempt is not None:
                 prefix += f"#{attempt}"
-        # The canonical record keeps the FULL raw ``message``/``data`` (integrity
-        # lane); only the human-facing ``display`` is compacted for the console and
-        # replay. Callers pass raw text and must not pre-compact it.
         display = f"{prefix}  {_compact(message)}"
-        self._writer.write_event(
+        # Two lanes, routed by kind. The high-volume mid-step stream
+        # (llm/tool/debug -- one event per token/chunk) is LIVE-only: it updates the
+        # mutable per-attempt live-state row (so a monitor tells "still reasoning"
+        # from "stuck between steps" by the row's updated_at/elapsed) and the
+        # console, but is NOT appended to the canonical events.jsonl -- the full
+        # reasoning transcript belongs to the solver's own ledger, not the benchmark
+        # record. Every other (benchmark / lifecycle) event IS written to
+        # events.jsonl at full fidelity: no compaction, no rate-limit, no dropping,
+        # so that lane stays the complete, integrity-preserving scoring/audit record.
+        if kind not in HIGH_VOLUME_EVENT_KINDS:
+            self._writer.write_event(
+                kind=kind,
+                message=message,
+                elapsed_sec=round(elapsed, 3),
+                time=timestamp,
+                instance_id=instance_id,
+                challenge_id=instance_id,
+                attempt=attempt,
+                data=data or {},
+                display=display,
+            )
+        self._live_state.update(
+            instance_id=instance_id,
+            attempt=attempt,
             kind=kind,
             message=message,
             elapsed_sec=round(elapsed, 3),
-            time=datetime.now(UTC),
-            instance_id=instance_id,
-            challenge_id=instance_id,
-            attempt=attempt,
-            data=data or {},
-            display=display,
+            updated_at=timestamp,
         )
         self._console.line(display, kind=kind)
 
@@ -555,6 +655,7 @@ def make_external_run_paths(results_root: Path, run_id: str) -> ExternalRunPaths
         console_ansi_log=run_dir / "console.ansi.log",
         console_plain_log=run_dir / "console.plain.log",
         events_jsonl=run_dir / "events.jsonl",
+        live_state_db=run_dir / "live_state.sqlite",
         evidence_jsonl=results_root / "evidence" / f"{run_id}.jsonl",
         summary_json=run_dir / "summary.json",
         summary_md=run_dir / "SUMMARY.md",
@@ -685,6 +786,7 @@ def plan_external_run(
         "run_root": str(run_root.resolve()) if run_root else None,
         "results_root": str(results_root.resolve()),
         "events": str(paths.events_jsonl.resolve()),
+        "live_state": str(paths.live_state_db.resolve()),
         "evidence": str(paths.evidence_jsonl.resolve()),
         "snapshot_enabled": config.snapshot.enabled,
         "deadline": {
@@ -720,6 +822,7 @@ async def run_external_command(
         sink = ExternalEventSink(
             console,
             paths.events_jsonl,
+            paths.live_state_db,
             time.monotonic(),
             config=config,
             run_id=resolved_run_id,
