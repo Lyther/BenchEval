@@ -22,6 +22,30 @@ def _run(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _write_external_smoke_config(tmp_path: Path) -> Path:
+    path = tmp_path / "external-smoke.yaml"
+    path.write_text(
+        "\n".join(
+            [
+                'schema_version: "external_command_run_v1"',
+                'name: "external-smoke"',
+                'benchmark_id: "external-smoke"',
+                'runtime_id: "dummy-runtime"',
+                'model_id: "dummy-model"',
+                "command:",
+                "  argv_prefix: [python, -c, \"print('ok')\"]",
+                "verification:",
+                '  kind: "none"',
+                "instances:",
+                '  - id: "one"',
+            ],
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
 def test_task_validate_valid_path_exits_0() -> None:
     Path(__file__).resolve().parents[1]
     path = core8_dir() / "t1-single-structured-call.yaml"
@@ -53,14 +77,15 @@ def test_dry_run_smoke_exits_0() -> None:
     assert payload["task_count"] == 8
 
 
-def test_run_config_dry_run_does_not_require_model() -> None:
-    r = _run("run", "--config", "config/runs/cybench-kilo-showcase.yaml", "--dry-run")
+def test_run_config_dry_run_does_not_require_model(tmp_path: Path) -> None:
+    config = _write_external_smoke_config(tmp_path)
+    r = _run("run", "--config", str(config), "--dry-run")
     assert r.returncode == 0, r.stderr
     payload = json.loads(r.stdout)
     assert payload["schema_version"] == "external_command_run_v1"
-    assert payload["benchmark_id"] == "cybench"
-    assert payload["runtime_id"] == "kilo"
-    assert payload["model_id"] == "ollama-cloud/glm-5.2"
+    assert payload["benchmark_id"] == "external-smoke"
+    assert payload["runtime_id"] == "dummy-runtime"
+    assert payload["model_id"] == "dummy-model"
 
 
 def test_run_without_config_still_requires_model() -> None:
@@ -69,11 +94,12 @@ def test_run_without_config_still_requires_model() -> None:
     assert "--model is required unless --config is used" in r.stderr
 
 
-def test_run_config_rejects_ignored_axis_flags() -> None:
+def test_run_config_rejects_ignored_axis_flags(tmp_path: Path) -> None:
+    config = _write_external_smoke_config(tmp_path)
     r = _run(
         "run",
         "--config",
-        "config/runs/cybench-kilo-showcase.yaml",
+        str(config),
         "--dry-run",
         "--model",
         "openai/gpt-test",
@@ -90,11 +116,16 @@ def test_run_config_rejects_ignored_axis_flags() -> None:
         ("--cleanup", "never"),
     ],
 )
-def test_run_config_rejects_explicit_default_compat_flags(flag: str, value: str) -> None:
+def test_run_config_rejects_explicit_default_compat_flags(
+    tmp_path: Path,
+    flag: str,
+    value: str,
+) -> None:
+    config = _write_external_smoke_config(tmp_path)
     r = _run(
         "run",
         "--config",
-        "config/runs/cybench-kilo-showcase.yaml",
+        str(config),
         "--dry-run",
         flag,
         value,
@@ -235,7 +266,9 @@ def test_run_remaining_core8_tasks_write_evidence(tmp_path: Path, task_id: str) 
     assert Path(payload["verifier_log_path"]) == artifacts / "verifier.json"
 
 
-def test_run_suite_smoke_with_artifacts_dir_writes_distinct_verifier_logs(tmp_path: Path) -> None:
+def test_run_suite_smoke_with_artifacts_dir_writes_distinct_verifier_logs(
+    tmp_path: Path,
+) -> None:
     out = tmp_path / "evidence.jsonl"
     artifacts = tmp_path / "artifacts"
     r = _run(
@@ -260,7 +293,9 @@ def test_run_suite_smoke_with_artifacts_dir_writes_distinct_verifier_logs(tmp_pa
     assert len({log.parent for log in verifier_logs}) == 8
 
 
-def test_run_manifest_single_mode_writes_one_evidence_row_per_task(tmp_path: Path) -> None:
+def test_run_manifest_single_mode_writes_one_evidence_row_per_task(
+    tmp_path: Path,
+) -> None:
     manifest = tmp_path / "native-smoke.txt"
     manifest.write_text(
         "\n".join(

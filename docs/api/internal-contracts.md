@@ -67,12 +67,10 @@ whose native harness already owns materialization, sandboxing, and cleanup.
 
 `bencheval replay` replays a captured **run record** (`events.jsonl`) to the terminal with original timing and colors, and can verify `EvidenceRecord` rows bound to that run. This lane is **benchmark-agnostic**: any external runner may emit `bencheval_run_record_v1` and optionally bind evidence — it is not tied to a Production v1 adapter.
 
-Two CyBench profiles consume this API: `config/runs/momo-cybench.yaml` — the
-**primary/active** profile (MOMO solver driving a Claude Code mixed-model
-runtime; operator runbook [`docs/ops/momo-cybench.md`](../ops/momo-cybench.md)) —
-and `config/runs/cybench-kilo-showcase.yaml`, the **legacy demo** Kilo profile.
-The compatibility entrypoint `bencheval.momo_cybench` delegates to the generic
-adapter and contains no separate runner implementation.
+Benchmark-specific external-command profiles are operator artifacts unless they
+are official, reusable BenchEval adapters. CyBench assets and scoring are not
+duplicated here; an operator-supplied profile may consume this API while keeping
+the official benchmark as the source of truth.
 
 #### Canonical vs derived lanes (integrity policy)
 
@@ -136,7 +134,7 @@ Discovery and dry-run commands emit a single JSON object to **stdout** (indented
 
 Evidence JSONL v0.3 additive fields may include `attempt_validity`, `invalid_reason`, `counts_toward_pass_at_k`, `physical_launch_id`, `logical_attempt_number`, `runtime_output_cap`, and extended `failure_class` values (`runtime_output_cap_reached`, `operator_interrupted`, …). See `docs/context/runtime-invocation-contracts.md`.
 
-The external-command adapter also writes a free-form `adapter_metadata` dict on each `EvidenceRecord` (`external_command_adapter._write_evidence`). Alongside `run_kind`, `runtime_id`, `stream_parser`, `verification_kind`, `target_host`, `raw_log`, `stderr_log`, and `result_check`, it now carries four join/attribution keys: `variant` (e.g. `claude-code-mixed-model`), `configured_model_id` (the requested primary `model_id`, e.g. `bytellm/glm-5.2`), and the per-attempt `telemetry_id` / `trace_id` (`{run_id}:{instance_id}:attempt{N}`) that bind a row to its ByteLLM telemetry. See [`docs/ops/momo-cybench.md`](../ops/momo-cybench.md).
+The external-command adapter also writes a free-form `adapter_metadata` dict on each `EvidenceRecord` (`external_command_adapter._write_evidence`). Alongside `run_kind`, `runtime_id`, `stream_parser`, `verification_kind`, `target_host`, `raw_log`, `stderr_log`, and `result_check`, it carries join/attribution keys such as `variant`, `configured_model_id`, and the per-attempt `telemetry_id` / `trace_id` (`{run_id}:{instance_id}:attempt{N}`) that an operator profile may use to bind a row to provider telemetry.
 
 ## Coupling rules
 

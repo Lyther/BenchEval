@@ -539,7 +539,16 @@ class TestReplayCLI:
             _v1_event(seq=1, kind="summary", instance_id="lootstash"),
         )
         evidence = _write_evidence(tmp_path / "e.jsonl", _evidence_row(run_id=run_id))
-        rc = main(["replay", str(events), "--verify-evidence", str(evidence), "--format", "json"])
+        rc = main(
+            [
+                "replay",
+                str(events),
+                "--verify-evidence",
+                str(evidence),
+                "--format",
+                "json",
+            ]
+        )
         assert rc == 0
         payload = json.loads(capsys.readouterr().out)
         assert payload["row_count"] == 1
@@ -783,36 +792,6 @@ class TestPublicPresentationRedaction:
 
     def test_strip_ansi(self) -> None:
         assert strip_ansi("\033[1;31mred\033[0m") == "red"
-
-
-# ---------------------------------------------------------------------------
-# MOMO backward compatibility
-# ---------------------------------------------------------------------------
-
-
-class TestMomoBackwardCompat:
-    def test_momo_replay_still_works_via_module(
-        self,
-        tmp_path: Path,
-        capsys: pytest.CaptureFixture[str],
-    ) -> None:
-        from bencheval.momo_cybench import replay as momo_replay
-
-        events = tmp_path / "events.jsonl"
-        events.write_text(
-            json.dumps(
-                {
-                    "schema_version": "momo_event_v1",
-                    "elapsed_sec": 0.0,
-                    "kind": "pass",
-                    "display": "[00:00:00] PASS     lootstash  flag verified",
-                },
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-        assert momo_replay(events, color=False, speed=100.0) == 0
-        assert "flag verified" in capsys.readouterr().out
 
 
 # ---------------------------------------------------------------------------

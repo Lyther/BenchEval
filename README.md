@@ -165,14 +165,14 @@ uv run bencheval replay results/raw/run-001/events.jsonl
 uv run bencheval replay results/raw/run-001/events.jsonl --verify-evidence
 
 # Config-first external runtime run (recommended for external projects).
-# momo-cybench.yaml is the primary/active CyBench profile (docs/ops/momo-cybench.md);
-# cybench-kilo-showcase.yaml is the legacy demo profile.
+# Keep benchmark-specific private assets and solver profiles outside BenchEval
+# unless they are official, reusable benchmark adapters.
 uv run bencheval run \
-  --config config/runs/momo-cybench.yaml \
+  --config /path/to/external-run.yaml \
   --dry-run
 
 uv run bencheval run \
-  --config config/runs/momo-cybench.yaml \
+  --config /path/to/external-run.yaml \
   --run-root /path/to/prepared/benchmark/root
 ```
 
@@ -190,14 +190,10 @@ Any external runner can emit **`bencheval_run_record_v1`** JSONL (`events.jsonl`
 - **CLI:** `bencheval run --config`, `bencheval replay`, `bencheval export-run`.
 - **Contract:** [`docs/api/internal-contracts.md`](docs/api/internal-contracts.md) § Replay.
 
-Two CyBench external-command profiles ship as examples.
-`config/runs/momo-cybench.yaml` is the **primary/active** profile: the MOMO
-solver driving a Claude Code mixed-model runtime inside a profile-owned
-container — operator runbook [`docs/ops/momo-cybench.md`](docs/ops/momo-cybench.md).
-`config/runs/cybench-kilo-showcase.yaml` is the **legacy demo** (Kilo) profile.
-Neither is a fourth Production v1 adapter, and neither is weighted into public
-benchmark comparisons unless the benchmark is separately admitted with real
-native evidence.
+BenchEval does not ship solver-specific CyBench profiles. CyBench assets,
+instance materialization, and scoring remain owned by the official benchmark or
+by an operator-supplied profile that follows the generic external-command
+contract. Such profiles are run artifacts, not BenchEval product assets.
 
 Optional derived artifacts (MP4, public transcripts) use presentation helpers
 or `scripts/render-run-video.py` (`--ass-only` works without OpenCV). Canonical
