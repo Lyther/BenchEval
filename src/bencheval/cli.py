@@ -555,11 +555,6 @@ def _run_execute(args: argparse.Namespace) -> int:
     if partial_err is not None:
         return partial_err
     if _control_plane_run_selected(args):
-        if args.output is None:
-            sys.stderr.write(
-                "error: four-axis run requires --output evidence JSONL path\n",
-            )
-            return 2
         plan = plan_control_plane(
             benchmark_id=args.benchmark,
             slice_id=args.slice,
@@ -567,10 +562,19 @@ def _run_execute(args: argparse.Namespace) -> int:
             model_id=args.model,
             cleanup_policy=args.cleanup or "never",
         )
+        # First-touch UX: default outputs under results/ so a run needs only the
+        # four axes, not explicit paths. Explicit --output/--artifacts-dir still win.
+        run_id = new_run_id()
+        if args.output is not None:
+            output_path = Path(args.output)
+        else:
+            output_path = _repo_root() / "results" / "evidence" / f"{run_id}.jsonl"
+            output_path.parent.mkdir(parents=True, exist_ok=True)
         summary = execute_control_plane_run(
             plan=plan,
-            output_path=Path(args.output),
+            output_path=output_path,
             artifacts_dir=args.artifacts_dir,
+            run_id=run_id,
         )
         payload = {
             "run_id": summary.run_id,
@@ -896,6 +900,10 @@ def _report_generate(args: argparse.Namespace) -> int:
 
 
 def _run_handler(args: argparse.Namespace) -> int:
+    target_err = _normalize_run_target(args)
+    if target_err is not None:
+        sys.stderr.write(f"{target_err}\n")
+        return 2
     if args.dry_run:
         return _run_dry(args)
     return _run_execute(args)
@@ -987,6 +995,173 @@ def _evidence_register(args: argparse.Namespace) -> int:
     }
     sys.stdout.write(json.dumps(payload, indent=2) + "\n")
     return 0
+
+
+def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
+    """Shared flag surface for ``run`` and its ``plan`` alias."""
+    parser.add_argument(
+        "target",
+        nargs="?",
+        default=None,
+        help="Shorthand '<benchmark>/<slice>' (e.g. terminal-bench/smoke-5); "
+        "equivalent to --benchmark <benchmark> --slice <slice>",
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help=(
+            "Structured run config (recommended for external command runtimes). "
+            "When set, --model/--benchmark/--slice/--runtime are read from the config."
+        ),
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Estimate run envelope without executing",
+    )
+    parser.add_argument(
+        "--benchmark",
+        default=None,
+        help="Benchmark id for four-axis control-plane run (with --slice, --runtime, --model)",
+    )
+    parser.add_argument(
+        "--slice",
+        default=None,
+        help="Slice id for four-axis control-plane run",
+    )
+    parser.add_argument(
+        "--runtime",
+        default=None,
+        help="Runtime id for four-axis control-plane run",
+    )
+    parser.add_argument(
+        "--suite",
+        default=None,
+        help="Suite name for dry-run or batch execution",
+    )
+    parser.add_argument(
+        "--task",
+        default=None,
+        help="Single task id for non-dry-run execution",
+    )
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=None,
+        help="Task-id manifest for sequential execution (one id per non-comment line)",
+    )
+    parser.add_argument(
+        "--model",
+        dest="model",
+        default=None,
+        help="Model identifier (required unless --config is used)",
+    )
+    parser.add_argument(
+        "--backend",
+        choices=(LOCAL_BACKEND, INSPECT_BACKEND, HARBOR_BACKEND),
+        default=None,
+        help="Execution backend (default: local reference harness)",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Evidence JSONL output path (defaults under results/evidence/ when omitted)",
+    )
+    parser.add_argument(
+        "--artifacts-dir",
+        type=Path,
+        default=None,
+        help="Directory for verifier logs (default: results/raw/<run_id>/)",
+    )
+    parser.add_argument(
+        "--run-root",
+        type=Path,
+        default=None,
+        help="Prepared external benchmark root for --config runs",
+    )
+    parser.add_argument(
+        "--results-root",
+        type=Path,
+        default=_repo_root() / "results",
+        help="Results root for --config runs (default: results/)",
+    )
+    parser.add_argument("--run-id", default=None, help="Run id override for --config runs")
+    parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable ANSI colors for --config live terminal output",
+    )
+    parser.add_argument(
+        "--snapshot",
+        dest="snapshot",
+        action="store_true",
+        default=None,
+        help="Force configured host snapshot for --config runs",
+    )
+    parser.add_argument(
+        "--no-snapshot",
+        dest="snapshot",
+        action="store_false",
+        help="Disable configured host snapshot for --config runs",
+    )
+    parser.add_argument(
+        "--no-progress-sec",
+        type=float,
+        default=None,
+        help="Override the progress-aware stall timeout for --config runs (seconds)",
+    )
+    parser.add_argument(
+        "--wall-clock-sec",
+        type=float,
+        default=None,
+        help="Impose an absolute per-attempt wall-clock ceiling for --config runs (seconds)",
+    )
+    parser.add_argument(
+        "--grace-period-sec",
+        type=float,
+        default=None,
+        help="Override the SIGTERM->SIGKILL grace window for --config runs (seconds)",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=("batch", "single"),
+        default=None,
+        help=(
+            "Execution lifecycle mode. 'single' runs one task lifecycle at a time "
+            "and enables transient cleanup. Default: batch."
+        ),
+    )
+    parser.add_argument(
+        "--cleanup",
+        choices=("never", "on-success", "always"),
+        default=None,
+        help="Transient cleanup policy for --mode single (default: never)",
+    )
+
+
+def _normalize_run_target(args: argparse.Namespace) -> str | None:
+    """Expand the ``<benchmark>/<slice>`` positional into --benchmark/--slice.
+
+    Returns an error message (for stderr) or ``None`` on success.
+    """
+    target = getattr(args, "target", None)
+    if not target:
+        return None
+    if getattr(args, "config", None) is not None:
+        return "error: pass either <benchmark>/<slice> or --config, not both"
+    if args.benchmark or args.slice:
+        return "error: pass either <benchmark>/<slice> or --benchmark/--slice, not both"
+    benchmark, sep, slice_id = target.partition("/")
+    if not sep or not benchmark or not slice_id:
+        return (
+            "error: target must be '<benchmark>/<slice>' "
+            f"(e.g. terminal-bench/smoke-5); got {target!r}"
+        )
+    args.benchmark = benchmark
+    args.slice = slice_id
+    return None
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -1106,141 +1281,25 @@ def _build_parser() -> argparse.ArgumentParser:
     adapter_list.add_argument("--format", choices=("text", "json"), default="text")
     adapter_list.set_defaults(handler=_adapter_list)
 
-    run = sub.add_parser("run", help="Run planning and execution")
-    run.add_argument(
-        "--config",
-        type=Path,
-        default=None,
-        help=(
-            "Structured run config (recommended for external command runtimes). "
-            "When set, --model/--benchmark/--slice/--runtime are read from the config."
+    run = sub.add_parser(
+        "run",
+        help="Run planning and execution",
+        description=(
+            "Four-axis run. Shorthand: `bencheval run <benchmark>/<slice> "
+            "--runtime <id> --model <id>`. --output/--artifacts-dir default under "
+            "results/ when omitted."
         ),
     )
-    run.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Estimate run envelope without executing",
-    )
-    run.add_argument(
-        "--benchmark",
-        default=None,
-        help="Benchmark id for four-axis control-plane run (with --slice, --runtime, --model)",
-    )
-    run.add_argument(
-        "--slice",
-        default=None,
-        help="Slice id for four-axis control-plane run",
-    )
-    run.add_argument(
-        "--runtime",
-        default=None,
-        help="Runtime id for four-axis control-plane run",
-    )
-    run.add_argument(
-        "--suite",
-        default=None,
-        help="Suite name for dry-run or batch execution",
-    )
-    run.add_argument(
-        "--task",
-        default=None,
-        help="Single task id for non-dry-run execution",
-    )
-    run.add_argument(
-        "--manifest",
-        type=Path,
-        default=None,
-        help="Task-id manifest for sequential execution (one id per non-comment line)",
-    )
-    run.add_argument(
-        "--model",
-        dest="model",
-        default=None,
-        help="Model identifier (required unless --config is used)",
-    )
-    run.add_argument(
-        "--backend",
-        choices=(LOCAL_BACKEND, INSPECT_BACKEND, HARBOR_BACKEND),
-        default=None,
-        help="Execution backend (default: local reference harness)",
-    )
-    run.add_argument(
-        "--output",
-        type=Path,
-        default=None,
-        help="Evidence JSONL output path (required for non-dry-run)",
-    )
-    run.add_argument(
-        "--artifacts-dir",
-        type=Path,
-        default=None,
-        help="Directory for verifier logs (default: results/raw/<run_id>/)",
-    )
-    run.add_argument(
-        "--run-root",
-        type=Path,
-        default=None,
-        help="Prepared external benchmark root for --config runs",
-    )
-    run.add_argument(
-        "--results-root",
-        type=Path,
-        default=_repo_root() / "results",
-        help="Results root for --config runs (default: results/)",
-    )
-    run.add_argument("--run-id", default=None, help="Run id override for --config runs")
-    run.add_argument(
-        "--no-color",
-        action="store_true",
-        help="Disable ANSI colors for --config live terminal output",
-    )
-    run.add_argument(
-        "--snapshot",
-        dest="snapshot",
-        action="store_true",
-        default=None,
-        help="Force configured host snapshot for --config runs",
-    )
-    run.add_argument(
-        "--no-snapshot",
-        dest="snapshot",
-        action="store_false",
-        help="Disable configured host snapshot for --config runs",
-    )
-    run.add_argument(
-        "--no-progress-sec",
-        type=float,
-        default=None,
-        help="Override the progress-aware stall timeout for --config runs (seconds)",
-    )
-    run.add_argument(
-        "--wall-clock-sec",
-        type=float,
-        default=None,
-        help="Impose an absolute per-attempt wall-clock ceiling for --config runs (seconds)",
-    )
-    run.add_argument(
-        "--grace-period-sec",
-        type=float,
-        default=None,
-        help="Override the SIGTERM->SIGKILL grace window for --config runs (seconds)",
-    )
-    run.add_argument(
-        "--mode",
-        choices=("batch", "single"),
-        default=None,
-        help=(
-            "Execution lifecycle mode. 'single' runs one task lifecycle at a time "
-            "and enables transient cleanup. Default: batch."
-        ),
-    )
-    run.add_argument(
-        "--cleanup",
-        choices=("never", "on-success", "always"),
-        default=None,
-        help="Transient cleanup policy for --mode single (default: never)",
-    )
+    _add_run_arguments(run)
     run.set_defaults(handler=_run_handler)
+
+    plan = sub.add_parser(
+        "plan",
+        help="Plan a four-axis run (shorthand for `run --dry-run <benchmark>/<slice>`)",
+        description="Estimate a run's envelope/caveats without executing. No network.",
+    )
+    _add_run_arguments(plan)
+    plan.set_defaults(handler=_run_handler, dry_run=True)
 
     report = sub.add_parser(
         "report",

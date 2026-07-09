@@ -21,16 +21,12 @@ uv run bencheval benchmark list --execution-support executable_adapter --format 
 uv run bencheval benchmark show terminal-bench
 uv run bencheval runtime list
 
-# 4. Dry-run: get the cost / envelope / caveats plan with no model calls
-uv run bencheval run --dry-run \
-  --benchmark terminal-bench --slice smoke-5 \
-  --runtime claude-code --model <model-id>
+# 4. Plan: cost / envelope / caveats with no model calls (shorthand: <benchmark>/<slice>)
+uv run bencheval plan terminal-bench/smoke-5 --runtime claude-code --model <model-id>
 
-# 5. Live run (dev-box: provider creds + eval extra; harness owns sandbox — docs/ops/dev-box-pilot.md)
-uv run bencheval run \
-  --benchmark terminal-bench --slice smoke-5 \
-  --runtime claude-code --model <model-id> \
-  --output results/evidence/tb.jsonl --artifacts-dir results/raw/tb
+# 5. Live run (dev-box: provider creds + eval extra; harness owns sandbox — docs/ops/dev-box-pilot.md).
+#    --output/--artifacts-dir default under results/ when omitted.
+uv run bencheval run terminal-bench/smoke-5 --runtime claude-code --model <model-id>
 ```
 
 Next: [Control-plane quickstart](#control-plane-quickstart-four-axes) · [External benchmarks](#external-benchmarks) · [Production readiness tiers](docs/context/production-readiness.md).
@@ -91,7 +87,7 @@ Internal pilot gates and live matrix: [`docs/context/production-v1-pilot.md`](do
 | **Preflight** | `doctor` | Backend/runtime checks before live runs (never prints secrets) |
 | **Selftest** | `task` | Internal Core-8/16 contracts only ([appendix](#internal-selftest-only-appendix)) |
 
-> **CLI ergonomics:** The flat `run` flag surface is large. Structured flag groups, profiles, and shorter entrypoints are **in active refactor** (peer lane); library APIs (`planner`, `replay`, `evidence`) remain stable meanwhile.
+> **CLI ergonomics:** First-touch runs need only the four axes — `bencheval run <benchmark>/<slice> --runtime <id> --model <id>` (and `bencheval plan …` for a dry-run); `--output`/`--artifacts-dir` default under `results/`. The verbose `--benchmark/--slice` form and advanced `--config` timeout flags remain for scripting/external runs.
 
 BenchEval does **not** ship a separate Docker orchestration plane. Isolation comes from the **benchmark’s official harness/runtime** (Harbor, Inspect sandbox, upstream images). Tier 0 development needs no Docker; Tier 1 live proof is expected on **dev-box-cpu** (or equivalent operator host), not every laptop — see [`docs/ops/dev-box-pilot.md`](docs/ops/dev-box-pilot.md).
 
