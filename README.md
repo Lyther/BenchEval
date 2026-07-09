@@ -178,7 +178,7 @@ uv run bencheval run \
 
 ## External command runs and run records
 
-BenchEval can run external projects through a structured profile: `uv run bencheval run --config <yaml>`. The profile owns the benchmark id, runtime id, model id, command template, stream parser, verification policy (including Inspect-compatible `includes()` scoring via `inspect-includes`), exit-code policy (map process exit codes to failure labels), and artifact layout. This keeps the CLI short while preserving the full four-axis metadata in evidence.
+BenchEval can run external projects through a structured profile: `uv run bencheval run --config <yaml>`. The profile owns the benchmark id, runtime id, model id, command template, stream parser, verification policy, exit-code policy (map process exit codes to failure labels), and artifact layout. This keeps the CLI short while preserving the full four-axis metadata in evidence. Prefer the benchmark's **official scorer**; `includes-fallback` is only BenchEval's minimal local `includes()`-style substring check (not the official Inspect runtime) and cannot back a `benchmark_native_claim`.
 
 Any external runner can emit **`bencheval_run_record_v1`** JSONL (`events.jsonl`: header/event/footer, raw audit lane) and bind rows in `EvidenceRecord` JSONL. High-volume mid-step reasoning (per-token `llm`/`tool`/`debug` events) is routed to a mutable per-attempt `live_state.sqlite` monitor lane, a real-time "still reasoning vs stuck" signal, and kept out of `events.jsonl`, which stays the complete, un-compacted lifecycle/scoring record. The control plane exposes this without requiring a Production v1 benchmark adapter:
 

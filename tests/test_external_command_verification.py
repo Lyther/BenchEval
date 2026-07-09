@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import builtins
 
+import pytest
+
 from bencheval import external_command_adapter as adapter
 from bencheval.external_command_adapter import (
     ExternalCommandConfig,
@@ -24,7 +26,7 @@ def _run_config(verification: ExternalVerificationConfig) -> ExternalRunConfig:
     )
 
 
-def test_inspect_includes_uses_cybench_scorer_semantics() -> None:
+def test_includes_fallback_uses_includes_style_semantics() -> None:
     expected = "CTF{correct-answer}"
     output = (
         "The final result is below.\n"
@@ -33,7 +35,7 @@ def test_inspect_includes_uses_cybench_scorer_semantics() -> None:
     )
     broad_flag_regex = r"(?P<value>[A-Za-z0-9_.-]{1,64}\{[^{}\s]{1,256}\})"
     verification = ExternalVerificationConfig(
-        kind="inspect-includes",
+        kind="includes-fallback",
         observed_regex=broad_flag_regex,
         allow_observed_without_expected=False,
     )
@@ -55,11 +57,11 @@ def test_inspect_includes_uses_cybench_scorer_semantics() -> None:
     ) == (True, True)
 
 
-def test_inspect_includes_uses_cybench_default_case_insensitive_matching() -> None:
+def test_includes_fallback_is_case_insensitive() -> None:
     expected = "CTF{correct-answer}"
     output = "ctf{correct-answer}"
     verification = ExternalVerificationConfig(
-        kind="inspect-includes",
+        kind="includes-fallback",
         allow_observed_without_expected=False,
     )
     config = _run_config(verification)
@@ -75,7 +77,7 @@ def test_inspect_includes_uses_cybench_default_case_insensitive_matching() -> No
     ) == (True, True)
 
 
-def test_inspect_includes_does_not_import_inspect_runtime(monkeypatch) -> None:
+def test_includes_fallback_does_not_import_inspect_runtime(monkeypatch) -> None:
     real_import = builtins.__import__
 
     def guarded_import(
@@ -93,16 +95,16 @@ def test_inspect_includes_does_not_import_inspect_runtime(monkeypatch) -> None:
 
     assert (
         asyncio.run(
-            adapter._inspect_includes_correct("ctf{correct-answer}", "CTF{correct-answer}"),
+            adapter._includes_fallback_correct("ctf{correct-answer}", "CTF{correct-answer}"),
         )
         is True
     )
 
 
-def test_inspect_includes_requires_the_manifest_value() -> None:
+def test_includes_fallback_requires_the_manifest_value() -> None:
     expected = "CTF{correct-answer}"
     verification = ExternalVerificationConfig(
-        kind="inspect-includes",
+        kind="includes-fallback",
         allow_observed_without_expected=False,
     )
     config = _run_config(verification)
@@ -187,4 +189,31 @@ def test_legacy_external_config_defaults_to_includes_manifest_scoring() -> None:
         },
     )
 
-    assert normalized["verification"]["kind"] == "inspect-includes"
+    assert normalized["verification"]["kind"] == "includes-fallback"
+
+
+def test_includes_fallback_cannot_back_a_native_benchmark_claim() -> None:
+    """The local fallback scorer must not stand behind an official native claim."""
+    with pytest.raises(ValueError, match="includes-fallback"):
+        ExternalRunConfig(
+            name="native-claim-test",
+            benchmark_id="cybench",
+            runtime_id="runtime",
+            model_id="model",
+            command=ExternalCommandConfig(argv_prefix=("true",)),
+            verification=ExternalVerificationConfig(kind="includes-fallback"),
+            interpretation_label="benchmark_native_claim",
+            instances=[ExternalInstance(id="case")],
+        )
+    # A non-native interpretation label is accepted.
+    ok = ExternalRunConfig(
+        name="fallback-ok",
+        benchmark_id="cybench",
+        runtime_id="runtime",
+        model_id="model",
+        command=ExternalCommandConfig(argv_prefix=("true",)),
+        verification=ExternalVerificationConfig(kind="includes-fallback"),
+        interpretation_label="rough_regression",
+        instances=[ExternalInstance(id="case")],
+    )
+    assert ok.verification.kind == "includes-fallback"

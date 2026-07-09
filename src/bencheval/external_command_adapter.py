@@ -39,6 +39,7 @@ from pydantic import (
     JsonValue,
     ValidationError,
     field_validator,
+    model_validator,
 )
 
 from bencheval.backends import LOCAL_BACKEND, ExecutionBackend
@@ -75,7 +76,7 @@ VerificationKind = Literal[
     "none",
     "regex",
     "manifest-value-regex",
-    "inspect-includes",
+    "includes-fallback",
 ]
 
 ANSI_RESET = "\033[0m"
@@ -101,7 +102,7 @@ LEGACY_PRIVATE_ROOT_ALIAS = "/tmp/bencheval-cybench-real-vps"
 MANIFEST_VERIFICATION_KINDS = frozenset(
     {
         "manifest-value-regex",
-        "inspect-includes",
+        "includes-fallback",
     },
 )
 
@@ -338,6 +339,23 @@ class ExternalRunConfig(BaseModel):
         if isinstance(max_attempts, int) and value > max_attempts:
             raise ValueError("pass_at_k_budget cannot exceed max_attempts")
         return value
+
+    @model_validator(mode="after")
+    def _fallback_scorer_is_not_a_native_claim(self) -> ExternalRunConfig:
+        # `includes-fallback` is BenchEval's local scorer, not the benchmark's
+        # official one, so it must not stand behind a `benchmark_native_claim`
+        # (official-first principle). Use `adapter_smoke` / `rough_regression`, or
+        # wire in the official runner/scorer for a native claim.
+        if (
+            self.verification.kind == "includes-fallback"
+            and self.interpretation_label == "benchmark_native_claim"
+        ):
+            raise ValueError(
+                "verification.kind='includes-fallback' is a local fallback scorer and "
+                "cannot back interpretation_label='benchmark_native_claim'; use the "
+                "official scorer or a non-native interpretation label",
+            )
+        return self
 
 
 @dataclass(frozen=True, slots=True)
@@ -1173,7 +1191,7 @@ async def _run_attempt(
         if passed and value_match and expected_value:
             # Report the matched flag as the observed value (not a stray last-token
             # capture) whenever the scorer confirmed a value match -- covers both
-            # inspect-includes and the manifest-value-regex fallback.
+            # includes-fallback and the manifest-value-regex fallback.
             observed = expected_value
         output_cap = _hit_output_cap(token_usage, config.stream.output_token_max)
         valid = not output_cap and returncode == 0 and termination_reason is None
@@ -2128,7 +2146,7 @@ def _observed_value(
     text: str,
     verification: ExternalVerificationConfig,
 ) -> str | None:
-    if verification.kind == "inspect-includes":
+    if verification.kind == "includes-fallback":
         return None
     return _extract_observed_value(text, verification.observed_regex)
 
@@ -2179,10 +2197,10 @@ async def _classify_result(
     kind = config.verification.kind
     if kind == "none":
         return True, None
-    if kind == "inspect-includes":
+    if kind == "includes-fallback":
         if expected is None:
             return False, None
-        value_match = await _inspect_includes_correct(output_text, expected)
+        value_match = await _includes_fallback_correct(output_text, expected)
         return value_match, value_match
     if observed is None:
         return False, None
@@ -2202,8 +2220,15 @@ async def _classify_result(
     return bool(config.verification.allow_observed_without_expected), None
 
 
-async def _inspect_includes_correct(output_text: str, expected: str) -> bool:
-    """Use Inspect's default ``includes()`` matching semantics without its runtime."""
+async def _includes_fallback_correct(output_text: str, expected: str) -> bool:
+    """Local fallback scorer: case-insensitive substring, like Inspect's default
+    ``includes()`` semantics but WITHOUT the official Inspect runtime/scorer.
+
+    This is BenchEval's own minimal fallback for benchmarks whose official scorer is
+    not wired in; it is NOT the official scorer and must not back a
+    ``benchmark_native_claim`` (enforced in ``ExternalRunConfig``). Official adapters
+    should invoke the official runner/scorer or parse official result artifacts.
+    """
     return expected.casefold() in output_text.casefold()
 
 
@@ -2404,7 +2429,7 @@ def _normalize_legacy_config(raw: dict[object, object]) -> dict[object, object]:
     normalized.setdefault(
         "verification",
         {
-            "kind": "inspect-includes",
+            "kind": "includes-fallback",
             "observed_regex": DEFAULT_FLAG_REGEX,
             "manifest_paths": [
                 "meta/manifest.private.json",
