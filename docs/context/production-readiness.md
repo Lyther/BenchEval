@@ -30,7 +30,7 @@ make check-production-v1        # → ./scripts/check-production-v1.sh
 2. `uv run --no-sync ruff check src tests scripts/` and `ruff format --check` — lint + format clean.
 3. `shellcheck scripts/*.sh` and `bash -n scripts/*.sh` — shell hygiene.
 4. `uv lock --check` — lockfile in sync with `pyproject.toml`.
-5. **Executable-adapter count = 3.** `bencheval benchmark list --execution-support executable_adapter --format json` must report exactly `terminal-bench`, `swe-bench-verified`, `bfcl-v4`. A drift here means an adapter flipped status without the checklist below.
+5. **Executable-adapter count = 3.** `bencheval benchmark list --execution-support executable_adapter --format json` must report exactly `terminal-bench`, `swe-bench-verified`, `bfcl-v4`. Executability is config-declared in [`config/benchmarks.yaml`](../../config/benchmarks.yaml) (`executable: true` + `adapter_id`/`harness_kind`), not hard-coded in Python — so a drift here means a **config** entry was flipped executable without the checklist below. Adding a benchmark on an existing adapter family is a config-only change.
 6. **Negative-evidence gate:** `bencheval run --benchmark cybench --slice cybench-smoke-5 ...` must **fail** before subprocess dispatch, and stderr must contain `metadata_only` / `execution_support`. A metadata-only benchmark that accidentally *runs* is a regression.
 
 **Passing Tier 0 means:** the software is correct. It does **not** mean any benchmark result is real. Non-executable benchmarks stay `metadata_only` / `manifest_only`; reports produced without live deps must carry the `adapter_smoke` interpretation label, never `benchmark_native_claim` (architecture §13.1, §15 risk "Harbor unavailable / Docker absent").

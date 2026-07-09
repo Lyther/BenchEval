@@ -65,6 +65,21 @@ class BenchmarkEntry(BaseModel):
     safety_review: SafetyReview
     source_url: str | None = Field(default=None, min_length=1)
     notes: str = Field(min_length=1)
+    # Config-driven adapter binding (replaces the former hard-coded maps). A
+    # benchmark reusing an existing adapter family becomes runnable by setting these
+    # in config alone — no Python change. ``executable`` marks that a dispatchable
+    # control-plane adapter exists today; dispatch still validates ``adapter_id``.
+    adapter_id: str | None = Field(default=None, min_length=1)
+    harness_kind: str | None = Field(default=None, min_length=1)
+    executable: bool = False
+
+    @model_validator(mode="after")
+    def _executable_requires_adapter_binding(self) -> Self:
+        if self.executable and not (self.adapter_id and self.harness_kind):
+            raise ValueError(
+                f"benchmark {self.id!r} is executable but is missing adapter_id/harness_kind",
+            )
+        return self
 
 
 class BenchmarkCatalog(BaseModel):
@@ -159,18 +174,14 @@ def load_benchmark_catalog(path: Path | None = None) -> BenchmarkCatalog:
     return _load_benchmark_catalog_cached(str(catalog_path))
 
 
-_EXECUTABLE_BENCHMARK_IDS = frozenset(
-    {
-        "terminal-bench",
-        "swe-bench-verified",
-        "bfcl-v4",
-    },
-)
-
-
 def execution_support_label(entry: BenchmarkEntry) -> str:
-    """Whether catalog metadata implies a runnable control-plane adapter."""
-    if entry.id in _EXECUTABLE_BENCHMARK_IDS:
+    """Whether catalog metadata implies a runnable control-plane adapter.
+
+    Config-driven: a benchmark is ``executable_adapter`` iff its catalog entry sets
+    ``executable: true`` (which the model validator requires be paired with an
+    ``adapter_id``/``harness_kind``). No benchmark IDs are hard-coded here.
+    """
+    if entry.executable:
         return "executable_adapter"
     if entry.adapter_status == "manifest_available":
         return "manifest_only"

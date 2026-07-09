@@ -47,14 +47,6 @@ _BACKEND_TO_HARNESS: dict[str, str] = {
     "external": "local-harness",
 }
 
-_BENCHMARK_ADAPTER: dict[str, tuple[str, str]] = {
-    "terminal-bench": ("terminal-bench-harbor", "harbor"),
-    "swe-bench-verified": ("swebench", "swebench-native"),
-    "bfcl-v4": ("bfcl", "bfcl-native"),
-    "livecodebench": ("livecodebench", "livecodebench-native"),
-    "bigcodebench": ("bigcodebench", "livecodebench-native"),
-}
-
 
 @dataclass(frozen=True, slots=True)
 class AdapterDescriptor:
@@ -64,12 +56,19 @@ class AdapterDescriptor:
 
 
 def list_adapter_descriptors() -> tuple[AdapterDescriptor, ...]:
-    """Catalog of planned native adapters (metadata only until P2+)."""
+    """Adapter families derived from the catalog's per-benchmark ``adapter_id`` bindings.
+
+    Config-driven: adding a benchmark to an existing adapter family is a
+    ``config/benchmarks.yaml`` edit, not a code change.
+    """
+    catalog = load_benchmark_catalog()
     harness_by_adapter: dict[str, str] = {}
     benchmarks_by_adapter: dict[str, set[str]] = {}
-    for benchmark_id, (adapter_id, harness) in _BENCHMARK_ADAPTER.items():
-        harness_by_adapter.setdefault(adapter_id, harness)
-        benchmarks_by_adapter.setdefault(adapter_id, set()).add(benchmark_id)
+    for entry in catalog.benchmarks:
+        if entry.adapter_id is None or entry.harness_kind is None:
+            continue
+        harness_by_adapter.setdefault(entry.adapter_id, entry.harness_kind)
+        benchmarks_by_adapter.setdefault(entry.adapter_id, set()).add(entry.id)
     return tuple(
         AdapterDescriptor(
             adapter_id=aid,
@@ -127,15 +126,15 @@ def _as_harness_kind(harness: str) -> HarnessKindLiteral:
 
 
 def _harness_for_benchmark(benchmark: BenchmarkEntry) -> HarnessKindLiteral:
-    if benchmark.id in _BENCHMARK_ADAPTER:
-        return _as_harness_kind(_BENCHMARK_ADAPTER[benchmark.id][1])
+    if benchmark.harness_kind is not None:
+        return _as_harness_kind(benchmark.harness_kind)
     raw = _BACKEND_TO_HARNESS.get(benchmark.recommended_backend, "local-harness")
     return _as_harness_kind(raw)
 
 
 def _adapter_for_benchmark(benchmark: BenchmarkEntry) -> str:
-    if benchmark.id in _BENCHMARK_ADAPTER:
-        return _BENCHMARK_ADAPTER[benchmark.id][0]
+    if benchmark.adapter_id is not None:
+        return benchmark.adapter_id
     folded = benchmark.id.replace("_", "-")
     return f"{folded}-adapter"
 
