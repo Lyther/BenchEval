@@ -178,27 +178,17 @@ uv run bencheval run \
 
 ## External command runs and run records
 
-BenchEval can run external projects through a structured profile:
-`uv run bencheval run --config <yaml>`. The profile owns the benchmark id,
-runtime id, model id, command template, stream parser, verification policy, and
-artifact layout. This keeps the CLI short while preserving the full four-axis
-metadata in evidence.
+BenchEval can run external projects through a structured profile: `uv run bencheval run --config <yaml>`. The profile owns the benchmark id, runtime id, model id, command template, stream parser, verification policy (including Inspect-compatible `includes()` scoring via `inspect-includes`), exit-code policy (map process exit codes to failure labels), and artifact layout. This keeps the CLI short while preserving the full four-axis metadata in evidence.
 
-Any external runner can emit **`bencheval_run_record_v1`** JSONL (`events.jsonl`: header/event/footer, raw audit lane) and bind rows in `EvidenceRecord` JSONL. The control plane exposes this without requiring a Production v1 benchmark adapter:
+Any external runner can emit **`bencheval_run_record_v1`** JSONL (`events.jsonl`: header/event/footer, raw audit lane) and bind rows in `EvidenceRecord` JSONL. High-volume mid-step reasoning (per-token `llm`/`tool`/`debug` events) is routed to a mutable per-attempt `live_state.sqlite` monitor lane, a real-time "still reasoning vs stuck" signal, and kept out of `events.jsonl`, which stays the complete, un-compacted lifecycle/scoring record. The control plane exposes this without requiring a Production v1 benchmark adapter:
 
 - **Library:** `bencheval.external_command_adapter` (`ExternalRunConfig`, `run_external_command`) and `bencheval.replay` (`RunRecordWriter`, `load_run_record`, `replay`, `verify_bound_evidence`).
 - **CLI:** `bencheval run --config`, `bencheval replay`, `bencheval export-run`.
 - **Contract:** [`docs/api/internal-contracts.md`](docs/api/internal-contracts.md) § Replay.
 
-BenchEval does not ship solver-specific CyBench profiles. CyBench assets,
-instance materialization, and scoring remain owned by the official benchmark or
-by an operator-supplied profile that follows the generic external-command
-contract. Such profiles are run artifacts, not BenchEval product assets.
+BenchEval does not ship solver-specific CyBench profiles. CyBench assets, instance materialization, and scoring remain owned by the official benchmark or by an operator-supplied profile that follows the generic external-command contract. Such profiles are run artifacts, not BenchEval product assets.
 
-Optional derived artifacts (MP4, public transcripts) use presentation helpers
-or `scripts/render-run-video.py` (`--ass-only` works without OpenCV). Canonical
-logs/evidence remain raw and private; redaction belongs only to explicitly
-derived public artifacts.
+Optional derived artifacts (MP4, public transcripts) use presentation helpers or `scripts/render-run-video.py` (`--ass-only` works without OpenCV). Canonical logs/evidence remain raw and private; redaction belongs only to explicitly derived public artifacts.
 
 ## Internal selftest only (appendix)
 
@@ -291,21 +281,14 @@ Public exports include legacy summary/compare types and vNext evidence/task-cont
 
 ## External benchmarks
 
-Candidate third-party suites for Calibration/Stretch adapters: [`docs/context/external-benchmark-catalog.md`](docs/context/external-benchmark-catalog.md).
-Machine-readable support metadata lives in [`config/benchmarks.yaml`](config/benchmarks.yaml) and is exposed via `bencheval benchmark list|show`. The catalog intentionally distinguishes:
+Candidate third-party suites for Calibration/Stretch adapters: [`docs/context/external-benchmark-catalog.md`](docs/context/external-benchmark-catalog.md). Machine-readable support metadata lives in [`config/benchmarks.yaml`](config/benchmarks.yaml) and is exposed via `bencheval benchmark list|show`. The catalog intentionally distinguishes:
 
 - `manifest_available` — BenchEval has at least a committed manifest/control-plane slice.
 - `cataloged` — recognized as an integration candidate, adapter still pending.
 - `adapter_pending` — high-priority known target, no runnable adapter yet.
 - `unverified` — requested name or alias with no distinct canonical benchmark source verified yet.
 
-Use manifest-driven single mode for large public suites: `--manifest` reads one
-task id per line, `--mode single` runs tasks sequentially, and `--cleanup
-always|on-success` removes BenchEval-owned transient directories such as
-`agent-workspace`, `harbor-package`, and `materialized-workspace` after each
-attempt. Evidence JSONL, candidate artifacts, and verifier logs are preserved.
-The current cleanup policy deliberately does not run Docker image pruning;
-external adapters must own and document image cleanup before enabling that.
+Use manifest-driven single mode for large public suites: `--manifest` reads one task id per line, `--mode single` runs tasks sequentially, and `--cleanup always|on-success` removes BenchEval-owned transient directories such as `agent-workspace`, `harbor-package`, and `materialized-workspace` after each attempt. Evidence JSONL, candidate artifacts, and verifier logs are preserved. The current cleanup policy deliberately does not run Docker image pruning; external adapters must own and document image cleanup before enabling that.
 
 ## Development
 

@@ -111,7 +111,7 @@ DEFAULT_GRACE_PERIOD_SEC = 10.0
 DEFAULT_CLEANUP_TIMEOUT_SEC = 30.0
 # High-volume mid-step stream kinds. These are routed to the mutable live-state
 # view only (real-time "is it stuck" signal) and are never appended to the
-# canonical events.jsonl, which stays the complete integrity-preserving record.
+# canonical events.jsonl, which stays the complete lifecycle/scoring record.
 HIGH_VOLUME_EVENT_KINDS: frozenset[ExternalEventKind] = frozenset(
     {
         "llm",
@@ -2203,30 +2203,8 @@ async def _classify_result(
 
 
 async def _inspect_includes_correct(output_text: str, expected: str) -> bool:
-    """Use CyBench's official Inspect scorer path (``scorer=includes()``)."""
-    try:
-        from inspect_ai.model import ModelOutput
-        from inspect_ai.scorer import CORRECT, Target, includes
-        from inspect_ai.solver import TaskState
-    except ImportError as exc:
-        raise BenchEvalError(
-            "verification.kind='inspect-includes' requires BenchEval's eval extra "
-            "(for example: uv sync --extra eval)",
-        ) from exc
-
-    target = Target(expected)
-    state = TaskState(
-        model="external",
-        sample_id="external-command",
-        epoch=1,
-        input="",
-        messages=[],
-        target=target,
-        output=ModelOutput(model="external", completion=output_text),
-        completed=True,
-    )
-    score = await includes()(state, target)
-    return score.value == CORRECT
+    """Use Inspect's default ``includes()`` matching semantics without its runtime."""
+    return expected.casefold() in output_text.casefold()
 
 
 def _hit_output_cap(token_usage: dict[str, int], cap: int | None) -> bool:

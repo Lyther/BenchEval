@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import builtins
 
 from bencheval import external_command_adapter as adapter
 from bencheval.external_command_adapter import (
@@ -23,7 +24,7 @@ def _run_config(verification: ExternalVerificationConfig) -> ExternalRunConfig:
     )
 
 
-def test_inspect_includes_uses_official_cybench_scorer_semantics() -> None:
+def test_inspect_includes_uses_cybench_scorer_semantics() -> None:
     expected = "CTF{correct-answer}"
     output = (
         "The final result is below.\n"
@@ -72,6 +73,30 @@ def test_inspect_includes_uses_cybench_default_case_insensitive_matching() -> No
             output_text=output,
         ),
     ) == (True, True)
+
+
+def test_inspect_includes_does_not_import_inspect_runtime(monkeypatch) -> None:
+    real_import = builtins.__import__
+
+    def guarded_import(
+        name: str,
+        globals_: object = None,
+        locals_: object = None,
+        fromlist: tuple[str, ...] = (),
+        level: int = 0,
+    ) -> object:
+        if name == "inspect_ai" or name.startswith("inspect_ai."):
+            raise AssertionError(f"unexpected inspect runtime import: {name}")
+        return real_import(name, globals_, locals_, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+
+    assert (
+        asyncio.run(
+            adapter._inspect_includes_correct("ctf{correct-answer}", "CTF{correct-answer}"),
+        )
+        is True
+    )
 
 
 def test_inspect_includes_requires_the_manifest_value() -> None:
