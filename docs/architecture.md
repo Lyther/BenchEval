@@ -5,6 +5,15 @@
 > **Source of truth for product:** [`docs/context/concept-hld.md`](context/concept-hld.md) §0–§16
 > **Scope:** Public-first, evidence-based benchmark × model × runtime evaluation control plane.
 
+## 0. Product Principles
+
+1. **General benchmark provider, not project glue.** BenchEval exposes benchmark, runtime, model, evidence, report, and replay contracts. A benchmark-specific project should integrate by config and adapter contracts; code changes are reserved for reusable adapter families, not one-off private workflows.
+2. **Official-first execution.** Prefer official benchmark distributions, official rules, official runners, and official scorers. BenchEval normalizes evidence and operator metadata; it does not reimplement benchmark semantics unless the upstream benchmark has no usable feedback path, and then only as a clearly labeled minimal fallback.
+3. **Simple first touch.** A new user should be able to install, list runnable benchmarks, dry-run a plan, and launch a small benchmark with short commands. Long flags belong behind profiles, config files, or presets.
+4. **Config-first expansion.** Adding a benchmark slice, runtime, model, or official-harness invocation should normally be YAML/manifest work. Python changes are acceptable only when adding a reusable adapter class or shared evidence capability.
+5. **Runtime-owned environments.** Benchmarks and selected runtimes own their sandboxes, containers, caches, and cleanup. BenchEval should not grow a separate Docker/materialization plane when the official harness already owns that lifecycle.
+6. **Evidence over claims.** Reports must preserve native artifacts and caveats, distinguish smoke from full benchmark claims, and never treat green tests or injected runners as live benchmark proof.
+
 ## 1. Product Shape (v0.3)
 
 BenchEval is an **evaluation control plane**, not a benchmark author. It answers:
@@ -109,9 +118,7 @@ flowchart LR
 | E3 | Calibration External | Public benchmark micro-slices | Adapter-backed; **never weighted** |
 | E4 | Stretch Sandbox | Expensive quarterly / offensive-restricted | Harbor/cloud; explicit safety review |
 
-Dry-run planner reports `requires_harbor` / `requires_sandbox` when the selected
-runtime or harness needs them. Those flags are operator preflight signals, not a
-BenchEval-owned Docker/materialization plane.
+Dry-run planner reports `requires_harbor` / `requires_sandbox` when the selected runtime or harness needs them. Those flags are operator preflight signals, not a BenchEval-owned Docker/materialization plane.
 
 ## 7. Data Contracts
 
