@@ -217,3 +217,42 @@ def test_includes_fallback_cannot_back_a_native_benchmark_claim() -> None:
         instances=[ExternalInstance(id="case")],
     )
     assert ok.verification.kind == "includes-fallback"
+
+
+def test_regex_kinds_require_an_explicit_observed_regex() -> None:
+    """No baked CTF `FLAG:` default: regex-based kinds must declare their own pattern."""
+    for kind in ("regex", "manifest-value-regex"):
+        with pytest.raises(ValueError, match="observed_regex"):
+            ExternalVerificationConfig(kind=kind)
+    # An explicit pattern is accepted (any pattern — not a FLAG convention).
+    cfg = ExternalVerificationConfig(
+        kind="manifest-value-regex",
+        observed_regex=r"(?P<value>secret-[0-9]+)",
+    )
+    assert cfg.observed_regex == r"(?P<value>secret-[0-9]+)"
+
+
+def test_none_kind_needs_no_observed_regex() -> None:
+    """SWE-style default: `kind=none` scores on process exit code — no FLAG, no regex."""
+    verification = ExternalVerificationConfig()  # kind defaults to "none"
+    assert verification.observed_regex is None
+    config = _run_config(verification)
+    # Exit 0 passes with no observed value; nonzero fails. No pattern involved.
+    assert asyncio.run(
+        adapter._classify_result(
+            config=config,
+            returncode=0,
+            observed=None,
+            expected=None,
+            output_text="arbitrary solver output, no FLAG: line anywhere",
+        ),
+    ) == (True, None)
+    assert asyncio.run(
+        adapter._classify_result(
+            config=config,
+            returncode=1,
+            observed=None,
+            expected=None,
+            output_text="",
+        ),
+    ) == (False, None)

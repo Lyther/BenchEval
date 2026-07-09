@@ -239,7 +239,10 @@ class ExternalVerificationConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     kind: VerificationKind = "none"
-    observed_regex: str = DEFAULT_FLAG_REGEX
+    # No baked-in pattern: value extraction is a per-benchmark config contract, not a
+    # CTF `FLAG:` convention hard-wired into the generic adapter. Required only for the
+    # regex kinds below (enforced by the validator); `none`/`includes-fallback` ignore it.
+    observed_regex: str | None = None
     manifest_paths: tuple[str, ...] = ()
     manifest_id_field: str = "name"
     manifest_value_field: str = "flag"
@@ -247,12 +250,23 @@ class ExternalVerificationConfig(BaseModel):
 
     @field_validator("observed_regex")
     @classmethod
-    def _regex_compiles(cls, value: str) -> str:
+    def _regex_compiles(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         try:
             re.compile(value)
         except re.error as exc:
             raise ValueError(f"invalid observed_regex: {exc}") from exc
         return value
+
+    @model_validator(mode="after")
+    def _regex_kinds_require_observed_regex(self) -> ExternalVerificationConfig:
+        if self.kind in ("regex", "manifest-value-regex") and self.observed_regex is None:
+            raise ValueError(
+                f"verification.kind={self.kind!r} extracts a value via observed_regex; "
+                "set verification.observed_regex explicitly (no default pattern is assumed)",
+            )
+        return self
 
 
 class ExternalSnapshotConfig(BaseModel):
@@ -1599,7 +1613,7 @@ def _handle_stream_line(
     combined_text: list[str],
     counters: dict[str, int],
     token_usage: dict[str, int],
-    observed_regex: str,
+    observed_regex: str | None,
     served_models: set[str],
 ) -> None:
     stripped = line.strip()
@@ -1635,7 +1649,7 @@ def _handle_kilo_json_line(
     combined_text: list[str],
     counters: dict[str, int],
     token_usage: dict[str, int],
-    observed_regex: str,
+    observed_regex: str | None,
     served_models: set[str],
 ) -> None:
     try:
@@ -2129,7 +2143,9 @@ def _find_manifest_value(
     return None
 
 
-def _extract_observed_value(text: str, pattern: str) -> str | None:
+def _extract_observed_value(text: str, pattern: str | None) -> str | None:
+    if pattern is None:
+        return None
     regex = re.compile(pattern)
     matches = list(regex.finditer(text))
     if not matches:
@@ -2159,8 +2175,10 @@ def _match_value(match: re.Match[str]) -> str:
     return match.group(0).strip()
 
 
-def _extract_all_values(text: str, pattern: str) -> set[str]:
+def _extract_all_values(text: str, pattern: str | None) -> set[str]:
     """Every distinct capture of ``pattern`` (unlike the last-only observed value)."""
+    if pattern is None:
+        return set()
     regex = re.compile(pattern)
     return {value for match in regex.finditer(text) if (value := _match_value(match))}
 
