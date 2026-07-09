@@ -54,7 +54,7 @@ Non-executable benchmarks (e.g. CyBench) fail on `run` before subprocess dispatc
 ## Layout
 
 - `config/selftest/` — selftest lane task contracts (`core-8/`, `core-16/`); legacy `config/tasks/` fallback in registry
-- `BENCHEVAL_HOME` — wheel-only bundle root: `config/benchmarks.yaml`, `config/models.yaml`, `config/suites.yaml`, `config/runtimes/`, `config/slices/`, `config/manifests/` (see `scripts/export-config-bundle.sh`); `config/pricing/` stays editable-checkout only unless you extend the export script
+- Config resolution — a wheel/`uv tool install` is self-contained: the public control-plane config (`benchmarks.yaml`, `models.yaml`, `suites.yaml`, `runtimes/`, `slices/`, `manifests/`) ships as package data (`bencheval/_bundled/config/`) and is resolved via `importlib.resources`, so `bencheval benchmark list` works with **no `BENCHEVAL_HOME`**. `BENCHEVAL_HOME` remains an optional override for a custom bundle (`scripts/export-config-bundle.sh`); `config/pricing/` stays editable-checkout only.
 - `config/suites.yaml` — suite membership (core-8, core-16, smoke, calibration, stretch)
 - `config/` — legacy manifests, pricing YAML, models YAML (no secrets)
 - `src/bencheval/` — library: task contract, registry, planner, evidence JSONL, run record/replay, report/export/compare, legacy summary/compare
@@ -66,7 +66,12 @@ Non-executable benchmarks (e.g. CyBench) fail on `run` before subprocess dispatc
 ## Setup
 
 ```bash
+# Development (editable checkout)
 uv sync
+
+# One-click install (no checkout, no BENCHEVAL_HOME): config ships in the wheel
+uv tool install bencheval
+bencheval benchmark list --execution-support executable_adapter --format json
 ```
 
 Use `uv sync --extra eval` only when running real Inspect / Harbor evals.

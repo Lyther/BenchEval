@@ -13,6 +13,19 @@ dependencies = ["pydantic>=2.7", "pyyaml>=6.0.3"]
 [project.scripts]
 bencheval = "bencheval.cli:main"
 
+# Ship the public control-plane config tree inside the wheel so a non-editable /
+# `uv tool install` is one-click: no exported bundle, no BENCHEVAL_HOME, no rsync.
+# `bencheval.paths.repo_root()` resolves this via importlib.resources when there is
+# no checkout or BENCHEVAL_HOME. Mirrors scripts/export-config-bundle.sh's subset
+# (selftest fixtures and editable-only pricing are intentionally excluded).
+[tool.hatch.build.targets.wheel.force-include]
+"config/benchmarks.yaml" = "bencheval/_bundled/config/benchmarks.yaml"
+"config/models.yaml" = "bencheval/_bundled/config/models.yaml"
+"config/suites.yaml" = "bencheval/_bundled/config/suites.yaml"
+"config/runtimes" = "bencheval/_bundled/config/runtimes"
+"config/slices" = "bencheval/_bundled/config/slices"
+"config/manifests" = "bencheval/_bundled/config/manifests"
+
 [project.optional-dependencies]
 eval = [
     "inspect-ai>=0.3.99",
