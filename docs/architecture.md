@@ -41,6 +41,10 @@ The existing CLI `--backend {local,inspect,harbor}` flag is **not** runtime iden
 
 ## 3. System Diagram
 
+Full layered set (C4 + sequences + ERD + deployment): **[`docs/diagrams/`](diagrams/README.md)** — start at [system overview](diagrams/system-overview.md).
+
+Compact control-plane spine (detail pushed to the diagram set):
+
 ```mermaid
 flowchart LR
     U[User CLI] --> BP[Run Planner]
@@ -56,7 +60,7 @@ flowchart LR
     AD --> A1[Native Adapter]
     AD --> A2[Inspect Adapter]
     AD --> A3[Harbor Adapter]
-    AD --> A4[Runtime CLI Adapter]
+    AD --> A4[External-command Adapter]
     AD --> A5[Selftest Adapter]
 
     A1 --> AR[Artifacts]
