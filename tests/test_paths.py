@@ -95,3 +95,33 @@ def test_repo_root_invalid_bencheval_home_raises(
     monkeypatch.setenv("BENCHEVAL_HOME", str(bad))
     with pytest.raises(BenchEvalError, match="missing marker"):
         repo_root()
+
+
+def test_bundled_config_root_resolves_packaged_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """F003: config packaged inside the wheel (``bencheval/_bundled``) is discoverable
+    via importlib.resources with no checkout and no BENCHEVAL_HOME."""
+    import importlib.resources
+
+    from bencheval import paths
+
+    pkg_dir = tmp_path / "site" / "bencheval"
+    _write_minimal_bundle(pkg_dir / "_bundled")
+    monkeypatch.setattr(importlib.resources, "files", lambda pkg: pkg_dir)
+    assert paths._bundled_config_root() == (pkg_dir / "_bundled").resolve()
+
+
+def test_bundled_config_root_absent_returns_none(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import importlib.resources
+
+    from bencheval import paths
+
+    pkg_dir = tmp_path / "site" / "bencheval"
+    pkg_dir.mkdir(parents=True)  # no _bundled subtree
+    monkeypatch.setattr(importlib.resources, "files", lambda pkg: pkg_dir)
+    assert paths._bundled_config_root() is None

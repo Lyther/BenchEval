@@ -25,7 +25,7 @@ Common args:
 
 Example:
   scripts/external-command-run.sh \
-    --config config/runs/cybench-kilo-showcase.yaml \
+    --config /path/to/external-command-profile.yaml \
     --dry-run
 EOF
 }

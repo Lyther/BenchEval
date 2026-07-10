@@ -15,6 +15,9 @@ benchmarks:
     safety_review: standard
     source_url: "https://www.swebench.com/verified.html"
     notes: "Human-filtered SWE-bench subset; public calibration only."
+    adapter_id: swebench
+    harness_kind: swebench-native
+    executable: true
   - id: swe-rebench
     name: SWE-rebench
     aliases: ["SWE-rebench", "swerebench"]
@@ -225,6 +228,8 @@ benchmarks:
     safety_review: standard
     source_url: "https://livecodebench.github.io/"
     notes: "Time-versioned code benchmark designed to reduce contamination."
+    adapter_id: livecodebench
+    harness_kind: livecodebench-native
   - id: bigcodebench
     name: BigCodeBench
     aliases: ["BigCodeBench"]
@@ -240,6 +245,8 @@ benchmarks:
     safety_review: standard
     source_url: "https://bigcode-bench.github.io/"
     notes: "Practical programming tasks with library/API use."
+    adapter_id: bigcodebench
+    harness_kind: livecodebench-native
   - id: ds-1000
     name: DS-1000
     aliases: ["DS-1000", "DS1000"]
@@ -330,6 +337,9 @@ benchmarks:
     safety_review: standard
     source_url: "https://www.tbench.ai/"
     notes: "Containerized terminal-agent tasks."
+    adapter_id: terminal-bench-harbor
+    harness_kind: harbor
+    executable: true
   - id: swe-smith
     name: SWE-smith
     aliases: ["SWE-smith", "swesmith"]
@@ -421,6 +431,9 @@ benchmarks:
     safety_review: standard
     source_url: "https://gorilla.cs.berkeley.edu/leaderboard.html"
     notes: "Function-calling smoke via bfcl-native adapter (P5.1); live Gorilla harness optional."
+    adapter_id: bfcl
+    harness_kind: bfcl-native
+    executable: true
   - id: tau-bench
     name: tau-bench
     aliases: ["tau-bench"]

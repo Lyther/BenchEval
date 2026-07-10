@@ -56,6 +56,21 @@ def _walk_up_for_config(start: Path) -> Path | None:
     return None
 
 
+def _bundled_config_root() -> Path | None:
+    """Config tree shipped inside the wheel as package data (``bencheval/_bundled``).
+
+    Present only in a built/installed wheel (see ``force-include`` in pyproject);
+    absent in an editable checkout, where the live ``config/`` tree is used instead.
+    """
+    try:
+        from importlib.resources import files
+
+        root = Path(str(files("bencheval") / "_bundled"))
+    except (ModuleNotFoundError, TypeError, ValueError, OSError):
+        return None
+    return root if _has_config_marker(root) else None
+
+
 def repo_root() -> Path:
     """Directory containing the BenchEval config bundle (project or ``BENCHEVAL_HOME``).
 
@@ -64,7 +79,9 @@ def repo_root() -> Path:
     1. ``BENCHEVAL_HOME`` when it passes :func:`validate_config_bundle`.
     2. Walk upward from ``Path.cwd()`` when the marker file exists.
     3. Layout-relative path next to the installed ``bencheval`` package (editable checkout).
-    4. Fall back to package-parent layout (may error on missing config at use site).
+    4. Config packaged inside the wheel (``bencheval/_bundled``) — the one-click
+       non-editable install path: no ``BENCHEVAL_HOME``, no exported bundle.
+    5. Fall back to package-parent layout (may error on missing config at use site).
     """
     env_home = os.environ.get(_BENCHEVAL_HOME_ENV, "").strip()
     if env_home:
@@ -87,6 +104,11 @@ def repo_root() -> Path:
     if _has_config_marker(layout_guess):
         validate_config_bundle(layout_guess)
         return layout_guess.resolve()
+
+    bundled = _bundled_config_root()
+    if bundled is not None:
+        validate_config_bundle(bundled)
+        return bundled
 
     return layout_guess.resolve()
 

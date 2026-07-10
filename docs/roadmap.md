@@ -5,12 +5,21 @@
 > **Status (2026-06-29):** v0.3 control-plane P1–P6/P5.1/P5.3/P9.2 implemented, plus config-driven external-command profiles (`bencheval run --config`). Remaining: P5.2 LiveCodeBench, P7–P8 security/GUI, Phase B live matrix on dev-box — see §Live blockers.
 > **Principle:** additive only. Never break the v0.2 `EvidenceRecord` flat contract. Never delete working coverage to reach a new shape.
 
+## Product Principles
+
+- **General benchmark provider.** BenchEval should stay benchmark/runtime/model control-plane infrastructure, not a home for project-specific workflows. New benchmark projects integrate through declared contracts.
+- **Official-first.** Use official benchmark assets, rules, runners, and scorers. Add only the smallest labeled fallback when upstream has no feedback surface.
+- **Simple UX.** First touch should be: install, list runnable benchmarks, dry-run, run a small slice. Prefer presets/profiles over long command lines.
+- **Config-first expansion.** Existing adapter families should accept new benchmark slices, runtimes, models, and harness invocations by YAML/manifest updates. Code changes are for reusable adapter families or shared evidence features.
+- **Runtime-owned sandboxing.** Do not build a separate BenchEval Docker plane when official benchmark harnesses already own containers, caches, and cleanup.
+- **Evidence-bound claims.** Smoke/injected tests prove adapter plumbing only. Live benchmark claims require real benchmark execution evidence with native artifacts and caveats.
+
 ## Phase 0 — Validation (research spikes, no code)
 
 - [ ] **S0.1** Spike: confirm Harbor CLI install path + `harbor run --dataset terminal-bench@2.0 --agent claude-code` works locally with Docker (credential-gated). Capture exact `--agent` enum, exit codes, result-file layout. *Block:* if Harbor CLI result schema is unstable, freeze TB adapter at adapter-smoke only.
 - [ ] **S0.2** Spike: verify `claude-code` and `codex-cli` noninteractive launch + version capture + ephemeral workspace isolation on this host. *Risk:* runtime auth/subscription gating.
 - [ ] **S0.3** Spike: confirm additive `EvidenceRecord` v0.3 fields keep all v0.2 JSONL fixtures parseable (run `read_evidence_jsonl` over existing results). *Block:* if any v0.2 row breaks, fix the field defaults before proceeding.
-- [ ] **S0.4** Spike: enumerate which of the 80 `config/benchmarks.yaml` entries already have a native/Inspect/Harbor harness vs. which are metadata-only. Produce a runnable-adapter coverage gap report.
+- [ ] **S0.4** Spike: enumerate which of the 81 `config/benchmarks.yaml` entries already have a native/Inspect/Harbor harness vs. which are metadata-only. Produce a runnable-adapter coverage gap report.
 
 > Constraint: no feature code in Phase 0. Output is notes + a coverage-gap table under `docs/context/`.
 

@@ -166,3 +166,53 @@ def test_catalog_rejects_alias_that_conflicts_with_later_id(tmp_path: Path) -> N
     )
     with pytest.raises(BenchEvalError, match="conflicts with id beta"):
         load_benchmark_catalog(catalog)
+
+
+def _entry(**overrides: object):
+    from bencheval.benchmark_registry import BenchmarkEntry
+
+    base: dict[str, object] = {
+        "id": "new-swe-suite",
+        "name": "New SWE Suite",
+        "category": "coding",
+        "tier": "calibration",
+        "adapter_status": "manifest_available",
+        "recommended_backend": "inspect",
+        "recommended_profile": "E3",
+        "public_indexed": True,
+        "contamination_risk": "low",
+        "single_mode_required": True,
+        "safety_review": "standard",
+        "notes": "n",
+    }
+    base.update(overrides)
+    return BenchmarkEntry(**base)
+
+
+def test_config_only_binding_makes_a_new_benchmark_executable() -> None:
+    """F001: a new benchmark reusing an existing adapter family is executable via
+    config alone — no Python change to the executable set or adapter map."""
+    from bencheval.benchmark_registry import execution_support_label
+
+    entry = _entry(adapter_id="swebench", harness_kind="swebench-native", executable=True)
+    assert execution_support_label(entry) == "executable_adapter"
+
+    # A metadata-only entry with no binding stays non-executable.
+    plain = _entry(adapter_status="cataloged")
+    assert execution_support_label(plain) == "metadata_only"
+
+
+def test_executable_entry_requires_adapter_binding() -> None:
+    """F001 guardrail: config cannot claim executable without an adapter binding."""
+    with pytest.raises(ValueError, match="executable but is missing"):
+        _entry(executable=True)  # no adapter_id / harness_kind
+
+
+def test_adapter_descriptors_are_derived_from_catalog() -> None:
+    """list_adapter_descriptors reflects the catalog's config bindings, not a code map."""
+    from bencheval.benchmark_plan import list_adapter_descriptors
+
+    descriptors = {d.adapter_id: d for d in list_adapter_descriptors()}
+    assert "swebench" in descriptors
+    assert "swe-bench-verified" in descriptors["swebench"].benchmark_ids
+    assert descriptors["swebench"].harness_kind == "swebench-native"

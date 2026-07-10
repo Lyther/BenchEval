@@ -21,16 +21,12 @@ uv run bencheval benchmark list --execution-support executable_adapter --format 
 uv run bencheval benchmark show terminal-bench
 uv run bencheval runtime list
 
-# 4. Dry-run: get the cost / envelope / caveats plan with no model calls
-uv run bencheval run --dry-run \
-  --benchmark terminal-bench --slice smoke-5 \
-  --runtime claude-code --model <model-id>
+# 4. Plan: cost / envelope / caveats with no model calls (shorthand: <benchmark>/<slice>)
+uv run bencheval plan terminal-bench/smoke-5 --runtime claude-code --model <model-id>
 
-# 5. Live run (dev-box: provider creds + eval extra; harness owns sandbox — docs/ops/dev-box-pilot.md)
-uv run bencheval run \
-  --benchmark terminal-bench --slice smoke-5 \
-  --runtime claude-code --model <model-id> \
-  --output results/evidence/tb.jsonl --artifacts-dir results/raw/tb
+# 5. Live run (dev-box: provider creds + eval extra; harness owns sandbox — docs/ops/dev-box-pilot.md).
+#    --output/--artifacts-dir default under results/ when omitted.
+uv run bencheval run terminal-bench/smoke-5 --runtime claude-code --model <model-id>
 ```
 
 Next: [Control-plane quickstart](#control-plane-quickstart-four-axes) · [External benchmarks](#external-benchmarks) · [Production readiness tiers](docs/context/production-readiness.md).
@@ -54,7 +50,7 @@ Non-executable benchmarks (e.g. CyBench) fail on `run` before subprocess dispatc
 ## Layout
 
 - `config/selftest/` — selftest lane task contracts (`core-8/`, `core-16/`); legacy `config/tasks/` fallback in registry
-- `BENCHEVAL_HOME` — wheel-only bundle root: `config/benchmarks.yaml`, `config/models.yaml`, `config/suites.yaml`, `config/runtimes/`, `config/slices/`, `config/manifests/` (see `scripts/export-config-bundle.sh`); `config/pricing/` stays editable-checkout only unless you extend the export script
+- Config resolution — a wheel/`uv tool install` is self-contained: the public control-plane config (`benchmarks.yaml`, `models.yaml`, `suites.yaml`, `runtimes/`, `slices/`, `manifests/`) ships as package data (`bencheval/_bundled/config/`) and is resolved via `importlib.resources`, so `bencheval benchmark list` works with **no `BENCHEVAL_HOME`**. `BENCHEVAL_HOME` remains an optional override for a custom bundle (`scripts/export-config-bundle.sh`); `config/pricing/` stays editable-checkout only.
 - `config/suites.yaml` — suite membership (core-8, core-16, smoke, calibration, stretch)
 - `config/` — legacy manifests, pricing YAML, models YAML (no secrets)
 - `src/bencheval/` — library: task contract, registry, planner, evidence JSONL, run record/replay, report/export/compare, legacy summary/compare
@@ -66,7 +62,12 @@ Non-executable benchmarks (e.g. CyBench) fail on `run` before subprocess dispatc
 ## Setup
 
 ```bash
+# Development (editable checkout)
 uv sync
+
+# One-click install (no checkout, no BENCHEVAL_HOME): config ships in the wheel
+uv tool install bencheval
+bencheval benchmark list --execution-support executable_adapter --format json
 ```
 
 Use `uv sync --extra eval` only when running real Inspect / Harbor evals.
@@ -86,7 +87,7 @@ Internal pilot gates and live matrix: [`docs/context/production-v1-pilot.md`](do
 | **Preflight** | `doctor` | Backend/runtime checks before live runs (never prints secrets) |
 | **Selftest** | `task` | Internal Core-8/16 contracts only ([appendix](#internal-selftest-only-appendix)) |
 
-> **CLI ergonomics:** The flat `run` flag surface is large. Structured flag groups, profiles, and shorter entrypoints are **in active refactor** (peer lane); library APIs (`planner`, `replay`, `evidence`) remain stable meanwhile.
+> **CLI ergonomics:** First-touch runs need only the four axes — `bencheval run <benchmark>/<slice> --runtime <id> --model <id>` (and `bencheval plan …` for a dry-run); `--output`/`--artifacts-dir` default under `results/`. The verbose `--benchmark/--slice` form and advanced `--config` timeout flags remain for scripting/external runs.
 
 BenchEval does **not** ship a separate Docker orchestration plane. Isolation comes from the **benchmark’s official harness/runtime** (Harbor, Inspect sandbox, upstream images). Tier 0 development needs no Docker; Tier 1 live proof is expected on **dev-box-cpu** (or equivalent operator host), not every laptop — see [`docs/ops/dev-box-pilot.md`](docs/ops/dev-box-pilot.md).
 
@@ -165,44 +166,30 @@ uv run bencheval replay results/raw/run-001/events.jsonl
 uv run bencheval replay results/raw/run-001/events.jsonl --verify-evidence
 
 # Config-first external runtime run (recommended for external projects).
-# momo-cybench.yaml is the primary/active CyBench profile (docs/ops/momo-cybench.md);
-# cybench-kilo-showcase.yaml is the legacy demo profile.
+# Keep benchmark-specific private assets and solver profiles outside BenchEval
+# unless they are official, reusable benchmark adapters.
 uv run bencheval run \
-  --config config/runs/momo-cybench.yaml \
+  --config /path/to/external-run.yaml \
   --dry-run
 
 uv run bencheval run \
-  --config config/runs/momo-cybench.yaml \
+  --config /path/to/external-run.yaml \
   --run-root /path/to/prepared/benchmark/root
 ```
 
 ## External command runs and run records
 
-BenchEval can run external projects through a structured profile:
-`uv run bencheval run --config <yaml>`. The profile owns the benchmark id,
-runtime id, model id, command template, stream parser, verification policy, and
-artifact layout. This keeps the CLI short while preserving the full four-axis
-metadata in evidence.
+BenchEval can run external projects through a structured profile: `uv run bencheval run --config <yaml>`. The profile owns the benchmark id, runtime id, model id, command template, stream parser, verification policy, exit-code policy (map process exit codes to failure labels), and artifact layout. This keeps the CLI short while preserving the full four-axis metadata in evidence. Prefer the benchmark's **official scorer**; `includes-fallback` is only BenchEval's minimal local `includes()`-style substring check (not the official Inspect runtime) and cannot back a `benchmark_native_claim`.
 
-Any external runner can emit **`bencheval_run_record_v1`** JSONL (`events.jsonl`: header/event/footer, raw audit lane) and bind rows in `EvidenceRecord` JSONL. The control plane exposes this without requiring a Production v1 benchmark adapter:
+Any external runner can emit **`bencheval_run_record_v1`** JSONL (`events.jsonl`: header/event/footer, raw audit lane) and bind rows in `EvidenceRecord` JSONL. High-volume mid-step reasoning (per-token `llm`/`tool`/`debug` events) is routed to a mutable per-attempt `live_state.sqlite` monitor lane, a real-time "still reasoning vs stuck" signal, and kept out of `events.jsonl`, which stays the complete, un-compacted lifecycle/scoring record. The control plane exposes this without requiring a Production v1 benchmark adapter:
 
 - **Library:** `bencheval.external_command_adapter` (`ExternalRunConfig`, `run_external_command`) and `bencheval.replay` (`RunRecordWriter`, `load_run_record`, `replay`, `verify_bound_evidence`).
 - **CLI:** `bencheval run --config`, `bencheval replay`, `bencheval export-run`.
 - **Contract:** [`docs/api/internal-contracts.md`](docs/api/internal-contracts.md) § Replay.
 
-Two CyBench external-command profiles ship as examples.
-`config/runs/momo-cybench.yaml` is the **primary/active** profile: the MOMO
-solver driving a Claude Code mixed-model runtime inside a profile-owned
-container — operator runbook [`docs/ops/momo-cybench.md`](docs/ops/momo-cybench.md).
-`config/runs/cybench-kilo-showcase.yaml` is the **legacy demo** (Kilo) profile.
-Neither is a fourth Production v1 adapter, and neither is weighted into public
-benchmark comparisons unless the benchmark is separately admitted with real
-native evidence.
+BenchEval does not ship solver-specific CyBench profiles. CyBench assets, instance materialization, and scoring remain owned by the official benchmark or by an operator-supplied profile that follows the generic external-command contract. Such profiles are run artifacts, not BenchEval product assets.
 
-Optional derived artifacts (MP4, public transcripts) use presentation helpers
-or `scripts/render-run-video.py` (`--ass-only` works without OpenCV). Canonical
-logs/evidence remain raw and private; redaction belongs only to explicitly
-derived public artifacts.
+Optional derived artifacts (MP4, public transcripts) use presentation helpers or `scripts/render-run-video.py` (`--ass-only` works without OpenCV). Canonical logs/evidence remain raw and private; redaction belongs only to explicitly derived public artifacts.
 
 ## Internal selftest only (appendix)
 
@@ -295,21 +282,14 @@ Public exports include legacy summary/compare types and vNext evidence/task-cont
 
 ## External benchmarks
 
-Candidate third-party suites for Calibration/Stretch adapters: [`docs/context/external-benchmark-catalog.md`](docs/context/external-benchmark-catalog.md).
-Machine-readable support metadata lives in [`config/benchmarks.yaml`](config/benchmarks.yaml) and is exposed via `bencheval benchmark list|show`. The catalog intentionally distinguishes:
+Candidate third-party suites for Calibration/Stretch adapters: [`docs/context/external-benchmark-catalog.md`](docs/context/external-benchmark-catalog.md). Machine-readable support metadata lives in [`config/benchmarks.yaml`](config/benchmarks.yaml) and is exposed via `bencheval benchmark list|show`. The catalog intentionally distinguishes:
 
 - `manifest_available` — BenchEval has at least a committed manifest/control-plane slice.
 - `cataloged` — recognized as an integration candidate, adapter still pending.
 - `adapter_pending` — high-priority known target, no runnable adapter yet.
 - `unverified` — requested name or alias with no distinct canonical benchmark source verified yet.
 
-Use manifest-driven single mode for large public suites: `--manifest` reads one
-task id per line, `--mode single` runs tasks sequentially, and `--cleanup
-always|on-success` removes BenchEval-owned transient directories such as
-`agent-workspace`, `harbor-package`, and `materialized-workspace` after each
-attempt. Evidence JSONL, candidate artifacts, and verifier logs are preserved.
-The current cleanup policy deliberately does not run Docker image pruning;
-external adapters must own and document image cleanup before enabling that.
+Use manifest-driven single mode for large public suites: `--manifest` reads one task id per line, `--mode single` runs tasks sequentially, and `--cleanup always|on-success` removes BenchEval-owned transient directories such as `agent-workspace`, `harbor-package`, and `materialized-workspace` after each attempt. Evidence JSONL, candidate artifacts, and verifier logs are preserved. The current cleanup policy deliberately does not run Docker image pruning; external adapters must own and document image cleanup before enabling that.
 
 ## Development
 

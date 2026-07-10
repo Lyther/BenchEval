@@ -35,7 +35,9 @@ def test_export_requires_analytics_extra(tmp_path: Path) -> None:
     evidence = tmp_path / "evidence.jsonl"
     JsonlEvidenceSink().append_jsonl(evidence, _record())
     try:
-        import duckdb  # noqa: F401
+        # parquet export requires pyarrow only (duckdb is needed for fmt="duckdb").
+        # Probing duckdb here wrongly expected a raise on a pyarrow-present /
+        # duckdb-absent env, where parquet export correctly succeeds.
         import pyarrow  # noqa: F401
     except ImportError:
         with pytest.raises(BenchEvalError, match="analytics export requires"):

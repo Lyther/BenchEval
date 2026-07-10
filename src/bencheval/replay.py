@@ -1,19 +1,21 @@
 """General-purpose run record/replay for BenchEval.
 
 A *run record* is a JSONL file where each line is a structured record: a header,
-a stream of events, and a footer. Any adapter (external-command, Terminal-Bench,
-SWE-bench, a future native adapter) captures its live terminal stream + timeline
-+ structured data into such a file. This module loads, validates, replays, and
-verifies that file.
+a stream of benchmark lifecycle/scoring events, and a footer. Any adapter
+(external-command, Terminal-Bench, SWE-bench, a future native adapter) can bind
+its run timeline and structured scoring data into such a file. High-volume
+solver telemetry may live in adapter-specific monitor artifacts instead. This
+module loads, validates, replays, and verifies the canonical record file.
 
 ## Canonical vs derived (production integrity policy)
 
 There are two lanes, and they must never be confused:
 
 - **Canonical run record** (``events.jsonl``): **raw, private, integrity-preserving**.
-  It is the scoring/audit source of truth. It MAY contain flags, secrets, prompts,
-  model outputs, tool calls, stack traces, filesystem paths, and challenge content.
-  Redaction is forbidden here by default. Replay operates on this lane.
+  It is the scoring/audit source of truth for the lifecycle/scoring events it
+  contains. It MAY contain flags, secrets, prompts, model outputs, tool calls,
+  stack traces, filesystem paths, and challenge content. Redaction is forbidden
+  here by default. Replay operates on this lane.
 
 - **Derived public artifacts** (public reports, demo videos, shareable transcripts):
   MAY redact sensitive material via :mod:`bencheval.presentation`, but
