@@ -22,7 +22,7 @@ def test_benchmark_registry_exports_from_package() -> None:
 
 def test_default_benchmark_catalog_has_current_expected_count() -> None:
     catalog = load_benchmark_catalog()
-    assert len(catalog.benchmarks) == 81
+    assert len(catalog.benchmarks) == 3
 
 
 def test_public_docs_match_current_catalog_count() -> None:
@@ -31,11 +31,8 @@ def test_public_docs_match_current_catalog_count() -> None:
     docs = (
         repo_root / "README.md",
         repo_root / "docs" / "architecture.md",
-        repo_root / "docs" / "roadmap.md",
-        repo_root / "docs" / "context" / "concept-hld.md",
-        repo_root / "docs" / "context" / "production-v1-pilot.md",
     )
-    stale_markers = ("~50", "64 entries", "64-entry", "80 entries", "80-entry", "605")
+    stale_markers = ("~50", "64 entries", "64-entry", "80 entries", "80-entry", "81 entries")
     for path in docs:
         text = path.read_text(encoding="utf-8")
         assert str(catalog_count) in text, f"{path} should mention {catalog_count}"
@@ -43,176 +40,65 @@ def test_public_docs_match_current_catalog_count() -> None:
             assert marker not in text, f"{path} contains stale marker {marker!r}"
 
 
-def test_catalog_tracks_deepswe_as_unverified_alias() -> None:
+def test_product_catalog_ids() -> None:
     catalog = load_benchmark_catalog()
-    benchmark = catalog.by_id_or_alias("DeepSWE")
-    assert benchmark.id == "deepswe"
-    assert benchmark.adapter_status == "unverified"
-    assert "no distinct public benchmark verified" in benchmark.notes
+    ids = {b.id for b in catalog.benchmarks}
+    assert ids == {"terminal-bench", "swe-bench-verified", "bfcl-v4"}
 
 
-def test_catalog_tracks_exploitgym_as_restricted_stretch() -> None:
+def test_alias_lookup_terminal_bench() -> None:
     catalog = load_benchmark_catalog()
-    benchmark = catalog.by_id_or_alias("Exploit Gym")
-    assert benchmark.id == "exploitgym"
-    assert benchmark.tier == "stretch"
-    assert benchmark.safety_review == "offensive_restricted"
-    assert benchmark.single_mode_required is True
+    assert catalog.by_id_or_alias("t-bench").id == "terminal-bench"
+    assert catalog.by_id_or_alias("Terminal-Bench").id == "terminal-bench"
 
 
-def test_alias_lookup_normalizes_spacing_and_underscores() -> None:
-    catalog = load_benchmark_catalog()
-    assert catalog.by_id_or_alias("Deep_SWE").id == "deepswe"
-    assert catalog.by_id_or_alias("Exploit   Gym").id == "exploitgym"
-
-
-def test_catalog_filters_security_restricted_benchmarks() -> None:
+def test_catalog_filters_executable_only() -> None:
     catalog = load_benchmark_catalog()
     entries = filter_benchmarks(
         catalog,
-        BenchmarkFilter(category="cybersecurity", safety_review="offensive_restricted"),
+        BenchmarkFilter(execution_support="executable_adapter"),
     )
-    ids = {entry.id for entry in entries}
-    assert {"cybergym", "exploitgym", "bountybench"}.issubset(ids)
+    assert len(entries) == 3
 
 
 def test_catalog_rejects_duplicate_aliases(tmp_path: Path) -> None:
     catalog = tmp_path / "benchmarks.yaml"
     catalog.write_text(
-        "\n".join(
-            (
-                "schema_version: 1",
-                "benchmarks:",
-                "  - id: alpha",
-                "    name: Alpha",
-                '    aliases: ["same"]',
-                "    category: coding",
-                "    tier: calibration",
-                "    adapter_status: cataloged",
-                "    recommended_backend: inspect",
-                "    recommended_profile: E3",
-                "    task_count: 1",
-                "    public_indexed: true",
-                "    contamination_risk: high",
-                "    single_mode_required: false",
-                "    safety_review: standard",
-                '    source_url: "https://example.com/a"',
-                '    notes: "A"',
-                "  - id: beta",
-                "    name: Beta",
-                '    aliases: ["same"]',
-                "    category: coding",
-                "    tier: calibration",
-                "    adapter_status: cataloged",
-                "    recommended_backend: inspect",
-                "    recommended_profile: E3",
-                "    task_count: 1",
-                "    public_indexed: true",
-                "    contamination_risk: high",
-                "    single_mode_required: false",
-                "    safety_review: standard",
-                '    source_url: "https://example.com/b"',
-                '    notes: "B"',
-                "",
-            ),
-        ),
+        """
+schema_version: 1
+benchmarks:
+  - id: a
+    name: A
+    aliases: [shared]
+    category: coding
+    tier: stretch
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 1
+    public_indexed: true
+    contamination_risk: low
+    single_mode_required: false
+    safety_review: standard
+    source_url: https://example.com/a
+    notes: a
+  - id: b
+    name: B
+    aliases: [shared]
+    category: coding
+    tier: stretch
+    adapter_status: cataloged
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 1
+    public_indexed: true
+    contamination_risk: low
+    single_mode_required: false
+    safety_review: standard
+    source_url: https://example.com/b
+    notes: b
+""",
         encoding="utf-8",
     )
-    with pytest.raises(BenchEvalError, match="duplicate benchmark alias"):
+    with pytest.raises(BenchEvalError, match="duplicate"):
         load_benchmark_catalog(catalog)
-
-
-def test_catalog_rejects_alias_that_conflicts_with_later_id(tmp_path: Path) -> None:
-    catalog = tmp_path / "benchmarks.yaml"
-    catalog.write_text(
-        "\n".join(
-            (
-                "schema_version: 1",
-                "benchmarks:",
-                "  - id: alpha",
-                "    name: Alpha",
-                '    aliases: ["Beta"]',
-                "    category: coding",
-                "    tier: calibration",
-                "    adapter_status: cataloged",
-                "    recommended_backend: inspect",
-                "    recommended_profile: E3",
-                "    task_count: 1",
-                "    public_indexed: true",
-                "    contamination_risk: high",
-                "    single_mode_required: false",
-                "    safety_review: standard",
-                '    source_url: "https://example.com/a"',
-                '    notes: "A"',
-                "  - id: beta",
-                "    name: Beta",
-                "    aliases: []",
-                "    category: coding",
-                "    tier: calibration",
-                "    adapter_status: cataloged",
-                "    recommended_backend: inspect",
-                "    recommended_profile: E3",
-                "    task_count: 1",
-                "    public_indexed: true",
-                "    contamination_risk: high",
-                "    single_mode_required: false",
-                "    safety_review: standard",
-                '    source_url: "https://example.com/b"',
-                '    notes: "B"',
-                "",
-            ),
-        ),
-        encoding="utf-8",
-    )
-    with pytest.raises(BenchEvalError, match="conflicts with id beta"):
-        load_benchmark_catalog(catalog)
-
-
-def _entry(**overrides: object):
-    from bencheval.benchmark_registry import BenchmarkEntry
-
-    base: dict[str, object] = {
-        "id": "new-swe-suite",
-        "name": "New SWE Suite",
-        "category": "coding",
-        "tier": "calibration",
-        "adapter_status": "manifest_available",
-        "recommended_backend": "inspect",
-        "recommended_profile": "E3",
-        "public_indexed": True,
-        "contamination_risk": "low",
-        "single_mode_required": True,
-        "safety_review": "standard",
-        "notes": "n",
-    }
-    base.update(overrides)
-    return BenchmarkEntry(**base)
-
-
-def test_config_only_binding_makes_a_new_benchmark_executable() -> None:
-    """F001: a new benchmark reusing an existing adapter family is executable via
-    config alone — no Python change to the executable set or adapter map."""
-    from bencheval.benchmark_registry import execution_support_label
-
-    entry = _entry(adapter_id="swebench", harness_kind="swebench-native", executable=True)
-    assert execution_support_label(entry) == "executable_adapter"
-
-    # A metadata-only entry with no binding stays non-executable.
-    plain = _entry(adapter_status="cataloged")
-    assert execution_support_label(plain) == "metadata_only"
-
-
-def test_executable_entry_requires_adapter_binding() -> None:
-    """F001 guardrail: config cannot claim executable without an adapter binding."""
-    with pytest.raises(ValueError, match="executable but is missing"):
-        _entry(executable=True)  # no adapter_id / harness_kind
-
-
-def test_adapter_descriptors_are_derived_from_catalog() -> None:
-    """list_adapter_descriptors reflects the catalog's config bindings, not a code map."""
-    from bencheval.benchmark_plan import list_adapter_descriptors
-
-    descriptors = {d.adapter_id: d for d in list_adapter_descriptors()}
-    assert "swebench" in descriptors
-    assert "swe-bench-verified" in descriptors["swebench"].benchmark_ids
-    assert descriptors["swebench"].harness_kind == "swebench-native"

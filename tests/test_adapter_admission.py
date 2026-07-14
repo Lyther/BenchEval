@@ -33,7 +33,7 @@ def test_plan_omits_adapter_status_caveat_when_admitted() -> None:
         benchmark_id="terminal-bench",
         slice_id="smoke-5",
         runtime_id="claude-code",
-        model_id="runtime-default",
+        model_id="gpt-test",
     )
     assert not any(c.startswith("adapter_status:") for c in plan.caveats)
 

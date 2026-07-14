@@ -75,7 +75,7 @@ def test_export_control_plane_record_without_task_contract(tmp_path: Path) -> No
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
         adapter_id="swebench",
-        runtime_id="mini-swe-agent",
+        runtime_id="claude-code",
         instance_id="django__django-11099",
     )
     JsonlEvidenceSink().append_jsonl(evidence, row)

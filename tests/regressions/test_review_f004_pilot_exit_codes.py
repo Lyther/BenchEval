@@ -18,7 +18,7 @@ def test_live_pilot_exits_nonzero_without_proof() -> None:
         env={
             **__import__("os").environ,
             "PATH": "/usr/bin:/bin",
-            "BENCHEVAL_PILOT_MODEL": "openai/gpt-test",
+            "BENCHEVAL_PILOT_MODEL": "gpt-test",
         },
     )
     assert proc.returncode != 0

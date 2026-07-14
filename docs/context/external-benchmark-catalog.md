@@ -1,11 +1,10 @@
 # External benchmark catalog
 
-> **Status:** Research (2026-06-17). For Calibration/Stretch adapter planning — **not** Core-weighted tasks.
-> **BenchEval Core today:** 8 admitted (core-8) + 8 in review (core-16) native task contracts.
+> **Status:** Research only (updated 2026-07-14). **Not** the product catalog.
+> **Live product YAML:** [`config/benchmarks.yaml`](../../config/benchmarks.yaml) admits exactly **3** executables (`terminal-bench`, `swe-bench-verified`, `bfcl-v4`). Everything below is a planning shortlist until an adapter is deliberately admitted.
+> **Do not** treat entries here as runnable via BenchEval CLI.
 
-Third-party suites popular in coding-agent, tool-use, and security evaluation. Prefer Inspect/Harbor-packaged variants where available (`inspect-evals`, Harbor datasets).
-
-Machine-readable support metadata now lives in [`config/benchmarks.yaml`](../../config/benchmarks.yaml) and is exposed through `bencheval benchmark list|show`. This document is a human planning view; the YAML registry is the validation target for catalog count, aliases, safety lane, and adapter status.
+Third-party suites popular in coding-agent, tool-use, and security evaluation. Prefer official harnesses when a future adapter is designed.
 
 ## Coding & repository repair
 
@@ -67,28 +66,27 @@ Machine-readable support metadata now lives in [`config/benchmarks.yaml`](../../
 
 ## Naming note: DeepSWE
 
-As of 2026-06-17, "DeepSWE" (e.g. `DeepSWE-32B`) is an **RL-trained agent/model** built by All Hands on top of SWE-bench-style tasks, not a verified standalone public benchmark with a canonical task set. BenchEval tracks `deepswe` as `adapter_status: unverified` / `tier: reference_only` in `config/benchmarks.yaml` so requests by that name resolve explicitly without claiming executable support. If a canonical DeepSWE task source appears (verified arXiv ID + public dataset + runnable harness), promote it from `reference_only` to Calibration/Stretch with source URL, manifest policy, and adapter plan.
+As of 2026-06-17, "DeepSWE" (e.g. `DeepSWE-32B`) is an **RL-trained agent/model** built by All Hands on top of SWE-bench-style tasks, not a verified standalone public benchmark with a canonical task set. It is **research only; not admitted** in product `config/benchmarks.yaml`. If a canonical DeepSWE task source appears (verified arXiv ID + public dataset + runnable harness), admit it deliberately with source URL, slice, adapter, and live proof.
 
 ## Naming note: DeepBench
 
 **DeepBench** most often refers to **Baidu's HPC deep-learning kernel benchmark** (GEMM/conv), not LLM agents. In LLM eval discourse, users may mean **deep reasoning benches** (e.g., LiveBench hard subsets, GPQA, MATH) — clarify intent before adapter work.
 
-## Recommended Calibration/Stretch shortlist (first adapters)
+## Recommended research shortlist (not admitted)
 
-Priority order for BenchEval Stretch (non–Core-weighted), credential-gated:
+Priority for **future** adapter design only. None of these become product until YAML + adapter + live proof land:
 
-1. SWE-bench Verified Mini or Lite — cheap SWE regression
-2. Cybench (5–10 task smoke) — security appendix
-3. τ-bench — stateful tool E0/E1 pattern alignment
-4. BFCL v4 slice — tool-calling regression
-5. Terminal-Bench smoke — Harbor/Inspect terminal profile POC
+1. SWE-bench Verified Mini or Lite — cheap SWE regression (Verified smoke already admitted separately)
+2. Cybench (5–10 task smoke) — security appendix — **research only; not admitted**
+3. τ-bench — stateful tool patterns — **research only; not admitted**
+4. BFCL v4 official `evaluate` — generation smoke is admitted; scoring not wired
+5. Terminal-Bench larger slices — smoke already admitted via Harbor
 
-## Inspect / Harbor integration hints
+## Integration posture (research only)
 
-- `inspect-evals` ships SWE-bench, Cybench, and other tasks — align with `bencheval doctor --backend inspect`.
-- Harbor datasets (e.g., SWE-bench Pro packaging) align with `harbor_adapter.py` S4 slice pattern.
-- All external suites should land as **E3 Calibration** or **E4 Stretch** per concept-hld §18 — never mixed into Core weighted totals without explicit migration.
-- For disk-heavy suites, use `bencheval run --manifest … --mode single --cleanup always` so adapters materialize one instance, append evidence, and remove BenchEval-owned transient workspaces before the next instance. Generic cleanup does not prune Docker images; adapter-specific image cleanup must be explicit.
+- Design against the **official** harness for each suite (Harbor, Gorilla BFCL, upstream SWE runners). Do not invent BenchEval-owned Docker planes.
+- Historical Inspect/`--backend` / `--manifest --mode single` CLI shapes are **removed** from the product spine; do not recommend them as operator commands.
+- Admission path: add executable entry + adapter dispatch + slice + `make check-production-v1` + recorded live proof. Until then, label candidates **research only; not admitted**.
 
 ## References
 

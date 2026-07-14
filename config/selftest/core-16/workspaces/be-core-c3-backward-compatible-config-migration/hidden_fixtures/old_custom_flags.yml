@@ -1,3 +1,0 @@
-app_name: flags
-feature_flags:
-  beta_ui: true

@@ -8,7 +8,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 readonly REPO_ROOT
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 readonly STAMP
-readonly MODEL="${BENCHEVAL_PILOT_MODEL:-openai/gpt-test}"
+readonly MODEL="${BENCHEVAL_PILOT_MODEL:-gpt-test}"
 readonly TB_CLAUDE_MODEL="${BENCHEVAL_PILOT_CLAUDE_MODEL:-${MODEL}}"
 readonly TB_CODEX_MODEL="${BENCHEVAL_PILOT_CODEX_MODEL:-${MODEL}}"
 readonly BFCL_MODEL="${BENCHEVAL_PILOT_BFCL_MODEL:-${MODEL}}"
@@ -17,6 +17,16 @@ readonly TB_EXPECTED_INSTANCES="${BENCHEVAL_PILOT_TB_EXPECTED_INSTANCES:-5}"
 readonly BFCL_EXPECTED_INSTANCES="${BENCHEVAL_PILOT_BFCL_EXPECTED_INSTANCES:-5}"
 readonly SWE_EXPECTED_INSTANCES="${BENCHEVAL_PILOT_SWE_EXPECTED_INSTANCES:-10}"
 export BENCHEVAL_HARBOR_FORWARD_PROXY="${BENCHEVAL_HARBOR_FORWARD_PROXY:-1}"
+
+cd "${REPO_ROOT}"
+
+if ! grep -Eq "^[[:space:]]*- id:[[:space:]]*${MODEL}[[:space:]]*$" \
+  "${REPO_ROOT}/config/models.yaml"; then
+  printf 'error: pilot model %s is not in config/models.yaml\n' "${MODEL}" >&2
+  printf 'hint: uv run --no-sync bencheval catalog model list\n' >&2
+  printf 'hint: set BENCHEVAL_PILOT_MODEL to a registered id (default: gpt-test)\n' >&2
+  exit 1
+fi
 
 PASSED=0
 BLOCKED=0
@@ -33,7 +43,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-cd "${REPO_ROOT}"
 mkdir -p results/evidence results/raw results/reports results/bundles results/preflight results/compare
 
 root_from_v1_base() {
@@ -196,9 +205,9 @@ run_tb() {
     return 1
   fi
   local run_status=0
-  uv run --no-sync bencheval run \
-    --benchmark terminal-bench --slice smoke-5 --runtime "${runtime}" \
-    --model "${model}" --output "${evidence}" --artifacts-dir "${raw}" || run_status=$?
+  uv run --no-sync bencheval run "terminal-bench/smoke-5" \
+    --runtime "${runtime}" \
+    --model "${model}" -y --output "${evidence}" --artifacts-dir "${raw}" || run_status=$?
   emit_artifacts "${tag}" "${evidence}" "${raw}" || true
   if [[ ${run_status} -ne 0 ]]; then
     printf 'note: %s exited %s; checking evidence completeness\n' \
@@ -217,27 +226,27 @@ run_bfcl() {
   local raw="results/raw/${tag}"
   if ! command -v bfcl >/dev/null 2>&1; then
     preflight "results/preflight/${tag}.json" \
-      --benchmark bfcl-v4 --slice smoke-5 --runtime native-api \
+      --benchmark bfcl-v4 --slice smoke-5 --runtime "" \
       --model "${BFCL_MODEL}" --ok false --reason "bfcl not on PATH (install bfcl-eval)"
     return 1
   fi
   if ! bfcl --help >/dev/null 2>&1; then
     preflight "results/preflight/${tag}.json" \
-      --benchmark bfcl-v4 --slice smoke-5 --runtime native-api \
+      --benchmark bfcl-v4 --slice smoke-5 --runtime "" \
       --model "${BFCL_MODEL}" --ok false --reason "bfcl command failed (repair bfcl-eval)"
     return 1
   fi
   if ! bfcl_model_supported "${BFCL_MODEL}"; then
     preflight "results/preflight/${tag}.json" \
-      --benchmark bfcl-v4 --slice smoke-5 --runtime native-api \
+      --benchmark bfcl-v4 --slice smoke-5 --runtime "" \
       --model "${BFCL_MODEL}" --ok false \
       --reason "bfcl model is not supported by bfcl models; set BENCHEVAL_PILOT_BFCL_MODEL"
     return 1
   fi
   local run_status=0
-  uv run --no-sync bencheval run \
-    --benchmark bfcl-v4 --slice smoke-5 --runtime native-api \
-    --model "${BFCL_MODEL}" --output "${evidence}" --artifacts-dir "${raw}" || run_status=$?
+  uv run --no-sync bencheval run "bfcl-v4/smoke-5" \
+    --model "${BFCL_MODEL}" -y \
+    --output "${evidence}" --artifacts-dir "${raw}" || run_status=$?
   emit_artifacts "${tag}" "${evidence}" "${raw}" || true
   if [[ ${run_status} -ne 0 ]]; then
     printf 'note: %s exited %s; checking evidence completeness\n' \
@@ -257,21 +266,20 @@ run_swe() {
   if ! command -v mini-extra >/dev/null 2>&1; then
     preflight "results/preflight/${tag}.json" \
       --benchmark swe-bench-verified --slice swe-bench-verified-smoke-10 \
-      --runtime mini-swe-agent --model "${SWE_MODEL}" --ok false \
+      --runtime claude-code --model "${SWE_MODEL}" --ok false \
       --reason "mini-extra not on PATH"
     return 1
   fi
   if ! docker info >/dev/null 2>&1; then
     preflight "results/preflight/${tag}.json" \
       --benchmark swe-bench-verified --slice swe-bench-verified-smoke-10 \
-      --runtime mini-swe-agent --model "${SWE_MODEL}" --ok false \
+      --runtime claude-code --model "${SWE_MODEL}" --ok false \
       --reason "docker not available"
     return 1
   fi
   local run_status=0
-  uv run --no-sync bencheval run \
-    --benchmark swe-bench-verified --slice swe-bench-verified-smoke-10 \
-    --runtime mini-swe-agent --model "${SWE_MODEL}" \
+  uv run --no-sync bencheval run "swe-bench-verified/swe-bench-verified-smoke-10" \
+    --runtime claude-code --model "${SWE_MODEL}" -y \
     --output "${evidence}" --artifacts-dir "${raw}" || run_status=$?
   emit_artifacts "${tag}" "${evidence}" "${raw}" || true
   if [[ ${run_status} -ne 0 ]]; then

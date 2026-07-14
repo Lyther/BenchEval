@@ -27,8 +27,8 @@ def test_build_bfcl_run_command() -> None:
     plan = plan_control_plane(
         benchmark_id="bfcl-v4",
         slice_id="smoke-5",
-        runtime_id="native-api",
-        model_id="openai/gpt-test",
+        runtime_id=None,
+        model_id="gpt-test",
     )
     cmd = build_bfcl_run_command(
         plan=plan,
@@ -64,8 +64,8 @@ def test_execute_bfcl_smoke_writes_evidence(tmp_path: Path) -> None:
     plan = plan_control_plane(
         benchmark_id="bfcl-v4",
         slice_id="smoke-5",
-        runtime_id="native-api",
-        model_id="openai/gpt-test",
+        runtime_id=None,
+        model_id="gpt-test",
     )
     evidence_path = tmp_path / "evidence.jsonl"
 
@@ -88,15 +88,15 @@ def test_execute_bfcl_smoke_writes_evidence(tmp_path: Path) -> None:
     assert summary.instance_count == 5
     rows = read_evidence_jsonl(evidence_path)
     assert len(rows) == 5
-    assert rows[0].interpretation_label == "model_comparison"
+    assert rows[0].interpretation_label == "adapter_smoke"
 
 
 def test_adapter_failure_row_includes_benchmark_version(tmp_path: Path) -> None:
     plan = plan_control_plane(
         benchmark_id="bfcl-v4",
         slice_id="smoke-5",
-        runtime_id="native-api",
-        model_id="openai/gpt-test",
+        runtime_id=None,
+        model_id="gpt-test",
     )
     evidence_path = tmp_path / "evidence.jsonl"
 

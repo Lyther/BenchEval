@@ -31,7 +31,7 @@ make check-production-v1        # → ./scripts/check-production-v1.sh
 3. `shellcheck scripts/*.sh` and `bash -n scripts/*.sh` — shell hygiene.
 4. `uv lock --check` — lockfile in sync with `pyproject.toml`.
 5. **Executable-adapter count = 3.** `bencheval benchmark list --execution-support executable_adapter --format json` must report exactly `terminal-bench`, `swe-bench-verified`, `bfcl-v4`. Executability is config-declared in [`config/benchmarks.yaml`](../../config/benchmarks.yaml) (`executable: true` + `adapter_id`/`harness_kind`), not hard-coded in Python — so a drift here means a **config** entry was flipped executable without the checklist below. Adding a benchmark on an existing adapter family is a config-only change.
-6. **Negative-evidence gate:** `bencheval run --benchmark cybench --slice cybench-smoke-5 ...` must **fail** before subprocess dispatch, and stderr must contain `metadata_only` / `execution_support`. A metadata-only benchmark that accidentally *runs* is a regression.
+6. **Negative-evidence gate:** `bencheval run no-such-benchmark/smoke-5 ...` must **fail** before subprocess dispatch with a benchmark-not-found error. The product catalog admits only the three executable benchmarks; research candidates live in docs, not YAML.
 
 **Passing Tier 0 means:** the software is correct. It does **not** mean any benchmark result is real. Non-executable benchmarks stay `metadata_only` / `manifest_only`; reports produced without live deps must carry the `adapter_smoke` interpretation label, never `benchmark_native_claim` (architecture §13.1, §15 risk "Harbor unavailable / Docker absent").
 
@@ -45,11 +45,10 @@ Phase B lifts the Tier 0 live blockers. **Expected operator environment:** dev-b
 
 BenchEval does **not** implement a separate Docker orchestration plane. When Terminal-Bench (Harbor) or similar adapters need containers, that isolation is provided by the **official harness/runtime**, not by BenchEval core.
 
-Config-driven external-command runs (`bencheval run --config ...`) are part of
-the control plane and may produce valid raw run records/evidence for private or
-operator-managed benchmarks. They do **not** by themselves promote a cataloged
-benchmark to Production v1; promotion still requires the native-harness evidence
-and checklist below.
+External agents are admitted via `config/agents/*.yaml` and dispatched through
+`external_agent_adapter` using the selected profile's `command` contract.
+They do **not** by themselves promote a cataloged benchmark to Production v1;
+promotion still requires the native-harness evidence and checklist below.
 
 Outputs live under `results/` (gitignored): evidence, reports, bundles (`--redaction private` default), and `preflight/*.json` when a step is blocked — **negative evidence**, not a fake pass.
 
@@ -123,7 +122,7 @@ BenchEval 的"生产就绪"分三个层级，逐级递进，不可跳级：
 
 | 层级 | 名称 | 含义 | 退出标准 |
 |------|------|------|----------|
-| Tier 0 | Phase A 软件 | 控制平面本身在零依赖下正确、确定、安全 | `make check-production-v1` 全绿（pytest / ruff / shellcheck / uv lock / 可执行适配器=3 / cybench 必须在执行前失败） |
+| Tier 0 | Phase A 软件 | 控制平面本身在零依赖下正确、确定、安全 | `make check-production-v1` 全绿（pytest / ruff / shellcheck / uv lock / 可执行适配器=3 / unknown benchmark 必须在执行前失败） |
 | Tier 1 | Phase B 实证据 | 至少 1 个真实实例通过**基准原生 harness** 端到端跑通（凭据；sandbox 由 harness 按需提供） | 在 **dev-box** 上完成；Peer 锚点：Terminal-Bench `fix-git` 经 Harbor 产出完整 `EvidenceRecord` |
 | Tier 2 | Production v1 | 适配器被准入 + 实证据 + 全清单满足 | 上文 §A–§E 全部勾选，且无豁免 |
 

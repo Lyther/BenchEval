@@ -1,0 +1,10 @@
+schema_version: "0.1"
+provider:
+  id: bytellm
+  display_name: ByteLLM
+  kind: openai_compatible
+  base_url_env: BYTELLM_BASE_URL
+  default_base_url: http://127.0.0.1:4000
+  api_key_env: BYTELLM_API_KEY
+  notes: Local or dev-box-cpu ByteLLM gateway; secrets stay in .env.
+admission: admitted

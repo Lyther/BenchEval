@@ -56,22 +56,21 @@ _SHA256_PATTERN = r"^[0-9a-f]{64}$"
 # control-plane types are self-contained. Existing modules keep their own aliases
 # for backward compatibility; new code imports from here.
 
-# Execution profiles — must match task_contract.ExecutionProfile.
+# Execution profiles (E0–E4).
 ExecutionProfile = Literal["E0", "E1", "E2", "E3", "E4"]
 
-# Budget classes — must match task_contract.BudgetClass.
+# Budget classes (B0–B3).
 BudgetClass = Literal["B0", "B1", "B2", "B3"]
 
-# Existing CLI backend lane — kept ONLY for the selftest/Core compatibility path.
-# NOT runtime identity. New code uses --runtime.
+# Doctor / legacy backend lane — NOT runtime identity. Product path uses --runtime / --agent.
 ExecutionBackend = Literal["local", "inspect", "harbor"]
 
 # Runtime lifecycle shapes.
 RuntimeKind = Literal[
     "cli_agent",  # claude-code, codex-cli
-    "api_client",  # native-api, inspect-api
-    "harness_agent",  # harbor-agent, mini-swe-agent
-    "selftest_local",  # internal selftest lane
+    "api_client",
+    "harness_agent",
+    "selftest_local",
 ]
 RuntimeModelBinding = Literal["runtime_configured", "bencheval_injected", "not_applicable"]
 RuntimeLifecycle = Literal["external_process", "in_process", "containerized"]
@@ -218,7 +217,7 @@ class RuntimeVersioning(BaseModel):
 
 
 class RuntimeProfile(BaseModel):
-    """A runtime/scaffold profile (claude-code, codex-cli, inspect-api, ...)."""
+    """A runtime/scaffold profile (claude-code, codex-cli, ...)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -328,11 +327,10 @@ class RunPlanInstance(BaseModel):
 
 
 class RunPlan(BaseModel):
-    """Concrete execution plan from benchmark + slice + model + runtime.
+    """Concrete execution plan from benchmark + slice + model + optional scaffold.
 
-    This is a DTO: it carries the *plan*, not the evidence. No artifact paths,
-    no secrets, no raw model output. Safe to print to stdout or write to a run
-    config file. The executor turns a RunPlan into EvidenceRecord rows.
+    Scaffold is runtime XOR agent (or neither for model-only). No artifact paths,
+    secrets, or raw model output. The executor turns a RunPlan into EvidenceRecord rows.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -343,8 +341,10 @@ class RunPlan(BaseModel):
     slice_id: str = Field(pattern=_ID_PATTERN)
     adapter_id: str = Field(pattern=_ID_PATTERN)
     harness_kind: HarnessKindLiteral
-    runtime_id: str = Field(pattern=_ID_PATTERN)
-    runtime_kind: RuntimeKind
+    runtime_id: str | None = Field(default=None, pattern=_ID_PATTERN)
+    runtime_kind: RuntimeKind | None = None
+    agent_id: str | None = Field(default=None, pattern=_ID_PATTERN)
+    provider_id: str = Field(default="bytellm", pattern=_ID_PATTERN)
     model_id: str = Field(min_length=1)
     model_binding: RuntimeModelBinding
     instances: tuple[RunPlanInstance, ...] = Field(min_length=1)
@@ -363,6 +363,14 @@ class RunPlan(BaseModel):
         "diagnostic_only",
         "invalid",
     ]
+
+    def model_post_init(self, __context: object) -> None:
+        if self.runtime_id is not None and self.agent_id is not None:
+            raise ValueError("runtime_id and agent_id are mutually exclusive")
+        if self.runtime_id is not None and self.runtime_kind is None:
+            raise ValueError("runtime_kind is required when runtime_id is set")
+        if self.runtime_id is None and self.runtime_kind is not None:
+            raise ValueError("runtime_kind must be null when runtime_id is null")
 
 
 # ---------------------------------------------------------------------------

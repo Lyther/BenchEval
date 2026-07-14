@@ -121,7 +121,7 @@ def test_compare_auto_redirects_model_comparison_to_dedicated_api() -> None:
             benchmark_id="terminal-bench",
             slice_id="smoke-5",
             adapter_id="terminal-bench-harbor",
-            runtime_id="native-api",
+            runtime_id="claude-code",
             instance_id="tb-001",
         ),
     ]
@@ -140,7 +140,7 @@ def test_compare_auto_redirects_model_comparison_to_dedicated_api() -> None:
             benchmark_id="terminal-bench",
             slice_id="smoke-5",
             adapter_id="terminal-bench-harbor",
-            runtime_id="native-api",
+            runtime_id="claude-code",
             instance_id="tb-001",
         ),
     ]

@@ -22,7 +22,6 @@ CLAUDE_CODE_NPM_IMPORT_PATH = "bencheval.harbor_claude_code_npm:ClaudeCodeNpmIns
 
 _RUNTIME_TO_HARBOR_AGENT: dict[str, str] = {
     "codex-cli": "codex",
-    "harbor-agent": "openhands",
 }
 _PROXY_FORWARD_FLAG = "BENCHEVAL_HARBOR_FORWARD_PROXY"
 _PROXY_ENV_NAMES = (

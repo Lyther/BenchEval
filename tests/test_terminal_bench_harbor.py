@@ -29,7 +29,7 @@ def test_build_harbor_run_command_claude_code(monkeypatch: pytest.MonkeyPatch) -
         benchmark_id="terminal-bench",
         slice_id="smoke-5",
         runtime_id="claude-code",
-        model_id="runtime-default",
+        model_id="gpt-test",
     )
     cmd = build_harbor_run_command(
         plan=plan,
@@ -58,7 +58,7 @@ def test_build_harbor_run_command_claude_code_allowed_tools(
         benchmark_id="terminal-bench",
         slice_id="smoke-5",
         runtime_id="claude-code",
-        model_id="runtime-default",
+        model_id="gpt-test",
     )
 
     cmd = build_harbor_run_command(
@@ -85,7 +85,7 @@ def test_build_harbor_run_command_mounts_codex_provider_config(
         benchmark_id="terminal-bench",
         slice_id="smoke-5",
         runtime_id="codex-cli",
-        model_id="glm-5.1",
+        model_id="glm-5.2",
     )
 
     cmd = build_harbor_run_command(
@@ -128,7 +128,7 @@ def test_build_harbor_run_command_uses_bytellm_key_for_codex_config(
         benchmark_id="terminal-bench",
         slice_id="smoke-5",
         runtime_id="codex-cli",
-        model_id="gpt-5.3-codex-2026-02-24",
+        model_id="gpt-test",
     )
 
     cmd = build_harbor_run_command(
@@ -162,7 +162,7 @@ def test_build_harbor_run_command_forwards_proxy_with_env_file(
         benchmark_id="terminal-bench",
         slice_id="smoke-5",
         runtime_id="claude-code",
-        model_id="runtime-default",
+        model_id="gpt-test",
     )
 
     cmd = build_harbor_run_command(
@@ -201,7 +201,7 @@ def test_build_harbor_run_command_does_not_forward_bytellm_auth_with_env_file(
         benchmark_id="terminal-bench",
         slice_id="smoke-5",
         runtime_id="claude-code",
-        model_id="gpt-5.3-codex-2026-02-24",
+        model_id="gpt-test",
     )
 
     cmd = build_harbor_run_command(
@@ -231,7 +231,7 @@ def test_build_harbor_run_command_forwards_agent_no_proxy(
         benchmark_id="terminal-bench",
         slice_id="smoke-5",
         runtime_id="codex-cli",
-        model_id="glm-5.1",
+        model_id="glm-5.2",
     )
 
     cmd = build_harbor_run_command(
@@ -338,7 +338,7 @@ def test_execute_control_plane_smoke_writes_evidence(tmp_path: Path) -> None:
         benchmark_id="terminal-bench",
         slice_id="smoke-5",
         runtime_id="claude-code",
-        model_id="runtime-default",
+        model_id="gpt-test",
     )
     evidence_path = tmp_path / "evidence.jsonl"
 
@@ -396,7 +396,7 @@ def test_per_instance_timeout_derived_from_plan(tmp_path: Path) -> None:
         benchmark_id="terminal-bench",
         slice_id="smoke-5",
         runtime_id="codex-cli",
-        model_id="runtime-default",
+        model_id="gpt-test",
     )
     seen_timeout: list[int] = []
 
@@ -424,7 +424,7 @@ def test_run_terminal_bench_instance_timeout_raises_budget_exceeded(tmp_path: Pa
         benchmark_id="terminal-bench",
         slice_id="smoke-5",
         runtime_id="codex-cli",
-        model_id="runtime-default",
+        model_id="gpt-test",
     )
 
     def timeout_runner(command, *, cwd, timeout_sec: int):
@@ -449,7 +449,7 @@ def test_harbor_executor_adapter_failure_on_second_instance_writes_two_rows(
         benchmark_id="terminal-bench",
         slice_id="smoke-5",
         runtime_id="claude-code",
-        model_id="runtime-default",
+        model_id="gpt-test",
     )
     two_inst = plan.model_copy(update={"instances": plan.instances[:2]})
     evidence_path = tmp_path / "evidence.jsonl"
@@ -493,7 +493,7 @@ def test_run_instance_harness_failure(tmp_path: Path) -> None:
         benchmark_id="terminal-bench",
         slice_id="smoke-5",
         runtime_id="codex-cli",
-        model_id="runtime-default",
+        model_id="gpt-test",
     )
 
     def fail_runner(command, *, cwd, timeout_sec):

@@ -17,18 +17,21 @@ from bencheval.bfcl_native_adapter import (
     run_bfcl_instance,
 )
 from bencheval.doctor import require_doctor_ok, run_doctor
-from bencheval.domain import FailureLabel, InterpretationLabel, RunPlan
+from bencheval.domain import ExecutionProfile, FailureLabel, InterpretationLabel, RunPlan
 from bencheval.evidence import EvidenceRecord, JsonlEvidenceSink
 from bencheval.exceptions import AdapterFailureError, BenchEvalError
+from bencheval.external_agent_adapter import (
+    ExternalAgentProcessRunner,
+    execute_external_agent_run,
+)
+from bencheval.ids import new_run_id
 from bencheval.paths import repo_root as _repo_root
-from bencheval.runner import new_run_id
 from bencheval.swebench_adapter import (
     SWEBENCH_ADAPTER_ID,
     SwebenchInstanceOutcome,
     SwebenchProcessRunner,
     run_swebench_instance,
 )
-from bencheval.task_contract import ExecutionProfile
 from bencheval.terminal_bench_harbor import (
     TERMINAL_BENCH_ADAPTER_ID,
     HarborProcessRunner,
@@ -130,6 +133,8 @@ def _evidence_from_outcome(
         harness_version=outcome.adapter_metadata.get("harness_version"),
         runtime_id=plan.runtime_id,
         runtime_kind=plan.runtime_kind,
+        agent_id=plan.agent_id,
+        provider_id=plan.provider_id,
         instance_id=outcome.instance_id,
         native_score=outcome.native_score,
         normalized_score=outcome.partial_score,
@@ -194,6 +199,8 @@ def _record_instance_failure(
         harness_kind=plan.harness_kind,
         runtime_id=plan.runtime_id,
         runtime_kind=plan.runtime_kind,
+        agent_id=plan.agent_id,
+        provider_id=plan.provider_id,
         instance_id=instance_id,
         interpretation_label=_interpretation_label(plan),
         contamination_label=_contamination_label(plan),
@@ -247,6 +254,8 @@ def _evidence_from_swebench_outcome(
         harness_version=outcome.adapter_metadata.get("harness_version"),
         runtime_id=plan.runtime_id,
         runtime_kind=plan.runtime_kind,
+        agent_id=plan.agent_id,
+        provider_id=plan.provider_id,
         instance_id=outcome.instance_id,
         native_score=outcome.native_score,
         normalized_score=outcome.partial_score,
@@ -296,6 +305,8 @@ def _evidence_from_bfcl_outcome(
         harness_version=outcome.adapter_metadata.get("harness_version"),
         runtime_id=plan.runtime_id,
         runtime_kind=plan.runtime_kind,
+        agent_id=plan.agent_id,
+        provider_id=plan.provider_id,
         instance_id=outcome.instance_id,
         native_score=outcome.native_score,
         normalized_score=outcome.partial_score,
@@ -325,10 +336,28 @@ def execute_control_plane_run(
     harbor_process_runner: HarborProcessRunner | None = None,
     swebench_process_runner: SwebenchProcessRunner | None = None,
     bfcl_process_runner: BfclProcessRunner | None = None,
+    agent_process_runner: ExternalAgentProcessRunner | None = None,
+    momo_process_runner: ExternalAgentProcessRunner | None = None,
     run_id: str | None = None,
 ) -> ControlPlaneRunSummary:
     """Dispatch a ``RunPlan`` to the matching adapter and append evidence rows."""
     _require_executable_benchmark(plan)
+    if plan.agent_id is not None:
+        runner = agent_process_runner or momo_process_runner
+        summary = execute_external_agent_run(
+            plan=plan,
+            output_path=output_path,
+            artifacts_dir=artifacts_dir,
+            process_runner=runner,
+            run_id=run_id,
+        )
+        return ControlPlaneRunSummary(
+            run_id=summary.run_id,
+            instance_count=summary.instance_count,
+            passed_count=summary.passed_count,
+            failed_count=summary.failed_count,
+            output_path=summary.output_path,
+        )
     if plan.adapter_id == TERMINAL_BENCH_ADAPTER_ID:
         return _execute_terminal_bench_harbor(
             plan=plan,

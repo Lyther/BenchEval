@@ -1,6 +1,6 @@
 # Production v1 internal pilot
 
-**Scope:** 81 benchmarks cataloged; **3 executable** (`terminal-bench`, `swe-bench-verified`, `bfcl-v4`). Not a public leaderboard.
+**Scope:** Product catalog admits **3 executable** benchmarks (`terminal-bench`, `swe-bench-verified`, `bfcl-v4`). Research candidates live in docs only — not a public leaderboard.
 
 ## Phase A — ship gates (no live deps)
 
@@ -8,7 +8,7 @@
 make check-production-v1
 ```
 
-Includes: pytest, ruff, shellcheck, `uv lock --check`, executable catalog count = 3, cybench `run` must fail before execute.
+Includes: pytest, ruff, shellcheck, `uv lock --check`, executable catalog count = 3, unknown-benchmark `run` must fail before execute.
 
 ## Phase B — live matrix (credentials + Docker)
 

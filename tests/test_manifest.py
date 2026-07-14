@@ -13,12 +13,12 @@ MANIFESTS = REPO_ROOT / "config" / "manifests"
 PRICING = REPO_ROOT / "config" / "pricing" / "2026-04-15.yaml"
 
 
-def test_load_cybench_smoke_five() -> None:
-    d = load_manifest(MANIFESTS / "cybench-smoke-5.txt")
+def test_load_terminal_bench_smoke_five() -> None:
+    d = load_manifest(MANIFESTS / "terminal-bench-smoke-5.txt")
     assert len(d.task_ids) == 5
     assert len(d.content_sha256) == 64
     assert int(d.content_sha256, 16) >= 0
-    assert d.benchmark == "cybench-smoke-5"
+    assert d.benchmark == "terminal-bench-smoke-5"
 
 
 def test_load_swebench_smoke_ten() -> None:

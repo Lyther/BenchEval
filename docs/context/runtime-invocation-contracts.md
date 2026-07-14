@@ -45,13 +45,13 @@ Runtime profile: `mini-swe-agent` (`config/runtimes/mini-swe-agent.yaml`).
 |-------|----------|
 | Package | **`bfcl-eval`**; it installs the `bfcl` console script |
 | Version | `bfcl version` or package metadata |
-| Command shape | `bfcl generate --test-category <category> --result-dir <artifacts> --model <model>` for smoke generation; official scoring needs the matching `bfcl evaluate` step before `benchmark_native_claim` |
+| Command shape | **Current:** `bfcl generate --test-category <category> --result-dir <artifacts> --model <model>` only. Evidence interpretation is **`adapter_smoke`**. Official scoring requires a matching `bfcl evaluate` step before any `benchmark_native_claim` / model-comparison claim. |
 | Docker | Usually not required for smoke-5; full suite per Gorilla docs |
-| Env (names only) | Model API env vars for generation |
-| Outputs | BFCL result files → normalized evidence rows |
-| Parser | Official BFCL scoring → pass/partial |
+| Env (names only) | Provider credential env for generation (via model `provider_route`) |
+| Outputs | BFCL generate result files → normalized evidence rows (smoke) |
+| Parser | Generate-path smoke parser today; official BFCL evaluate score parsing **not wired** |
 
-Runtime profile: `native-api` (`config/runtimes/native-api.yaml`).
+Runtime: model-only (omit `--runtime` / `--agent`). Deleted profiles such as `native-api` are not admitted.
 
 ## External-command operator profiles
 

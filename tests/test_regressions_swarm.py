@@ -15,17 +15,9 @@ from bencheval.control_plane_executor import (
 )
 from bencheval.domain import RunPlan
 from bencheval.evidence import read_evidence_jsonl
-from bencheval.exceptions import BenchEvalError, TaskContractError
+from bencheval.exceptions import BenchEvalError
 from bencheval.path_safety import ensure_resolved_under_root
-from bencheval.task_registry import resolve_task_path
 from bencheval.terminal_bench_harbor import build_harbor_run_command
-
-
-def test_resolve_task_path_rejects_path_outside_tasks_root(tmp_path: Path) -> None:
-    outside = tmp_path / "outside-task.yaml"
-    outside.write_text("task: {}\n", encoding="utf-8")
-    with pytest.raises(TaskContractError, match="outside tasks root"):
-        resolve_task_path(str(outside))
 
 
 def test_run_execute_payload_interpretation_not_comparison_validity_key(
@@ -36,11 +28,11 @@ def test_run_execute_payload_interpretation_not_comparison_validity_key(
     plan = plan_control_plane(
         benchmark_id="bfcl-v4",
         slice_id="smoke-5",
-        runtime_id="native-api",
-        model_id="openai/gpt-test",
+        runtime_id=None,
+        model_id="gpt-test",
     )
-    assert plan.comparison_validity == "model_comparison"
-    assert control_plane_interpretation_label(plan) == "model_comparison"
+    assert plan.comparison_validity == "adapter_smoke"
+    assert control_plane_interpretation_label(plan) == "adapter_smoke"
 
     evidence_path = tmp_path / "evidence.jsonl"
 
@@ -61,13 +53,23 @@ def test_run_execute_payload_interpretation_not_comparison_validity_key(
         run_id="regression-run",
     )
     row = read_evidence_jsonl(evidence_path)[0]
-    assert row.interpretation_label == "model_comparison"
+    assert row.interpretation_label == "adapter_smoke"
 
 
-def test_cli_run_stdout_includes_interpretation_and_comparison_validity(
+def test_cli_run_dry_run_includes_comparison_validity(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from bencheval.cli import main
+
+    assert main(["run", "bfcl-v4/smoke-5", "--model", "gpt-test", "--dry-run"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["comparison_validity"] == "adapter_smoke"
+    assert payload["runtime_id"] is None
+
+
+def test_cli_run_execute_writes_interpretation_on_evidence(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     from bencheval.bfcl_native_adapter import BfclCliResult, run_bfcl_instance
     from bencheval.cli import main
@@ -110,23 +112,19 @@ def test_cli_run_stdout_includes_interpretation_and_comparison_validity(
         main(
             [
                 "run",
-                "--benchmark",
-                "bfcl-v4",
-                "--slice",
-                "smoke-5",
-                "--runtime",
-                "native-api",
+                "bfcl-v4/smoke-5",
                 "--model",
-                "openai/gpt-test",
+                "gpt-test",
                 "--output",
                 str(out),
+                "-y",
             ],
         )
         == 0
     )
-    payload = json.loads(capsys.readouterr().out.strip())
-    assert payload["comparison_validity"] == "model_comparison"
-    assert payload["interpretation_label"] == "model_comparison"
+    rows = read_evidence_jsonl(out)
+    assert rows
+    assert rows[0].interpretation_label == "adapter_smoke"
 
 
 def test_ensure_resolved_under_root_rejects_embedded_null(tmp_path: Path) -> None:
@@ -150,7 +148,7 @@ def test_build_harbor_run_command_rejects_unsafe_instance_id(tmp_path: Path) -> 
         benchmark_id="terminal-bench",
         slice_id="smoke-5",
         runtime_id="claude-code",
-        model_id="runtime-default",
+        model_id="gpt-test",
     )
     with pytest.raises(BenchEvalError, match="invalid instance_id"):
         build_harbor_run_command(
@@ -164,8 +162,8 @@ def test_build_bfcl_run_command_rejects_unsafe_instance_id() -> None:
     plan = plan_control_plane(
         benchmark_id="bfcl-v4",
         slice_id="smoke-5",
-        runtime_id="native-api",
-        model_id="openai/gpt-test",
+        runtime_id=None,
+        model_id="gpt-test",
     )
     with pytest.raises(BenchEvalError, match="invalid instance_id"):
         build_bfcl_run_command(
@@ -179,8 +177,8 @@ def test_execute_control_plane_run_unknown_adapter_raises(tmp_path: Path) -> Non
     plan = plan_control_plane(
         benchmark_id="bfcl-v4",
         slice_id="smoke-5",
-        runtime_id="native-api",
-        model_id="openai/gpt-test",
+        runtime_id=None,
+        model_id="gpt-test",
     )
     bad_plan = plan.model_copy(update={"adapter_id": "not-a-real-adapter"})
     with pytest.raises(BenchEvalError, match="no executor for adapter_id"):
@@ -198,11 +196,3 @@ def test_ensure_resolved_under_root_accepts_child_path(tmp_path: Path) -> None:
     child.touch()
     resolved = ensure_resolved_under_root(child, root, what="task")
     assert resolved == child.resolve()
-
-
-def test_cybench_catalog_not_manifest_available() -> None:
-    from bencheval.benchmark_registry import load_benchmark_catalog
-
-    catalog = load_benchmark_catalog()
-    entry = next(b for b in catalog.benchmarks if b.id == "cybench")
-    assert entry.adapter_status != "manifest_available"

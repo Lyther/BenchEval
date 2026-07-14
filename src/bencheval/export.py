@@ -6,8 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from bencheval.evidence import EvidenceRecord, read_evidence_jsonl
-from bencheval.exceptions import BenchEvalError, TaskContractError
-from bencheval.task_registry import load_task_contract, resolve_task_path
+from bencheval.exceptions import BenchEvalError
 
 
 def _is_control_plane_record(record: EvidenceRecord) -> bool:
@@ -17,11 +16,7 @@ def _is_control_plane_record(record: EvidenceRecord) -> bool:
 def _task_version_for_record(record: EvidenceRecord) -> str:
     if _is_control_plane_record(record):
         return record.benchmark_version or record.harness_version or "control-plane"
-    try:
-        contract = load_task_contract(resolve_task_path(record.task_id))
-    except TaskContractError:
-        return "unknown"
-    return contract.task.version
+    return "unknown"
 
 
 def _require_analytics_deps(*, require_duckdb: bool = False):

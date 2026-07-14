@@ -120,7 +120,7 @@ class TestRuntimeRegistry:
         cat = load_runtime_catalog()
         assert isinstance(cat, RuntimeCatalog)
         ids = {rp.runtime.id for rp in cat.runtimes}
-        assert {"claude-code", "codex-cli", "native-api"} <= ids
+        assert ids == {"claude-code", "codex-cli"}
 
     def test_load_single_profile(self) -> None:
         rp = load_runtime_profile(Path("config/runtimes/claude-code.yaml"))
@@ -155,8 +155,8 @@ class TestRuntimeRegistry:
 
     def test_catalog_by_id(self) -> None:
         cat = load_runtime_catalog()
-        rp = cat.by_id("native-api")
-        assert rp.runtime.kind == "api_client"
+        rp = cat.by_id("claude-code")
+        assert rp.runtime.kind == "cli_agent"
 
 
 # ---------------------------------------------------------------------------

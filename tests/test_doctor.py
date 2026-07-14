@@ -131,15 +131,31 @@ def test_pilot_doctor_version_probe_failure_still_pass(monkeypatch: pytest.Monke
     assert report.ok is True
 
 
-def test_pilot_doctor_model_credentials_pass(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_pilot_doctor_bytellm_route_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_pilot_host(monkeypatch)
-    monkeypatch.setenv("OPENAI_API_KEY", "super-secret-value")
-    report = run_pilot_doctor(model_id="openai/gpt-test")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.setenv("BYTELLM_API_KEY", "sk-test")
+    report = run_pilot_doctor(model_id="glm-5.2")
     cred = next(c for c in report.checks if c.name == "provider_credentials")
     assert cred.status == "pass"
-    assert "OPENAI_API_KEY" in cred.message
-    assert "super-secret-value" not in cred.message
+    assert "BYTELLM_API_KEY" in cred.message
+    assert "sk-test" not in cred.message
     assert report.ok is True
+
+
+def test_pilot_doctor_bytellm_route_missing_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_pilot_host(monkeypatch)
+    monkeypatch.delenv("BYTELLM_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    report = run_pilot_doctor(model_id="glm-5.2")
+    cred = next(c for c in report.checks if c.name == "provider_credentials")
+    assert cred.status == "fail"
+    assert "BYTELLM_API_KEY" in cred.message
+    assert report.ok is False
 
 
 def test_pilot_doctor_model_credentials_fail(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -151,12 +167,15 @@ def test_pilot_doctor_model_credentials_fail(monkeypatch: pytest.MonkeyPatch) ->
     assert report.ok is False
 
 
-def test_pilot_doctor_mockllm_needs_no_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_pilot_doctor_requires_provider_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_pilot_host(monkeypatch)
-    report = run_pilot_doctor(model_id="mockllm/model")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    report = run_pilot_doctor(model_id="openai/gpt-test")
     cred = next(c for c in report.checks if c.name == "provider_credentials")
-    assert cred.status == "pass"
-    assert report.ok is True
+    assert cred.status == "fail"
+    assert report.ok is False
 
 
 def test_cli_doctor_profile_pilot_json(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -164,9 +183,10 @@ def test_cli_doctor_profile_pilot_json(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch,
         versions={"harbor": "0.9.0", "bfcl": "2025.8.6.2", "mini-extra": "1.2.0"},
     )
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     buf = StringIO()
     with redirect_stdout(buf):
-        code = main(["doctor", "--profile", "pilot", "--model", "mockllm/model"])
+        code = main(["doctor", "--profile", "pilot", "--model", "openai/gpt-test"])
     assert code == 0
     payload = json.loads(buf.getvalue())
     assert payload["backend"] == PILOT_DOCTOR_BACKEND
@@ -177,9 +197,10 @@ def test_cli_doctor_profile_pilot_json(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_cli_doctor_pilot_requires_no_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_pilot_host(monkeypatch)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     buf = StringIO()
     with redirect_stdout(buf):
-        code = main(["doctor", "--profile", "pilot"])
+        code = main(["doctor", "--profile", "pilot", "--model", "openai/gpt-test"])
     assert code in (0, 1)
     payload = json.loads(buf.getvalue())
     assert payload["backend"] == PILOT_DOCTOR_BACKEND
@@ -188,7 +209,7 @@ def test_cli_doctor_pilot_requires_no_backend(monkeypatch: pytest.MonkeyPatch) -
 def test_cli_doctor_requires_backend_without_pilot() -> None:
     buf = StringIO()
     with redirect_stderr(buf):
-        code = main(["doctor", "--model", "mockllm/model"])
+        code = main(["doctor", "--model", "openai/gpt-test"])
     assert code == 2
     assert "--backend" in buf.getvalue()
 

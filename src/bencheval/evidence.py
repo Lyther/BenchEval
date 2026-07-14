@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, JsonValue, ValidationError, field_validat
 from bencheval.backends import LOCAL_BACKEND, ExecutionBackend
 from bencheval.domain import (
     ContaminationLabel,
+    ExecutionProfile,
     FailureLabel,
     InterpretationLabel,
     RewardHackRiskLabel,
@@ -20,7 +21,6 @@ from bencheval.domain import (
     VerifierIntegrityLabel,
 )
 from bencheval.exceptions import BenchEvalError, EvidenceValidationError
-from bencheval.task_contract import ExecutionProfile
 
 
 class EvidenceRecord(BaseModel):
@@ -66,6 +66,8 @@ class EvidenceRecord(BaseModel):
     runtime_version: str | None = None
     runtime_kind: RuntimeKind | None = None
     runtime_config_hash: str | None = None
+    agent_id: str | None = None
+    provider_id: str | None = None
     # Attempt operational metadata.
     instance_id: str | None = None
     steps: int | None = Field(default=None, ge=0)

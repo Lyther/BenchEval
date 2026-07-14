@@ -62,9 +62,10 @@ def build_swebench_run_command(
 ) -> tuple[str, ...]:
     """Command shape for ``mini-extra swebench`` (mini-SWE-agent SWE-bench helper)."""
     validate_control_plane_instance_id(instance_id)
-    if plan.runtime_id != "mini-swe-agent":
+    admitted = ("claude-code", "codex-cli")
+    if plan.runtime_id not in admitted:
         raise BenchEvalError(
-            f"swebench adapter expects runtime_id='mini-swe-agent', got {plan.runtime_id!r}",
+            f"swebench adapter expects runtime_id in {admitted}, got {plan.runtime_id!r}",
         )
     cmd: list[str] = [
         "mini-extra",

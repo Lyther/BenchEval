@@ -5,7 +5,7 @@ runtime:
   display_name: "Claude Code"
   lifecycle: "external_process"
   supported_platforms: ["macos", "linux"]
-  supported_harnesses: ["harbor", "local-harness", "selftest-local"]
+  supported_harnesses: ["harbor", "swebench-native"]
   model_binding: "runtime_configured"
 launch:
   command_template:
@@ -33,4 +33,4 @@ safety:
 versioning:
   version_command: ["claude", "--version"]
   config_hash_inputs: [".claude", "CLAUDE.md"]
-admission: "draft"
+admission: "admitted"

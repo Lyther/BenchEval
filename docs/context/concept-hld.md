@@ -2,9 +2,11 @@
 
 **Document type:** Concept-Zero / product and architecture HLD
 **Project:** BenchEval vNext
-**Status:** Replacement proposal after codebase observation and external benchmark research
+**Status:** Historical design ledger — **superseded for the live CLI/product surface**
 **Date:** 2026-06-17 (revised 2026-06-17 — benchmark research + factual corrections, see §16 Changelog)
 **Primary decision:** Reframe BenchEval from a private Core benchmark project into a public benchmark × model × runtime evaluation control plane.
+
+> **Current product contract (2026-07):** Prefer [`docs/architecture.md`](../architecture.md), [`docs/api/internal-contracts.md`](../api/internal-contracts.md), and the root [`README.md`](../../README.md). Live spine is `benchmark → (runtime | agent)? → model via provider → evidence`. Admitted executables: `terminal-bench`, `swe-bench-verified`, `bfcl-v4`. CLI is `bencheval run <benchmark>/<slice> --model <id> [--runtime|--agent] [--provider] [--dry-run|-y]`. Commands documented below such as `plan`, `run --config`, `run --benchmark/--slice`, `task`, and `replay` are **historical** and must not be used as operator instructions.
 
 ---
 
@@ -146,7 +148,7 @@ Preserve native benchmark metrics. Normalize only cross-cutting operational meta
 | Goal | Requirement |
 |---|---|
 | Public benchmark execution | Users can select a benchmark and slice, then run it without manual environment construction. |
-| Runtime comparison | Users can compare `claude-code`, `codex-cli`, `inspect-api`, `harbor-agent`, and future runtimes on the same slice. |
+| Runtime comparison | Users can compare admitted runtimes (`claude-code`, `codex-cli`) on the same slice; agents (`momo`) are a separate axis. |
 | Model comparison | Users can compare model IDs under the same runtime and benchmark slice. |
 | Cost control | Smoke/lite/full/custom manifests are first-class. Full runs are not the default. |
 | Adapter reuse | Use native harnesses where possible: Harbor for terminal tasks, benchmark-specific runners for SWE/code/tool benchmarks, Inspect wrappers where useful. |
@@ -218,7 +220,7 @@ Core suite only as internal self-test/private regression
 
 ## 5. Benchmark Strategy
 
-BenchEval should classify benchmarks by execution role, not by marketing importance. The machine-readable catalog of recognized public benchmarks lives in `config/benchmarks.yaml` and is exposed via `bencheval benchmark list|show`; it currently holds 81 entries and is the validation target for adapter planning. This document lists representative examples; the YAML registry is authoritative for count, aliases, safety lane, and adapter status.
+BenchEval should classify benchmarks by execution role, not by marketing importance. **Live product YAML** (`config/benchmarks.yaml`) now admits **3** executables only; the broader research catalog is docs-only (`docs/context/external-benchmark-catalog.md`). Historical drafts of this HLD assumed a large metadata catalog (~81 ids) for adapter planning — that count is no longer the product registry.
 
 ### 5.1 Benchmark Classes
 
@@ -328,7 +330,7 @@ versioning:
     - "CLAUDE.md"
 ```
 
-Equivalent profiles are required for `codex-cli`, `inspect-api`, `harbor-agent`, `mini-swe-agent`, and future runtimes.
+Equivalent profiles are required for admitted peers (`codex-cli` today) and future admitted runtimes; draft/catalog-only runtime ids are out of the live product YAML.
 
 ### 6.3 Runtime Failure Classes
 
@@ -418,7 +420,24 @@ That creates maintenance debt and obscures native benchmark semantics.
 
 ## 8. CLI Surface
 
-### 8.1 Discovery
+> **Live operator CLI (2026-07):** use README. Positional `run <benchmark>/<slice>`, `list`, `catalog …`, `doctor`, evidence commands. No separate `plan` / `task` / `replay` / `--config`.
+
+```text
+bencheval list --format json
+bencheval catalog runtime list
+bencheval catalog agent list
+bencheval catalog provider list
+bencheval run bfcl-v4/smoke-5 --model <model-id> --dry-run
+bencheval run terminal-bench/smoke-5 --runtime claude-code --model <model-id> --dry-run
+bencheval run terminal-bench/smoke-5 --agent momo --model <model-id> -y
+bencheval doctor --runtime claude-code --model <model-id>
+```
+
+### 8.H Historical command blocks (do not execute)
+
+The following subsections preserve the original v0.3 CLI sketches. They name deleted flags (`--benchmark/--slice`, `--backend`, `mini-swe-agent`, `native-api`, `compare --latest`). **Do not copy them.**
+
+#### 8.H.1 Discovery (historical)
 
 ```text
 bencheval benchmark list
@@ -431,7 +450,7 @@ bencheval model show <model_id>
 bencheval adapter list
 ```
 
-### 8.2 Preflight
+#### 8.H.2 Preflight (historical)
 
 ```text
 bencheval doctor
@@ -456,7 +475,7 @@ Dry-run output must include:
 - Known benchmark caveats.
 - Whether the run is valid for model comparison, runtime comparison, or adapter smoke only.
 
-### 8.3 Execution
+#### 8.H.3 Execution (historical)
 
 ```text
 bencheval run \
@@ -480,7 +499,7 @@ bencheval run \
   --model openai/gpt-5.3
 ```
 
-### 8.4 Comparison
+#### 8.H.4 Comparison (historical)
 
 ```text
 bencheval compare <run_a> <run_b>

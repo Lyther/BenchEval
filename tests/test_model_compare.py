@@ -18,7 +18,7 @@ def _cp_record(
     *,
     instance_id: str,
     model_id: str,
-    runtime_id: str = "native-api",
+    runtime_id: str = "claude-code",
     primary_pass: bool = True,
 ) -> EvidenceRecord:
     return EvidenceRecord(
@@ -62,7 +62,7 @@ def test_model_comparison_valid_and_compare() -> None:
     assert verdict.interpretation_label == "model_comparison"
     report = compare_model_evidence(baseline, current)
     assert report.pass_rate_delta > 0
-    assert report.runtime_id == "native-api"
+    assert report.runtime_id == "claude-code"
 
 
 def test_model_compare_pass_rates_use_shared_instances_only() -> None:

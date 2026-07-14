@@ -17,7 +17,7 @@ def test_public_bundle_redacts_secrets_paths_and_metadata(tmp_path: Path) -> Non
         update={
             "artifact_paths": ["/secret/abs/path/to/artifact.log"],
             "verifier_log_path": "/var/tmp/verifier.log",
-            "adapter_metadata": {"command": "run --key sk-bytellm-demo-2026"},
+            "adapter_metadata": {"command": "run --key sk-test-redacted-placeholder"},
             "native_score": {"detail": "sk-leak-in-score"},
         },
     )
@@ -44,7 +44,7 @@ def test_public_bundle_redacts_secrets_paths_and_metadata(tmp_path: Path) -> Non
             else "",
         ],
     )
-    assert "sk-bytellm-demo-2026" not in blob
+    assert "sk-test-redacted-placeholder" not in blob
     assert "sk-leak-in-score" not in blob
     assert "/secret/abs/path" not in blob
     assert "/var/tmp/verifier" not in blob

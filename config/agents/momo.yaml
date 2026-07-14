@@ -1,0 +1,17 @@
+schema_version: "0.1"
+agent:
+  id: momo
+  display_name: MOMO
+  kind: external_cli
+  home_env: MOMO_HOME
+  default_relative_home: ../MOMO
+  command: [momo]
+  version_command: [momo, --version]
+  supported_harnesses:
+    - harbor
+    - swebench-native
+  notes: >
+    External MOMO CLI. Contract: `<command> run --benchmark <id> --instance <id>
+    --model <id> --provider <id> --output-dir <path>`. Exit 0 = pass.
+    DeepAudit stays inside MOMO. Not valid for model-only harnesses (e.g. bfcl-native).
+admission: admitted

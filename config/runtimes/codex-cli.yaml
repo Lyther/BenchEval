@@ -5,7 +5,7 @@ runtime:
   display_name: "Codex CLI"
   lifecycle: "external_process"
   supported_platforms: ["macos", "linux"]
-  supported_harnesses: ["harbor", "local-harness", "selftest-local"]
+  supported_harnesses: ["harbor", "swebench-native"]
   model_binding: "runtime_configured"
 launch:
   command_template: ["codex", "exec", "--json"]
@@ -32,4 +32,4 @@ safety:
 versioning:
   version_command: ["codex", "--version"]
   config_hash_inputs: [".codex"]
-admission: "draft"
+admission: "admitted"

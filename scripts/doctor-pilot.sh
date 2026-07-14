@@ -20,7 +20,7 @@ EOF
   exit 1
 }
 
-model="${BENCHEVAL_PILOT_MODEL:-openai/gpt-test}"
+model="${BENCHEVAL_PILOT_MODEL:-gpt-test}"
 verify_auth=1
 
 while [[ $# -gt 0 ]]; do

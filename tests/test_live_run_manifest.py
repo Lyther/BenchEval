@@ -248,6 +248,8 @@ def test_cli_register_rejects_secret(tmp_path: Path) -> None:
             "run-secret",
             "--model",
             "claude-3-5-haiku",
+            "--status",
+            "registered",
             "--notes",
             "token=sk-abcdef123456",
             "--host",

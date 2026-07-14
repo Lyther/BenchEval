@@ -22,8 +22,8 @@ def test_build_swebench_run_command() -> None:
     plan = plan_control_plane(
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
-        runtime_id="mini-swe-agent",
-        model_id="openai/gpt-test",
+        runtime_id="claude-code",
+        model_id="gpt-test",
     )
     cmd = build_swebench_run_command(
         plan=plan,
@@ -32,7 +32,7 @@ def test_build_swebench_run_command() -> None:
     )
     assert cmd[:2] == ("mini-extra", "swebench")
     assert "django__django-11099" in cmd
-    assert "--model" in cmd and "openai/gpt-test" in cmd
+    assert plan.model_binding == "runtime_configured"
 
 
 def test_parse_verifier_and_diff(tmp_path: Path) -> None:
@@ -43,7 +43,7 @@ def test_parse_verifier_and_diff(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     (art / "workspace.diff").write_text("diff --git a/foo b/foo\n", encoding="utf-8")
-    cli = SwebenchCliResult(0, "ok", "", 1.0, ("mini-swe-agent", "run"))
+    cli = SwebenchCliResult(0, "ok", "", 1.0, ("claude-code", "run"))
     out = parse_swebench_instance_outcome(
         instance_id="django__django-11099",
         cli=cli,
@@ -61,8 +61,8 @@ def test_execute_swebench_smoke_writes_evidence(tmp_path: Path) -> None:
     plan = plan_control_plane(
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
-        runtime_id="mini-swe-agent",
-        model_id="openai/gpt-test",
+        runtime_id="claude-code",
+        model_id="gpt-test",
     )
     assert plan.adapter_id == SWEBENCH_ADAPTER_ID
     evidence_path = tmp_path / "evidence.jsonl"
@@ -101,8 +101,8 @@ def test_run_instance_single(tmp_path: Path) -> None:
     plan = plan_control_plane(
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
-        runtime_id="mini-swe-agent",
-        model_id="openai/gpt-test",
+        runtime_id="claude-code",
+        model_id="gpt-test",
     )
 
     def fake_runner(command, *, cwd, timeout_sec):
@@ -125,7 +125,7 @@ def test_run_instance_single(tmp_path: Path) -> None:
 def test_parse_missing_verifier_on_success_rc_fails(tmp_path: Path) -> None:
     art = tmp_path / "empty"
     art.mkdir()
-    cli = SwebenchCliResult(0, "", "", 0.1, ("mini-swe-agent",))
+    cli = SwebenchCliResult(0, "", "", 0.1, ("claude-code",))
     out = parse_swebench_instance_outcome(
         instance_id="x",
         cli=cli,
@@ -141,8 +141,8 @@ def test_swebench_adapter_failure_record_labels(tmp_path: Path) -> None:
     plan = plan_control_plane(
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
-        runtime_id="mini-swe-agent",
-        model_id="openai/gpt-test",
+        runtime_id="claude-code",
+        model_id="gpt-test",
     )
     evidence_path = tmp_path / "evidence.jsonl"
 

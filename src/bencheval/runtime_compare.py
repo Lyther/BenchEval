@@ -6,13 +6,13 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from bencheval.compare import _newcombe_diff, _wilson
 from bencheval.evidence import (
     EvidenceRecord,
     count_ineligible_pass_at_k,
     eligible_for_pass_at_k,
 )
 from bencheval.exceptions import ComparisonError
+from bencheval.stats import newcombe_diff, wilson
 
 
 def _instance_key(record: EvidenceRecord) -> str:
@@ -171,7 +171,7 @@ def _pass_rate_ci(records: list[EvidenceRecord]) -> RuntimePassRateCI:
     k = sum(1 for r in eligible if r.primary_pass)
     if n == 0:
         return RuntimePassRateCI(0.0, 0.0, 0.0, 0, 0)
-    p, lo, hi = _wilson(k, n)
+    p, lo, hi = wilson(k, n)
     return RuntimePassRateCI(
         pass_rate=float(p),
         ci_low=float(lo),
@@ -378,7 +378,7 @@ def compare_runtime_evidence(
 
     b_ci, c_ci = _pass_rate_ci_on_shared_instances(baseline, current)
     delta = c_ci.pass_rate - b_ci.pass_rate
-    delta_lo, delta_hi = _newcombe_diff(
+    delta_lo, delta_hi = newcombe_diff(
         b_ci.pass_rate,
         b_ci.ci_low,
         b_ci.ci_high,

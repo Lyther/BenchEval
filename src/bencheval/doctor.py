@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from typing import Literal
 
 from bencheval.backends import HARBOR_BACKEND, INSPECT_BACKEND, ExecutionBackend
+from bencheval.domain import ExecutionProfile
 from bencheval.exceptions import BenchEvalError
-from bencheval.task_contract import ExecutionProfile
 
 CheckStatus = Literal["pass", "fail", "skip"]
 
@@ -64,16 +64,40 @@ def docker_available() -> bool:
 
 
 def provider_env_vars_for_model(model_id: str) -> tuple[str, ...]:
-    lowered = model_id.lower()
-    if lowered.startswith(("openai/", "gpt-")):
-        return ("OPENAI_API_KEY",)
-    if lowered.startswith(("anthropic/", "claude")):
-        return ("ANTHROPIC_API_KEY",)
-    if lowered.startswith(("google/", "gemini")):
-        return ("GOOGLE_API_KEY",)
-    if lowered.startswith("mockllm/"):
+    """Resolve credential env names via model registry → provider registry.
+
+    Returns an empty tuple only when the model is registered and has no
+    ``provider_route``. Unknown models fall back to legacy name-prefix heuristics.
+    A registered route that points at a missing provider profile raises
+    :class:`~bencheval.exceptions.BenchEvalError` so doctor cannot silently pass.
+    """
+    from bencheval.model_registry import load_model_registry
+    from bencheval.provider_registry import load_provider_catalog
+
+    key = model_id.strip()
+    if not key:
         return ()
-    return ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY")
+    try:
+        model = load_model_registry().by_id(key)
+    except KeyError:
+        lowered = key.lower()
+        if lowered.startswith(("openai/", "gpt-")):
+            return ("OPENAI_API_KEY",)
+        if lowered.startswith(("anthropic/", "claude")):
+            return ("ANTHROPIC_API_KEY",)
+        if lowered.startswith(("google/", "gemini")):
+            return ("GOOGLE_API_KEY",)
+        return ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY")
+    route = model.provider_route
+    if route is None:
+        return ()
+    try:
+        provider = load_provider_catalog().by_id(route)
+    except KeyError as e:
+        raise BenchEvalError(
+            f"model {key!r} routes to unknown provider {route!r}",
+        ) from e
+    return (provider.provider.api_key_env,)
 
 
 def env_var_present(name: str) -> bool:
@@ -199,7 +223,10 @@ def _bfcl_check() -> DoctorCheck:
 
 
 def _provider_credentials_check(model_id: str) -> DoctorCheck:
-    env_names = provider_env_vars_for_model(model_id)
+    try:
+        env_names = provider_env_vars_for_model(model_id)
+    except BenchEvalError as e:
+        return DoctorCheck("provider_credentials", "fail", str(e))
     if not env_names:
         return DoctorCheck(
             "provider_credentials",

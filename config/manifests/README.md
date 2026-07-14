@@ -18,55 +18,28 @@
 4. SHA-256 over UTF-8 bytes → lowercase hex (64 chars).
 
 The hash is **independent of comment or blank-line drift** and **independent of line order** in the file.
-
-Execution order is different from hash canonicalization: `bencheval run
---manifest` preserves file order so operators can control cheap-first, shard, or
-resume order without changing the manifest hash.
+Slice YAML under `config/slices/` points at these manifests via `instances_source`.
 
 ## Committed files
 
 | File | Purpose |
 | --- | --- |
-| `cybench-smoke-5.txt` | Offline smoke (5 ids); not the canonical CyBench-39 set. |
-| `swebench-verified-smoke-10.txt` | Offline smoke (10 ids); not the full Verified-500 set. |
+| `terminal-bench-smoke-5.txt` | Terminal-Bench Harbor smoke (5 task ids). |
+| `swebench-verified-smoke-10.txt` | SWE-bench Verified smoke (10 ids); not the full Verified-500 set. |
+| `bfcl-v4-smoke-5.txt` | BFCL v4 smoke (5 category ids). Generation-smoke only until `bfcl evaluate` is wired. |
 
-These manifests are accepted by `bencheval run --manifest` as task-id lists.
-Native BenchEval task ids can execute today through `local`, `inspect`, or
-`harbor` when the selected backend supports them. Public benchmark ids such as
-SWE-bench or CyBench are currently provenance/control-plane inputs: they can be
-hashed, dry-run counted, and used by future Calibration/Stretch adapters, but
-they are not executable until an adapter maps each id to a concrete task
-workspace, candidate format, verifier, and cleanup lifecycle.
+These manifests back admitted product slices under `config/slices/`. Research
+benchmark candidates live in `docs/context/external-benchmark-catalog.md`, not
+in the product YAML catalog.
 
-## Single lifecycle mode
-
-Use this shape for large external suites once the selected backend adapter
-supports the manifest ids:
+## Product run path
 
 ```bash
-uv run bencheval run \
-  --manifest config/manifests/swebench-verified-smoke-10.txt \
-  --mode single \
-  --cleanup always \
-  --model openai/gpt-test \
-  --backend inspect \
-  --output results/evidence/swebench-smoke-10.jsonl \
-  --artifacts-dir results/raw/swebench-smoke-10
+uv run bencheval run terminal-bench/smoke-5 --runtime claude-code --model gpt-test --dry-run
+uv run bencheval run bfcl-v4/smoke-5 --model gpt-test --dry-run
+uv run bencheval run swe-bench-verified/swe-bench-verified-smoke-10 \
+  --runtime claude-code --model gpt-test --dry-run
 ```
 
-`--mode single` executes one id, appends one `EvidenceRecord`, removes
-BenchEval-owned transient directories according to `--cleanup`, and then moves
-to the next id. It preserves evidence JSONL, verifier logs, and candidate
-artifacts. Docker image pruning is intentionally not part of the generic
-cleanup policy; external adapters must own image names/cache levels before
-adding Docker cleanup.
-
-## Deferred (credentialed spike)
-
-Generate and commit after `inspect-evals` / Harbor access:
-
-- `cybench-39.txt` — exact task list from inspect-evals CyBench package.
-- `swebench-verified-500.txt` — full Verified manifest.
-- `swe-bench-pro-public-r2.txt` — Harbor `scale-ai/swe-bench-pro@2` id list.
-
-Document each file’s provenance and recompute `ManifestDigest` hashes in summary rows.
+There is no `run --manifest` / `--mode single` / `--backend` product CLI.
+Instance order comes from the slice's manifest file order.

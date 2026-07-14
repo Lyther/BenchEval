@@ -1,4 +1,8 @@
-"""BFCL v4 model-only adapter (control-plane P5.1, bfcl-native harness)."""
+"""BFCL v4 model-only adapter (generation smoke via ``bfcl generate``).
+
+Official native scoring requires ``bfcl evaluate`` and is not wired yet.
+Evidence interpretation for the admitted smoke slice is ``adapter_smoke``.
+"""
 
 from __future__ import annotations
 
@@ -61,9 +65,13 @@ def build_bfcl_run_command(
     artifacts_dir: Path,
 ) -> tuple[str, ...]:
     validate_control_plane_instance_id(instance_id)
-    if plan.runtime_id not in ("native-api", "inspect-api"):
+    if plan.runtime_id is not None:
         raise BenchEvalError(
-            f"bfcl adapter expects runtime native-api or inspect-api, got {plan.runtime_id!r}",
+            f"bfcl adapter expects model-only (runtime_id=None), got {plan.runtime_id!r}",
+        )
+    if plan.agent_id is not None:
+        raise BenchEvalError(
+            f"bfcl adapter expects model-only (agent_id=None), got {plan.agent_id!r}",
         )
     cmd: list[str] = [
         BFCL_COMMAND,

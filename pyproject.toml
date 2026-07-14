@@ -21,8 +21,9 @@ bencheval = "bencheval.cli:main"
 [tool.hatch.build.targets.wheel.force-include]
 "config/benchmarks.yaml" = "bencheval/_bundled/config/benchmarks.yaml"
 "config/models.yaml" = "bencheval/_bundled/config/models.yaml"
-"config/suites.yaml" = "bencheval/_bundled/config/suites.yaml"
 "config/runtimes" = "bencheval/_bundled/config/runtimes"
+"config/providers" = "bencheval/_bundled/config/providers"
+"config/agents" = "bencheval/_bundled/config/agents"
 "config/slices" = "bencheval/_bundled/config/slices"
 "config/manifests" = "bencheval/_bundled/config/manifests"
 

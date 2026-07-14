@@ -13,6 +13,7 @@ _CONFIG_MARKER = Path("config") / "benchmarks.yaml"
 # Minimum tree for v0.3 control-plane CLI (catalog, planner, dry-run).
 _BUNDLE_REQUIRED_DIRS: tuple[Path, ...] = (
     Path("config") / "runtimes",
+    Path("config") / "providers",
     Path("config") / "slices",
     Path("config") / "manifests",
 )
@@ -38,6 +39,10 @@ def validate_config_bundle(root: Path) -> None:
         if rel == Path("config") / "runtimes" and not yaml_files:
             raise BenchEvalError(
                 f"config bundle {rel.as_posix()} must contain at least one runtime profile",
+            )
+        if rel == Path("config") / "providers" and not yaml_files:
+            raise BenchEvalError(
+                f"config bundle {rel.as_posix()} must contain at least one provider profile",
             )
         if rel == Path("config") / "slices" and not yaml_files:
             raise BenchEvalError(

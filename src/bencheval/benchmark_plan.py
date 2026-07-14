@@ -1,6 +1,7 @@
-"""Four-axis control-plane planner (benchmark × slice × runtime × model).
+"""Control-plane planner: benchmark × slice × (runtime XOR agent)? × model × provider.
 
 Implements :class:`~bencheval.contracts.RunPlanner`. No execution, no artifact paths.
+Omit both runtime and agent for model-only harnesses (e.g. bfcl-native).
 """
 
 from __future__ import annotations
@@ -12,15 +13,18 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal, cast, get_args
 
+from bencheval.agent_registry import load_agent_catalog
 from bencheval.benchmark_registry import (
     BenchmarkEntry,
     execution_support_label,
     load_benchmark_catalog,
 )
-from bencheval.domain import HarnessKindLiteral, RunPlan, RunPlanInstance, SlicePurpose
+from bencheval.budget_defaults import BUDGET_CLASS_DEFAULTS
+from bencheval.domain import BudgetClass, HarnessKindLiteral, RunPlan, RunPlanInstance, SlicePurpose
 from bencheval.exceptions import BenchEvalError
 from bencheval.lifecycle import CleanupPolicy
-from bencheval.planner import BUDGET_CLASS_DEFAULTS
+from bencheval.model_registry import load_model_registry
+from bencheval.provider_registry import DEFAULT_PROVIDER_ID, load_provider_catalog
 from bencheval.runtime_registry import load_runtime_catalog
 from bencheval.slice_manifest import (
     default_slices_dir,
@@ -29,7 +33,6 @@ from bencheval.slice_manifest import (
     resolve_instances_source_path,
     slice_instance_ids,
 )
-from bencheval.task_contract import BudgetClass
 
 ComparisonValidity = Literal[
     "model_comparison",
@@ -40,6 +43,7 @@ ComparisonValidity = Literal[
 ]
 
 _VALID_HARNESS_KINDS = frozenset(get_args(HarnessKindLiteral))
+_MODEL_ONLY_HARNESSES = frozenset({"bfcl-native"})
 
 _BACKEND_TO_HARNESS: dict[str, str] = {
     "harbor": "harbor",
@@ -156,31 +160,122 @@ def _budget_class_for_slice(max_cost: Decimal, max_wall_per_instance: int) -> Bu
     return "B3"
 
 
+def resolve_runtime_id(*, benchmark_id: str, runtime_id: str | None) -> str | None:
+    """Resolve runtime for a benchmark, or None for model-only harnesses.
+
+    Explicit ``runtime_id`` wins. Model-only harnesses (bfcl-native) return None when
+    omitted. Otherwise require an explicit admitted runtime when multiple are compatible.
+    """
+    catalog = load_benchmark_catalog()
+    benchmark = catalog.by_id_or_alias(benchmark_id)
+    harness = _harness_for_benchmark(benchmark)
+    if runtime_id is not None and runtime_id.strip():
+        return runtime_id.strip()
+    if harness in _MODEL_ONLY_HARNESSES:
+        return None
+    runtimes = load_runtime_catalog()
+    compatible = tuple(
+        sorted(
+            rp.runtime.id for rp in runtimes.runtimes if harness in rp.runtime.supported_harnesses
+        ),
+    )
+    if len(compatible) == 1:
+        return compatible[0]
+    if not compatible:
+        raise BenchEvalError(
+            f"no runtime supports harness {harness!r} for benchmark {benchmark.id!r}",
+        )
+    joined = ", ".join(compatible)
+    raise BenchEvalError(
+        f"--runtime is required for harness {harness!r} (compatible: {joined})",
+    )
+
+
 def plan_control_plane(
     *,
     benchmark_id: str,
     slice_id: str,
-    runtime_id: str,
+    runtime_id: str | None,
     model_id: str,
+    agent_id: str | None = None,
+    provider_id: str | None = None,
     cleanup_policy: CleanupPolicy = "always",
 ) -> RunPlan:
-    """Build a frozen :class:`~bencheval.domain.RunPlan` for ``run --dry-run``."""
+    """Build a frozen :class:`~bencheval.domain.RunPlan` for ``run`` phase 1."""
+    runtime_arg = runtime_id.strip() if runtime_id and runtime_id.strip() else None
+    agent_arg = agent_id.strip() if agent_id and agent_id.strip() else None
+    if runtime_arg is not None and agent_arg is not None:
+        raise BenchEvalError("--runtime and --agent are mutually exclusive")
+
     catalog = load_benchmark_catalog()
     benchmark = catalog.by_id_or_alias(benchmark_id)
-    runtimes = load_runtime_catalog()
-    runtime = runtimes.by_id(runtime_id)
+    harness_kind = _harness_for_benchmark(benchmark)
+
+    model_key = model_id.strip()
+    if not model_key:
+        raise BenchEvalError("--model is required")
+    try:
+        model_entry = load_model_registry().by_id(model_key)
+    except KeyError as e:
+        raise BenchEvalError(f"unknown model {model_key!r}") from e
+
+    resolved_provider = (provider_id or DEFAULT_PROVIDER_ID).strip() or DEFAULT_PROVIDER_ID
+    try:
+        load_provider_catalog().by_id(resolved_provider)
+    except KeyError as e:
+        raise BenchEvalError(f"unknown provider {resolved_provider!r}") from e
+    if model_entry.provider_route is not None and model_entry.provider_route != resolved_provider:
+        raise BenchEvalError(
+            f"model {model_key!r} is routed to provider {model_entry.provider_route!r}, "
+            f"not {resolved_provider!r}",
+        )
+
+    resolved_runtime_id: str | None = None
+    resolved_runtime_kind = None
+    model_binding: Literal["runtime_configured", "bencheval_injected", "not_applicable"]
+    network: Literal["deny", "allow", "benchmark_required"] = "deny"
+
+    if agent_arg is not None:
+        try:
+            agent_profile = load_agent_catalog().by_id(agent_arg)
+        except KeyError as e:
+            raise BenchEvalError(f"unknown agent {agent_arg!r}") from e
+        if harness_kind not in agent_profile.agent.supported_harnesses:
+            raise BenchEvalError(
+                f"agent {agent_arg!r} does not support harness {harness_kind!r}; "
+                f"supported: {list(agent_profile.agent.supported_harnesses)}",
+            )
+        model_binding = "bencheval_injected"
+    else:
+        resolved_runtime_id = resolve_runtime_id(
+            benchmark_id=benchmark.id,
+            runtime_id=runtime_arg,
+        )
+        if resolved_runtime_id is not None:
+            try:
+                runtime = load_runtime_catalog().by_id(resolved_runtime_id)
+            except KeyError as e:
+                raise BenchEvalError(f"unknown runtime {resolved_runtime_id!r}") from e
+            if harness_kind not in runtime.runtime.supported_harnesses:
+                raise BenchEvalError(
+                    f"runtime {resolved_runtime_id!r} does not support harness {harness_kind!r}; "
+                    f"supported: {list(runtime.runtime.supported_harnesses)}",
+                )
+            resolved_runtime_kind = runtime.runtime.kind
+            model_binding = runtime.runtime.model_binding
+            network = runtime.safety.network_default
+        else:
+            if harness_kind not in _MODEL_ONLY_HARNESSES:
+                raise BenchEvalError(
+                    f"--runtime or --agent is required for harness {harness_kind!r}",
+                )
+            model_binding = "bencheval_injected"
+
     slice_path = _resolve_slice_yaml(slice_id, benchmark.id)
     slice_manifest = load_slice_manifest(slice_path)
     instance_ids = slice_instance_ids(slice_manifest, slice_path)
     if not instance_ids:
         raise BenchEvalError(f"slice {slice_id!r} has no instances")
-
-    harness_kind = _harness_for_benchmark(benchmark)
-    if harness_kind not in runtime.runtime.supported_harnesses:
-        raise BenchEvalError(
-            f"runtime {runtime_id!r} does not support harness {harness_kind!r}; "
-            f"supported: {list(runtime.runtime.supported_harnesses)}",
-        )
 
     if benchmark.safety_review == "offensive_restricted":
         raise BenchEvalError(
@@ -214,7 +309,6 @@ def plan_control_plane(
     if support != "executable_adapter":
         caveats.append(f"execution_support:{support}")
 
-    network = runtime.safety.network_default
     validity = _comparison_validity(slice_manifest.slice.purpose)
 
     return RunPlan(
@@ -224,10 +318,12 @@ def plan_control_plane(
         slice_id=slice_manifest.slice.id,
         adapter_id=adapter_id,
         harness_kind=harness_kind,
-        runtime_id=runtime.runtime.id,
-        runtime_kind=runtime.runtime.kind,
-        model_id=model_id,
-        model_binding=runtime.runtime.model_binding,
+        runtime_id=resolved_runtime_id,
+        runtime_kind=resolved_runtime_kind,
+        agent_id=agent_arg,
+        provider_id=resolved_provider,
+        model_id=model_key,
+        model_binding=model_binding,
         instances=tuple(RunPlanInstance(instance_id=i) for i in instance_ids),
         budget_class=budget_class,
         max_cost_usd=round(max_cost, 6),
@@ -249,14 +345,18 @@ class ControlPlanePlanner:
         *,
         benchmark_id: str,
         slice_id: str,
-        runtime_id: str,
+        runtime_id: str | None,
         model_id: str,
+        agent_id: str | None = None,
+        provider_id: str | None = None,
     ) -> RunPlan:
         return plan_control_plane(
             benchmark_id=benchmark_id,
             slice_id=slice_id,
             runtime_id=runtime_id,
             model_id=model_id,
+            agent_id=agent_id,
+            provider_id=provider_id,
         )
 
 
@@ -312,5 +412,6 @@ __all__ = [
     "dry_run_slice_resolution",
     "list_adapter_descriptors",
     "plan_control_plane",
+    "resolve_runtime_id",
     "run_plan_to_dry_run_dict",
 ]

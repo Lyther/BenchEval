@@ -6,10 +6,10 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from bencheval.compare import _newcombe_diff
 from bencheval.evidence import EvidenceRecord, count_ineligible_pass_at_k
 from bencheval.exceptions import ComparisonError
 from bencheval.runtime_compare import _index_by_instance, _pass_rate_ci_on_shared_instances
+from bencheval.stats import newcombe_diff
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,7 +202,7 @@ def compare_model_evidence(
 
     b_ci, c_ci = _pass_rate_ci_on_shared_instances(baseline, current)
     delta = c_ci.pass_rate - b_ci.pass_rate
-    delta_lo, delta_hi = _newcombe_diff(
+    delta_lo, delta_hi = newcombe_diff(
         b_ci.pass_rate,
         b_ci.ci_low,
         b_ci.ci_high,

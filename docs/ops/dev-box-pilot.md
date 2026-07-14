@@ -24,9 +24,9 @@ The minimum live proof this runbook targets (matches
    Harbor runtimes (same `model_id` so the compare is runtime-only).
 2. `bencheval compare` of those two evidence files succeeds (single axis:
    `runtime_comparison`).
-3. `bfcl-v4` `smoke-5` via `native-api`.
+3. `bfcl-v4` `smoke-5` model-only (no `--runtime` / no `--agent`).
 
-SWE (`swe-bench-verified` smoke-10 via `mini-swe-agent`) is exercised but is
+SWE (`swe-bench-verified` smoke-10 via `--runtime claude-code`) is exercised but is
 **not** part of the minimum proof.
 
 ## 1. Prerequisites on dev-box-cpu
@@ -160,14 +160,14 @@ What it does, per step:
 
 - `terminal-bench` lanes (`claude-code`, `codex-cli`): `bencheval doctor
   --backend harbor --model <m> --profile E2` then `bencheval run
-  --benchmark terminal-bench --slice smoke-5 --runtime <rt>`. On doctor fail
+  terminal-bench/smoke-5 --runtime <rt> -y`. On doctor fail
   → preflight record + step fails. On run fail → artifacts emitted, step
   fails.
 - `bfcl-v4` lane: skipped-with-preflight if `bfcl` is not on `PATH`;
-  otherwise `bencheval run --benchmark bfcl-v4 --slice smoke-5
-  --runtime native-api`.
+  otherwise `bencheval run bfcl-v4/smoke-5 -y` (model-only; omit `--runtime`).
 - `swe-bench-verified` lane: skipped-with-preflight if `mini-extra` missing
-  or Docker unavailable; otherwise `bencheval run --runtime mini-swe-agent`.
+  or Docker unavailable; otherwise
+  `bencheval run swe-bench-verified/swe-bench-verified-smoke-10 --runtime claude-code -y`.
 - Compare: only when **both** TB lanes produced evidence, runs
   `bencheval compare` of `tb-claude-code-<stamp>` vs `tb-codex-cli-<stamp>`.
 
@@ -217,9 +217,8 @@ report/compare/export tooling picks it up:
 
    ```bash
    STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-   uv run bencheval run \
-       --benchmark terminal-bench --slice smoke-5 --runtime codex-cli \
-       --model "$BENCHEVAL_PILOT_MODEL" \
+   uv run bencheval run terminal-bench/smoke-5 --runtime codex-cli \
+       --model "$BENCHEVAL_PILOT_MODEL" -y \
        --output "results/evidence/tb-codex-cli-${STAMP}.jsonl" \
        --artifacts-dir "results/raw/tb-codex-cli-${STAMP}"
    ```

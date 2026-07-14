@@ -50,7 +50,7 @@ clear_config_loader_caches()
 plan_control_plane(
     benchmark_id="bfcl-v4",
     slice_id="smoke-5",
-    runtime_id="native-api",
+    runtime_id=None,
     model_id="openai/gpt-test",
 )
 bench(
@@ -58,7 +58,7 @@ bench(
     lambda: plan_control_plane(
         benchmark_id="bfcl-v4",
         slice_id="smoke-5",
-        runtime_id="native-api",
+        runtime_id=None,
         model_id="openai/gpt-test",
     ),
 )
@@ -78,7 +78,7 @@ def _row(task_id: str, *, passed: bool = True) -> EvidenceRecord:
     return EvidenceRecord(
         run_id="r",
         task_id=task_id,
-        model_id="mockllm/model",
+        model_id="openai/gpt-test",
         execution_profile="E0",
         backend="local",
         primary_pass=passed,

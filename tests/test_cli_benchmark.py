@@ -16,32 +16,33 @@ def _run(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_benchmark_list_json_reports_large_catalog() -> None:
+def test_benchmark_list_json_reports_product_catalog() -> None:
+    result = _run("benchmark", "list", "--execution-support", "all", "--format", "json")
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["count"] == 3
+    ids = {benchmark["id"] for benchmark in payload["benchmarks"]}
+    assert ids == {"swe-bench-verified", "terminal-bench", "bfcl-v4"}
+
+
+def test_benchmark_list_defaults_to_executable_only() -> None:
     result = _run("benchmark", "list", "--format", "json")
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert payload["count"] >= 50
+    assert payload["count"] == 3
     ids = {benchmark["id"] for benchmark in payload["benchmarks"]}
-    assert {"swe-bench-verified", "exploitgym", "deepswe"}.issubset(ids)
+    assert ids == {"bfcl-v4", "swe-bench-verified", "terminal-bench"}
 
 
-def test_benchmark_show_resolves_deepswe_alias() -> None:
-    result = _run("benchmark", "show", "DeepSWE", "--format", "json")
+def test_benchmark_show_resolves_alias() -> None:
+    result = _run("benchmark", "show", "t-bench")
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert payload["id"] == "deepswe"
-    assert payload["adapter_status"] == "unverified"
+    assert payload["id"] == "terminal-bench"
 
 
-def test_benchmark_list_filters_restricted_security_text() -> None:
-    result = _run(
-        "benchmark",
-        "list",
-        "--category",
-        "cybersecurity",
-        "--safety",
-        "offensive_restricted",
-    )
+def test_catalog_benchmark_list_matches() -> None:
+    result = _run("catalog", "benchmark", "list", "--format", "json")
     assert result.returncode == 0, result.stderr
-    assert "exploitgym" in result.stdout
-    assert "cybench" not in result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["count"] == 3
