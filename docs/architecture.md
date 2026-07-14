@@ -1,8 +1,8 @@
 # Architecture & Decisions
 
-> **Status:** ACCEPTED (vNext v0.3, 2026-06-19) — aligned with [`docs/context/concept-hld.md`](context/concept-hld.md) v0.3; implementation tracked in [`docs/roadmap.md`](roadmap.md)
+> **Status:** ACCEPTED (vNext v0.3, revised 2026-07-14 for product-spine prune); implementation tracked in [`docs/roadmap.md`](roadmap.md)
 > **Supersedes:** vNext v0.2 (ACCEPTED 2026-05-29, Core-first) — preserved as `legacy_static` context only
-> **Source of truth for product:** [`docs/context/concept-hld.md`](context/concept-hld.md) §0–§16
+> **Operator contract / product SoT:** root [`README.md`](../README.md), this file, and [`docs/api/internal-contracts.md`](api/internal-contracts.md). [`docs/context/concept-hld.md`](context/concept-hld.md) is a **historical design ledger**, not live CLI instructions.
 > **Scope:** Defined benchmarks → (runtime XOR agent)? → model via provider → evidence.
 
 ## 0. Product Principles

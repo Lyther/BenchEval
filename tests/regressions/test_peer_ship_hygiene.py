@@ -87,6 +87,17 @@ def test_concept_hld_marks_obsolete_cli_historical() -> None:
     text = (REPO / "docs" / "context" / "concept-hld.md").read_text(encoding="utf-8")
     assert "Historical command blocks (do not execute)" in text
     assert "bencheval run bfcl-v4/smoke-5" in text
+    live, _, _hist = text.partition("### 8.H Historical command blocks")
+    assert "doctor --runtime" not in live
+    assert "bencheval doctor --model" in live
+
+
+def test_architecture_points_operators_to_readme_not_hld() -> None:
+    text = (REPO / "docs" / "architecture.md").read_text(encoding="utf-8")
+    header = text.split("## 0.", 1)[0]
+    assert "Operator contract / product SoT" in header
+    assert "historical design ledger" in header.lower()
+    assert "Source of truth for product:** [`docs/context/concept-hld.md`]" not in header
 
 
 def test_runtime_profile_docstring_has_no_inspect_api() -> None:

@@ -430,7 +430,8 @@ bencheval catalog provider list
 bencheval run bfcl-v4/smoke-5 --model <model-id> --dry-run
 bencheval run terminal-bench/smoke-5 --runtime claude-code --model <model-id> --dry-run
 bencheval run terminal-bench/smoke-5 --agent momo --model <model-id> -y
-bencheval doctor --runtime claude-code --model <model-id>
+bencheval doctor --model <model-id>
+bencheval doctor --backend harbor --model <model-id>
 ```
 
 ### 8.H Historical command blocks (do not execute)
