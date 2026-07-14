@@ -15,7 +15,6 @@ _BUNDLE_REQUIRED_DIRS: tuple[Path, ...] = (
     Path("config") / "runtimes",
     Path("config") / "providers",
     Path("config") / "slices",
-    Path("config") / "manifests",
 )
 
 

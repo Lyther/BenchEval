@@ -30,7 +30,6 @@ from bencheval.slice_manifest import (
     default_slices_dir,
     list_slice_manifest_paths,
     load_slice_manifest,
-    resolve_instances_source_path,
     slice_instance_ids,
 )
 
@@ -43,12 +42,23 @@ ComparisonValidity = Literal[
 ]
 
 _VALID_HARNESS_KINDS = frozenset(get_args(HarnessKindLiteral))
-_MODEL_ONLY_HARNESSES = frozenset({"bfcl-native"})
+_MODEL_ONLY_HARNESSES = frozenset({"bfcl-native", "inspect-evals", "hle-native"})
 
 _BACKEND_TO_HARNESS: dict[str, str] = {
     "harbor": "harbor",
     "inspect": "inspect",
     "external": "local-harness",
+}
+
+_ADAPTER_TO_OFFICIAL_RUNNER: dict[str, str] = {
+    "terminal-bench-harbor": "harbor",
+    "swebench": "swebench-native",
+    "swebench-pro-harbor": "harbor",
+    "bfcl": "bfcl-native",
+    "gpqa": "inspect-evals",
+    "hle": "hle-native",
+    "cybergym": "cybergym-native",
+    "exploitgym": "exploitgym-native",
 }
 
 
@@ -63,15 +73,16 @@ def list_adapter_descriptors() -> tuple[AdapterDescriptor, ...]:
     """Adapter families derived from the catalog's per-benchmark ``adapter_id`` bindings.
 
     Config-driven: adding a benchmark to an existing adapter family is a
-    ``config/benchmarks.yaml`` edit, not a code change.
+    ``config/benchmarks.yaml`` edit. New adapter families must register their
+    official runner kind in code so config cannot choose an arbitrary harness.
     """
     catalog = load_benchmark_catalog()
     harness_by_adapter: dict[str, str] = {}
     benchmarks_by_adapter: dict[str, set[str]] = {}
     for entry in catalog.benchmarks:
-        if entry.adapter_id is None or entry.harness_kind is None:
+        if entry.adapter_id is None:
             continue
-        harness_by_adapter.setdefault(entry.adapter_id, entry.harness_kind)
+        harness_by_adapter.setdefault(entry.adapter_id, _harness_for_adapter(entry.adapter_id))
         benchmarks_by_adapter.setdefault(entry.adapter_id, set()).add(entry.id)
     return tuple(
         AdapterDescriptor(
@@ -123,15 +134,33 @@ def _instances_source_fingerprint(
     }
 
 
+def _inline_instances_fingerprint(instance_ids: tuple[str, ...]) -> dict[str, object]:
+    raw = ("\n".join(instance_ids) + "\n").encode("utf-8")
+    return {
+        "instances_source": "inline",
+        "instances_manifest_sha256": hashlib.sha256(raw).hexdigest(),
+        "instances_manifest_bytes": len(raw),
+    }
+
+
 def _as_harness_kind(harness: str) -> HarnessKindLiteral:
     if harness not in _VALID_HARNESS_KINDS:
         raise BenchEvalError(f"unknown harness kind {harness!r}")
     return cast("HarnessKindLiteral", harness)
 
 
+def _harness_for_adapter(adapter_id: str) -> HarnessKindLiteral:
+    try:
+        return _as_harness_kind(_ADAPTER_TO_OFFICIAL_RUNNER[adapter_id])
+    except KeyError as e:
+        raise BenchEvalError(
+            f"adapter {adapter_id!r} has no declared official runner kind",
+        ) from e
+
+
 def _harness_for_benchmark(benchmark: BenchmarkEntry) -> HarnessKindLiteral:
-    if benchmark.harness_kind is not None:
-        return _as_harness_kind(benchmark.harness_kind)
+    if benchmark.adapter_id is not None:
+        return _harness_for_adapter(benchmark.adapter_id)
     raw = _BACKEND_TO_HARNESS.get(benchmark.recommended_backend, "local-harness")
     return _as_harness_kind(raw)
 
@@ -277,12 +306,6 @@ def plan_control_plane(
     if not instance_ids:
         raise BenchEvalError(f"slice {slice_id!r} has no instances")
 
-    if benchmark.safety_review == "offensive_restricted":
-        raise BenchEvalError(
-            f"benchmark {benchmark.id!r} is offensive_restricted; "
-            "use Stretch lane with explicit safety review (not implemented in CLI)",
-        )
-
     adapter_id = _adapter_for_benchmark(benchmark)
     budget_class = _budget_class_for_slice(
         slice_manifest.budget.max_total_cost_usd,
@@ -385,14 +408,19 @@ def dry_run_slice_resolution(
     slice_path = _resolve_slice_yaml(slice_id, benchmark.id)
     slice_manifest = load_slice_manifest(slice_path)
     instance_ids = slice_instance_ids(slice_manifest, slice_path)
-    instances_path = resolve_instances_source_path(
-        slice_path,
-        slice_manifest.slice.instances_source,
-    )
-    fingerprint = _instances_source_fingerprint(
-        slice_manifest.slice.instances_source,
-        instances_path,
-    )
+    if slice_manifest.slice.instances_source is None:
+        fingerprint = _inline_instances_fingerprint(instance_ids)
+    else:
+        from bencheval.slice_manifest import resolve_instances_source_path
+
+        instances_path = resolve_instances_source_path(
+            slice_path,
+            slice_manifest.slice.instances_source,
+        )
+        fingerprint = _instances_source_fingerprint(
+            slice_manifest.slice.instances_source,
+            instances_path,
+        )
     return {
         "benchmark_id": benchmark.id,
         "slice_id": slice_manifest.slice.id,

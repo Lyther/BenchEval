@@ -34,20 +34,21 @@ def test_executable_benchmark_count_snapshot() -> None:
     executable = [
         b for b in catalog.benchmarks if execution_support_label(b) == "executable_adapter"
     ]
-    assert len(executable) == 3
+    assert len(executable) == 5
     for b in executable:
         assert b.adapter_id
+        assert b.default_slice
 
 
 def test_benchmark_list_defaults_to_executable(capsys: pytest.CaptureFixture[str]) -> None:
     code = main(["benchmark", "list", "--format", "json"])
     assert code == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["count"] == 3
+    assert payload["count"] == 5
 
 
 def test_run_bfcl_without_runtime_is_model_only(capsys: pytest.CaptureFixture[str]) -> None:
-    code = main(["run", "bfcl-v4/smoke-5", "--model", "gpt-test", "--dry-run"])
+    code = main(["run", "bfcl-v4/smoke-5", "--model", "kimi-k2.7-code", "--dry-run"])
     assert code == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["runtime_id"] is None
@@ -56,7 +57,7 @@ def test_run_bfcl_without_runtime_is_model_only(capsys: pytest.CaptureFixture[st
 
 
 def test_run_terminal_bench_without_runtime_errors(capsys: pytest.CaptureFixture[str]) -> None:
-    code = main(["run", "terminal-bench/smoke-5", "--model", "gpt-test", "--dry-run"])
+    code = main(["run", "terminal-bench/smoke-5", "--model", "kimi-k2.7-code", "--dry-run"])
     assert code == 1
     err = capsys.readouterr().err
     assert "--runtime is required" in err
@@ -104,7 +105,7 @@ def test_control_plane_run_defaults_output_under_results(
     )
     monkeypatch.setenv("BENCHEVAL_HOME", str(Path(__file__).resolve().parents[1]))
     monkeypatch.chdir(tmp_path)
-    code = main(["run", "bfcl-v4/smoke-5", "--model", "gpt-test", "-y"])
+    code = main(["run", "bfcl-v4/smoke-5", "--model", "kimi-k2.7-code", "-y"])
     assert code == 0
     out_text = capsys.readouterr().out
     assert "results/evidence" in out_text.replace("\\", "/")
@@ -120,7 +121,7 @@ def test_unknown_benchmark_run_fails_before_execute(
             "--runtime",
             "claude-code",
             "--model",
-            "gpt-test",
+            "kimi-k2.7-code",
             "--dry-run",
         ],
     )

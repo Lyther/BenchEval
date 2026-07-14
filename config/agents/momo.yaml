@@ -10,6 +10,8 @@ agent:
   supported_harnesses:
     - harbor
     - swebench-native
+    - cybergym-native
+    - exploitgym-native
   notes: >
     External MOMO CLI. Contract: `<command> run --benchmark <id> --instance <id>
     --model <id> --provider <id> --output-dir <path>`. Exit 0 = pass.

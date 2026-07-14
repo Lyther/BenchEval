@@ -15,21 +15,21 @@ from bencheval.control_plane_executor import control_plane_interpretation_label
             "bfcl-v4",
             "smoke-5",
             None,
-            "gpt-test",
+            "kimi-k2.7-code",
             "adapter_smoke",
         ),
         (
             "terminal-bench",
             "smoke-5",
             "claude-code",
-            "gpt-test",
+            "kimi-k2.7-code",
             "adapter_smoke",
         ),
         (
             "swe-bench-verified",
             "swe-bench-verified-smoke-10",
             "claude-code",
-            "gpt-test",
+            "kimi-k2.7-code",
             "contaminated_or_legacy",
         ),
     ],
@@ -55,7 +55,7 @@ def test_interpretation_label_diagnostic_only_maps_to_benchmark_native_claim() -
         benchmark_id="bfcl-v4",
         slice_id="smoke-5",
         runtime_id=None,
-        model_id="gpt-test",
+        model_id="kimi-k2.7-code",
     )
     diagnostic = plan.model_copy(update={"comparison_validity": "diagnostic_only"})
     assert control_plane_interpretation_label(diagnostic) == "benchmark_native_claim"
@@ -66,7 +66,7 @@ def test_interpretation_label_invalid_maps_to_rough_regression() -> None:
         benchmark_id="bfcl-v4",
         slice_id="smoke-5",
         runtime_id=None,
-        model_id="gpt-test",
+        model_id="kimi-k2.7-code",
     )
     invalid = plan.model_copy(update={"comparison_validity": "invalid"})
     assert control_plane_interpretation_label(invalid) == "rough_regression"

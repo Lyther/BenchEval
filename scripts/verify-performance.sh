@@ -51,7 +51,7 @@ plan_control_plane(
     benchmark_id="bfcl-v4",
     slice_id="smoke-5",
     runtime_id=None,
-    model_id="openai/gpt-test",
+    model_id="kimi-k2.7-code",
 )
 bench(
     "plan_control_plane(bfcl warm)",
@@ -59,7 +59,7 @@ bench(
         benchmark_id="bfcl-v4",
         slice_id="smoke-5",
         runtime_id=None,
-        model_id="openai/gpt-test",
+        model_id="kimi-k2.7-code",
     ),
 )
 
@@ -78,7 +78,7 @@ def _row(task_id: str, *, passed: bool = True) -> EvidenceRecord:
     return EvidenceRecord(
         run_id="r",
         task_id=task_id,
-        model_id="openai/gpt-test",
+        model_id="kimi-k2.7-code",
         execution_profile="E0",
         backend="local",
         primary_pass=passed,

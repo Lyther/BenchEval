@@ -1,6 +1,6 @@
 # Production v1 internal pilot
 
-**Scope:** Product catalog admits **3 executable** benchmarks (`terminal-bench`, `swe-bench-verified`, `bfcl-v4`). Research candidates live in docs only — not a public leaderboard.
+**Scope:** Product catalog has **8** YAML rows; Tier-0 gate admits **5 executable** benchmarks (`terminal-bench`, `swe-bench-verified`, `bfcl-v4`, `gpqa-diamond`, `hle`). `swe-bench-pro`, `cybergym`, and `exploitgym` stay cataloged/`adapter_pending` until real official task selectors and result parsers are wired. Full dataset/image pulls are host-side (2TB test env), not CI.
 
 ## Phase A — ship gates (no live deps)
 
@@ -8,7 +8,7 @@
 make check-production-v1
 ```
 
-Includes: pytest, ruff, shellcheck, `uv lock --check`, executable catalog count = 3, unknown-benchmark `run` must fail before execute.
+Includes: pytest, ruff, shellcheck, `uv lock --check`, executable catalog count = 5, unknown-benchmark `run` must fail before execute.
 
 ## Phase B — live matrix (credentials + Docker)
 

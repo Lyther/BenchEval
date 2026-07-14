@@ -10,7 +10,7 @@ def test_write_and_load_preflight(tmp_path: Path) -> None:
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
         runtime_id="claude-code",
-        model_id="openai/gpt-test",
+        model_id="kimi-k2.7-code",
         ok=False,
         reasons=["docker not available"],
     )
@@ -26,7 +26,7 @@ def test_preflight_extra_json_values(tmp_path: Path) -> None:
         benchmark_id="bfcl-v4",
         slice_id="smoke-5",
         runtime_id="claude-code",
-        model_id="openai/gpt-test",
+        model_id="kimi-k2.7-code",
         ok=False,
         extra={"harness": "bfcl-eval", "attempt": 1},
     )

@@ -15,7 +15,7 @@ from bencheval.paths import repo_root, validate_config_bundle
 
 
 def _copy_control_plane_bundle(src_repo: Path, dest: Path) -> None:
-    for sub in ("runtimes", "providers", "agents", "slices", "manifests"):
+    for sub in ("runtimes", "providers", "agents", "slices"):
         shutil.copytree(src_repo / "config" / sub, dest / "config" / sub, dirs_exist_ok=True)
     for name in ("benchmarks.yaml", "models.yaml"):
         src = src_repo / "config" / name
@@ -53,7 +53,7 @@ def test_bencheval_home_supports_dry_run_planner(tmp_path: Path) -> None:
     dry_run_cmd = (
         "from bencheval.cli import main; "
         "raise SystemExit(main(['run', 'bfcl-v4/smoke-5', "
-        "'--model', 'gpt-test', '--dry-run']))"
+        "'--model', 'kimi-k2.7-code', '--dry-run']))"
     )
     proc = subprocess.run(
         [sys.executable, "-c", dry_run_cmd],

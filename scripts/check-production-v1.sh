@@ -23,8 +23,8 @@ run uv lock --check
 
 payload="$(uv run --no-sync bencheval benchmark list --execution-support executable_adapter --format json)"
 count="$(printf '%s' "${payload}" | uv run --no-sync python -c 'import json,sys; print(json.load(sys.stdin)["count"])')"
-if [[ ${count} != "3" ]]; then
-  printf 'error: expected 3 executable_adapter benchmarks, got %s\n' "${count}" >&2
+if [[ ${count} != "5" ]]; then
+  printf 'error: expected 5 executable_adapter benchmarks, got %s\n' "${count}" >&2
   exit 1
 fi
 
@@ -33,7 +33,7 @@ trap 'rm -f "${unknown_err}"' EXIT
 if uv run --no-sync bencheval run \
   no-such-benchmark/smoke-5 \
   --runtime claude-code \
-  --model gpt-test \
+  --model kimi-k2.7-code \
   --dry-run 2>"${unknown_err}"; then
   printf 'error: unknown benchmark run should fail before execute\n' >&2
   exit 1

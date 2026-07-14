@@ -1,0 +1,202 @@
+"""CyberGym adapter — thin wrapper around the official host-installed harness."""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import time
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Protocol
+
+from bencheval.domain import FailureLabel, RunPlan
+from bencheval.exceptions import AdapterFailureError, BenchEvalError
+from bencheval.path_safety import validate_control_plane_instance_id
+
+CYBERGYM_ADAPTER_ID = "cybergym"
+_CYBERGYM_HOME_ENV = "BENCHEVAL_CYBERGYM_HOME"
+
+
+@dataclass(frozen=True, slots=True)
+class CybergymCliResult:
+    returncode: int
+    stdout: str
+    stderr: str
+    latency_sec: float
+    command: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CybergymInstanceOutcome:
+    instance_id: str
+    primary_pass: bool
+    partial_score: float
+    cost_usd: float
+    latency_sec: float
+    native_score: dict[str, object]
+    failure_class: FailureLabel | None
+    stdout_path: str | None
+    stderr_path: str | None
+    verifier_log_path: str | None
+    adapter_metadata: dict[str, str]
+
+
+class CybergymProcessRunner(Protocol):
+    def __call__(
+        self,
+        command: Sequence[str],
+        *,
+        cwd: Path | None,
+        timeout_sec: int,
+    ) -> CybergymCliResult: ...
+
+
+def _cybergym_root() -> Path:
+    raw = os.environ.get(_CYBERGYM_HOME_ENV)
+    if raw:
+        return Path(raw).expanduser().resolve()
+    return Path.cwd()
+
+
+def build_cybergym_run_command(
+    *,
+    plan: RunPlan,
+    instance_id: str,
+    artifacts_dir: Path,
+) -> tuple[str, ...]:
+    validate_control_plane_instance_id(instance_id)
+    if plan.agent_id is None and plan.runtime_id is None:
+        raise BenchEvalError("cybergym requires --agent (or --runtime)")
+    out_dir = artifacts_dir / "task"
+    # Official entrypoint: generate/prepare one task, then agent solves + PoC submit.
+    # Data/images stay on host under BENCHEVAL_CYBERGYM_HOME.
+    return (
+        "python",
+        "-m",
+        "cybergym.task.gen_task",
+        "--task-id",
+        instance_id,
+        "--out-dir",
+        str(out_dir.resolve()),
+        "--agent",
+        plan.agent_id or plan.runtime_id or "unknown",
+        "--model",
+        plan.model_id,
+    )
+
+
+def _default_process_runner(
+    command: Sequence[str],
+    *,
+    cwd: Path | None,
+    timeout_sec: int,
+) -> CybergymCliResult:
+    start = time.monotonic()
+    try:
+        proc = subprocess.run(
+            list(command),
+            cwd=str(cwd) if cwd is not None else None,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout_sec,
+        )
+    except subprocess.TimeoutExpired as e:
+        elapsed = time.monotonic() - start
+        raise AdapterFailureError(
+            f"cybergym harness timed out after {timeout_sec}s",
+            failure_label="runtime_budget_exceeded",
+            latency_sec=elapsed,
+            adapter_metadata={"cybergym_command": " ".join(command)},
+        ) from e
+    except OSError as e:
+        elapsed = time.monotonic() - start
+        raise AdapterFailureError(
+            f"cybergym harness launch failed: {e}",
+            failure_label="runtime_launch_failure",
+            latency_sec=elapsed,
+            adapter_metadata={"cybergym_command": " ".join(command)},
+        ) from e
+    return CybergymCliResult(
+        returncode=proc.returncode,
+        stdout=proc.stdout or "",
+        stderr=proc.stderr or "",
+        latency_sec=time.monotonic() - start,
+        command=tuple(command),
+    )
+
+
+def run_cybergym_instance(
+    *,
+    plan: RunPlan,
+    instance_id: str,
+    artifacts_dir: Path,
+    repo_root: Path,
+    process_runner: CybergymProcessRunner | None = None,
+    timeout_sec: int | None = None,
+) -> CybergymInstanceOutcome:
+    if plan.adapter_id != CYBERGYM_ADAPTER_ID:
+        raise BenchEvalError(f"cybergym adapter cannot run adapter_id={plan.adapter_id!r}")
+    instance_dir = artifacts_dir / instance_id
+    instance_dir.mkdir(parents=True, exist_ok=True)
+    command = build_cybergym_run_command(
+        plan=plan,
+        instance_id=instance_id,
+        artifacts_dir=instance_dir,
+    )
+    wall = timeout_sec if timeout_sec is not None else max(plan.max_wall_clock_sec, 60)
+    root = _cybergym_root()
+    has_pkg = (root / "src" / "cybergym").is_dir() or (root / "cybergym").is_dir()
+    cwd = root if has_pkg else repo_root
+    runner = process_runner or _default_process_runner
+    cli = runner(command, cwd=cwd, timeout_sec=wall)
+    stdout_file = instance_dir / "stdout.log"
+    stderr_file = instance_dir / "stderr.log"
+    stdout_file.write_text(cli.stdout, encoding="utf-8")
+    stderr_file.write_text(cli.stderr, encoding="utf-8")
+    verdict = instance_dir / "verdict.json"
+    # gen_task exit 0 is not official CyberGym scoring — require explicit verdict.
+    primary_pass = False
+    if verdict.is_file():
+        try:
+            parsed = json.loads(verdict.read_text(encoding="utf-8"))
+            if isinstance(parsed, dict) and "primary_pass" in parsed:
+                primary_pass = bool(parsed["primary_pass"])
+        except json.JSONDecodeError:
+            primary_pass = False
+    if cli.returncode != 0:
+        failure: FailureLabel | None = "harness_failure"
+    elif not verdict.is_file():
+        failure = "runtime_output_unparseable"
+    else:
+        failure = None if primary_pass else "model_wrong_solution"
+    return CybergymInstanceOutcome(
+        instance_id=instance_id,
+        primary_pass=primary_pass,
+        partial_score=1.0 if primary_pass else 0.0,
+        cost_usd=0.0,
+        latency_sec=cli.latency_sec,
+        native_score={"returncode": cli.returncode, "score_source": "verdict_or_missing"},
+        failure_class=failure,
+        stdout_path=str(stdout_file.resolve()),
+        stderr_path=str(stderr_file.resolve()),
+        verifier_log_path=str(verdict.resolve()) if verdict.is_file() else None,
+        adapter_metadata={
+            "adapter_id": CYBERGYM_ADAPTER_ID,
+            "harness_kind": "cybergym-native",
+            "cybergym_command": " ".join(cli.command),
+            "interpretation": "adapter_smoke",
+        },
+    )
+
+
+__all__ = [
+    "CYBERGYM_ADAPTER_ID",
+    "CybergymCliResult",
+    "CybergymInstanceOutcome",
+    "CybergymProcessRunner",
+    "build_cybergym_run_command",
+    "run_cybergym_instance",
+]

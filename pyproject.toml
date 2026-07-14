@@ -25,7 +25,6 @@ bencheval = "bencheval.cli:main"
 "config/providers" = "bencheval/_bundled/config/providers"
 "config/agents" = "bencheval/_bundled/config/agents"
 "config/slices" = "bencheval/_bundled/config/slices"
-"config/manifests" = "bencheval/_bundled/config/manifests"
 
 [project.optional-dependencies]
 eval = [

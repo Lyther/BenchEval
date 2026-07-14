@@ -194,7 +194,20 @@ class TestSliceManifest:
         text = (
             Path("config/slices/swe-bench-verified-smoke-10.yaml")
             .read_text()
-            .replace("swebench-verified-smoke-10.txt", "does-not-exist.txt")
+            .replace(
+                "  instances:\n"
+                "    - django__django-11099\n"
+                "    - sympy__sympy-18087\n"
+                "    - matplotlib__matplotlib-25498\n"
+                "    - scikit-learn__scikit-learn-25973\n"
+                "    - astropy__astropy-14182\n"
+                "    - pylint-dev__pylint-6900\n"
+                "    - pytest-dev__pytest-10356\n"
+                "    - psf__requests-2317\n"
+                "    - django__django-15916\n"
+                "    - sphinx-doc__sphinx-8721\n",
+                '  instances_source: "does-not-exist.txt"\n',
+            )
         )
         (tmp_path / "s.yaml").write_text(text, encoding="utf-8")
         from bencheval.exceptions import BenchEvalError

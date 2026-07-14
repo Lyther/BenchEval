@@ -14,7 +14,7 @@ sequenceDiagram
     participant Ev as Evidence JSONL
 
     Op->>CLI: list / catalog …
-    CLI-->>Op: executable adapters (default 3)
+    CLI-->>Op: executable adapters (default 7)
 
     Op->>CLI: run bfcl-v4/smoke-5 --model … --dry-run
     CLI->>Reg: resolve scaffold (runtime XOR agent; else model-only)

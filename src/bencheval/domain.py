@@ -23,9 +23,9 @@ Design rules (enforced by Pydantic + ruff, not by hand):
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Literal, NewType
+from typing import Literal, NewType, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # ---------------------------------------------------------------------------
 # 1. BRANDED IDS (anti-string-law, Python adaptation)
@@ -82,8 +82,11 @@ HarnessKindLiteral = Literal[
     "bfcl-native",
     "livecodebench-native",
     "inspect",
+    "inspect-evals",
+    "hle-native",
     "local-harness",
     "cybergym-native",
+    "exploitgym-native",
     "bountybench-native",
     "selftest-local",
 ]
@@ -92,20 +95,21 @@ HarnessKindLiteral = Literal[
 AdapterKindLiteral = Literal[
     "terminal-bench-harbor",
     "swebench",
+    "swebench-pro-harbor",
     "bfcl",
+    "gpqa",
+    "hle",
     "livecodebench",
     "bigcodebench",
     "tau-bench",
     "cybench",
     "cybergym",
+    "exploitgym",
     "bountybench",
     "cyberseceval-defensive",
     "osworld",
     "selftest",
 ]
-
-# Benchmark safety lane (mirrors benchmark_registry.SafetyReview).
-SafetyLane = Literal["standard", "dual_use", "offensive_restricted"]
 
 # Slice purpose — drives interpretation labels and comparison validity.
 SlicePurpose = Literal[
@@ -125,7 +129,6 @@ InterpretationLabel = Literal[
     "model_comparison",
     "contaminated_or_legacy",
     "defensive_security_only",
-    "offensive_restricted",
 ]
 
 # Failure taxonomy — must stay distinct per architecture §10. One evidence row
@@ -266,7 +269,7 @@ class RuntimeCatalog(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# 4. SLICE MANIFEST (typed wrapper over config/manifests/*.txt) — new in v0.3
+# 4. SLICE MANIFEST (typed slice with inline ids or external generated list) — v0.3
 # ---------------------------------------------------------------------------
 
 
@@ -288,7 +291,7 @@ class SliceLabels(BaseModel):
 
 
 class SliceManifest(BaseModel):
-    """Typed slice over a plain-text instance manifest."""
+    """Typed slice over inline instance ids or an external instance manifest."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -305,9 +308,16 @@ class SliceManifestSlice(BaseModel):
     benchmark_id: str = Field(pattern=_ID_PATTERN)
     purpose: SlicePurpose
     selection_policy: Literal["fixed_instance_ids", "native_selector_all", "custom"]
-    instances_source: str = Field(min_length=1)
+    instances: tuple[str, ...] = ()
+    instances_source: str | None = Field(default=None, min_length=1)
     valid_for: tuple[SlicePurpose, ...] = Field(min_length=1)
     invalid_for: tuple[SlicePurpose, ...] = ()
+
+    @model_validator(mode="after")
+    def _exactly_one_instance_source(self) -> Self:
+        if bool(self.instances) == bool(self.instances_source):
+            raise ValueError("slice must set exactly one of instances or instances_source")
+        return self
 
 
 SliceManifest.model_rebuild()
@@ -471,7 +481,6 @@ __all__ = [
     "RuntimeProfileRuntime",
     "RuntimeSafety",
     "RuntimeVersioning",
-    "SafetyLane",
     "SliceBudget",
     "SliceId",
     "SliceLabels",

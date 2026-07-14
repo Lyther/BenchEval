@@ -14,12 +14,13 @@ benchmarks:
     public_indexed: true
     contamination_risk: medium
     single_mode_required: true
-    safety_review: standard
     source_url: https://www.tbench.ai/
-    notes: Containerized terminal-agent tasks.
+    notes: >
+      Harbor-native Terminal-Bench 2.1 (verified iteration of 2.0). Datasets/images
+      are pulled by Harbor on the operator host — not vendored in BenchEval.
     adapter_id: terminal-bench-harbor
-    harness_kind: harbor
     executable: true
+    default_slice: smoke-5
   - id: swe-bench-verified
     name: SWE-bench Verified
     aliases:
@@ -34,12 +35,11 @@ benchmarks:
     public_indexed: true
     contamination_risk: high
     single_mode_required: true
-    safety_review: standard
     source_url: https://www.swebench.com/verified.html
     notes: Human-filtered SWE-bench subset; public calibration only.
     adapter_id: swebench
-    harness_kind: swebench-native
     executable: true
+    default_slice: swe-bench-verified-smoke-10
   - id: bfcl-v4
     name: Berkeley Function Calling Leaderboard v4
     aliases:
@@ -56,12 +56,120 @@ benchmarks:
     public_indexed: true
     contamination_risk: medium
     single_mode_required: false
-    safety_review: standard
     source_url: https://gorilla.cs.berkeley.edu/leaderboard.html
     notes: >
       Generation smoke via bfcl-native adapter (`bfcl generate` only). Official
       `bfcl evaluate` scoring is not wired yet; evidence interpretation stays
       adapter_smoke until evaluate is admitted.
     adapter_id: bfcl
-    harness_kind: bfcl-native
     executable: true
+    default_slice: smoke-5
+  - id: swe-bench-pro
+    name: SWE-bench Pro
+    aliases:
+      - SWE-bench Pro
+      - swebench-pro
+    category: coding
+    tier: stretch
+    adapter_status: adapter_pending
+    recommended_backend: harbor
+    recommended_profile: E4
+    task_count: 1865
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: true
+    source_url: https://scale.com/leaderboard/swe_bench_pro_public
+    notes: >
+      Scale AI SWE-bench Pro via Harbor dataset `swebenchpro`. Instance images
+      stay on the host. Adapter remains pending until BenchEval can resolve real
+      official task ids/selectors from the host harness without placeholder ids.
+    adapter_id: swebench-pro-harbor
+    executable: false
+  - id: gpqa-diamond
+    name: GPQA Diamond
+    aliases:
+      - GPQA
+      - GPQA-Diamond
+      - gpqa
+    category: reasoning
+    tier: calibration
+    adapter_status: manifest_available
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 198
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: false
+    source_url: https://ukgovernmentbeis.github.io/inspect_evals/evals/knowledge/gpqa/
+    notes: >
+      Model-only via Inspect Evals `inspect_evals/gpqa_diamond`. Dataset downloads
+      to the host on first live run. Smoke is limit-based; interpretation
+      adapter_smoke until a full Diamond prove.
+    adapter_id: gpqa
+    executable: true
+    default_slice: smoke
+  - id: hle
+    name: Humanity's Last Exam
+    aliases:
+      - Humanity's Last Exam
+      - HLE
+      - humanitys-last-exam
+    category: reasoning
+    tier: stretch
+    adapter_status: manifest_available
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 2500
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: false
+    source_url: https://github.com/centerforaisafety/hle
+    notes: >
+      Model-only via official CAIS HLE eval scripts (`cais/hle` on the host).
+      Requires judge step; smoke uses --max_samples. See docs/ops/benchmarks/hle.md.
+    adapter_id: hle
+    executable: true
+    default_slice: smoke
+  - id: cybergym
+    name: CyberGym
+    aliases:
+      - CyberGym
+    category: cybersecurity
+    tier: stretch
+    adapter_status: adapter_pending
+    recommended_backend: external
+    recommended_profile: E4
+    task_count: 1507
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    source_url: https://github.com/sunblaze-ucb/cybergym
+    notes: >
+      Cataloged only until the full official CyberGym lifecycle is wired
+      (data download, server, --data-dir/--server/--mask-map/--difficulty,
+      agent PoC submission, and official result parsing). Current gen_task
+      wrapper is insufficient for executable admission. Host assets stay
+      outside BenchEval. When admitted, prefer --agent.
+    adapter_id: cybergym
+    executable: false
+  - id: exploitgym
+    name: ExploitGym
+    aliases:
+      - ExploitGym
+    category: cybersecurity
+    tier: stretch
+    adapter_status: adapter_pending
+    recommended_backend: external
+    recommended_profile: E4
+    task_count: 869
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: true
+    source_url: https://github.com/sunblaze-ucb/exploitgym
+    notes: >
+      Cybersecurity evaluation workload via official ExploitGym harness
+      (userspace/V8/kernel tasks). Host pulls images via official scripts.
+      Requires --agent. Adapter remains pending until BenchEval can select a real
+      official task id/source from the host harness without placeholder ids.
+    adapter_id: exploitgym
+    executable: false

@@ -7,7 +7,7 @@ flowchart TB
     subgraph Laptop["Developer laptop — Tier 0"]
         Dev["uv sync / uv tool install"]
         Unit["pytest · ruff · make check-production-v1"]
-        PlanOnly["bencheval plan · benchmark list\nno Docker required"]
+        PlanOnly["bencheval list · catalog … · run --dry-run\nno Docker required"]
         Dev --> Unit
         Dev --> PlanOnly
     end

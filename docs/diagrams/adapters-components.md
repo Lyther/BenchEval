@@ -27,8 +27,8 @@ flowchart TB
     BFCL --> BN
     Agent --> ExtAgent
 
-    Cat["config/benchmarks.yaml<br/>adapter_id · harness_kind · executable"]
+    Cat["config/benchmarks.yaml<br/>adapter_id · executable"]
     Cat -.->|declares executability| ProdV1
 ```
 
-Notes: Research candidates stay in docs (`external-benchmark-catalog.md`), not product YAML. BFCL currently runs `bfcl generate` for adapter smoke; official `bfcl evaluate` is not wired yet, so evidence interpretation stays `adapter_smoke`.
+Notes: Research candidates stay in docs (`external-benchmark-catalog.md`), not product YAML. `harness_kind` is adapter-declared run-plan/evidence metadata, not a benchmark YAML knob. BFCL currently runs `bfcl generate` for adapter smoke; official `bfcl evaluate` is not wired yet, so evidence interpretation stays `adapter_smoke`.

@@ -11,7 +11,7 @@ Product spine: `benchmark → (runtime | agent)? → model via provider → evid
 | [`domain.py`](../../src/bencheval/domain.py) | Shared enums, `RunPlan`, runtime/slice DTOs, failure labels |
 | [`evidence.py`](../../src/bencheval/evidence.py) | `EvidenceRecord` JSONL schema |
 | [`evidence_compare.py`](../../src/bencheval/evidence_compare.py) | Compare two evidence JSONL runs |
-| [`benchmark_registry.py`](../../src/bencheval/benchmark_registry.py) | `config/benchmarks.yaml` → catalog (3 executables) |
+| [`benchmark_registry.py`](../../src/bencheval/benchmark_registry.py) | `config/benchmarks.yaml` → catalog (8 rows; 5 Tier-0 executables) |
 | [`runtime_registry.py`](../../src/bencheval/runtime_registry.py) | `config/runtimes/*.yaml` |
 | [`agent_registry.py`](../../src/bencheval/agent_registry.py) | `config/agents/*.yaml` |
 | [`provider_registry.py`](../../src/bencheval/provider_registry.py) | `config/providers/*.yaml` |
@@ -25,7 +25,7 @@ Product spine: `benchmark → (runtime | agent)? → model via provider → evid
 ## CLI surface
 
 ```text
-bencheval list [--format json]                          # runnable benchmarks (default: 3)
+bencheval list [--format json]                          # runnable benchmarks (default: 5)
 bencheval benchmark list|show|slices …                  # compat catalog
 bencheval catalog runtime|provider|agent|model list|show
 bencheval doctor --backend … | --profile pilot --model <id>

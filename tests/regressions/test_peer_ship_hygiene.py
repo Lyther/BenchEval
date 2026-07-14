@@ -12,8 +12,8 @@ REPO = Path(__file__).resolve().parents[2]
 
 def test_pilot_matrix_defaults_to_registry_model() -> None:
     text = (REPO / "scripts" / "run-live-pilot-matrix.sh").read_text(encoding="utf-8")
-    assert "BENCHEVAL_PILOT_MODEL:-gpt-test" in text
-    assert "openai/gpt-test" not in text
+    assert "BENCHEVAL_PILOT_MODEL:-kimi-k2.7-code" in text
+    assert "default: kimi-k2.7-code" in text
     assert "config/models.yaml" in text
 
 
@@ -32,7 +32,7 @@ def test_bfcl_smoke_is_adapter_smoke_not_native_claim() -> None:
         benchmark_id="bfcl-v4",
         slice_id="smoke-5",
         runtime_id=None,
-        model_id="gpt-test",
+        model_id="kimi-k2.7-code",
     )
     assert plan.comparison_validity == "adapter_smoke"
     assert "benchmark_native_claim" not in plan.comparison_validity
@@ -78,6 +78,10 @@ def test_architecture_has_no_deleted_workspace_staging() -> None:
 def test_external_catalog_is_research_only_without_dead_cli() -> None:
     text = (REPO / "docs" / "context" / "external-benchmark-catalog.md").read_text(encoding="utf-8")
     assert "Research only" in text or "research only" in text
+    assert "8** executables" not in text
+    assert "cybergym`, `exploitgym`). Rows below" not in text
+    assert "5** Tier-0 executable" in text
+    assert "`swe-bench-pro`, `cybergym`, and `exploitgym` remain" in text
     assert "doctor --backend inspect" not in text
     assert "harbor_adapter.py" not in text
     assert "run --manifest" not in text
@@ -87,6 +91,11 @@ def test_concept_hld_marks_obsolete_cli_historical() -> None:
     text = (REPO / "docs" / "context" / "concept-hld.md").read_text(encoding="utf-8")
     assert "Historical command blocks (do not execute)" in text
     assert "bencheval run bfcl-v4/smoke-5" in text
+    header = text.split("---", 1)[0]
+    assert "Tier-0 executables:" in header
+    assert "terminal-bench" in header
+    assert "exploitgym" in header
+    assert "`swe-bench-pro`, `cybergym`, and `exploitgym` remain pending" in header
     live, _, _hist = text.partition("### 8.H Historical command blocks")
     assert "doctor --runtime" not in live
     assert "bencheval doctor --model" in live
@@ -98,6 +107,22 @@ def test_architecture_points_operators_to_readme_not_hld() -> None:
     assert "Operator contract / product SoT" in header
     assert "historical design ledger" in header.lower()
     assert "Source of truth for product:** [`docs/context/concept-hld.md`]" not in header
+
+
+def test_deployment_diagram_has_no_removed_plan_command() -> None:
+    text = (REPO / "docs" / "diagrams" / "deployment.md").read_text(encoding="utf-8")
+    assert "bencheval plan" not in text
+    assert "run --dry-run" in text
+
+
+def test_solver_stall_issue_brief_is_superseded() -> None:
+    text = (REPO / "docs" / "issues" / "solver-stall-and-attribution.md").read_text(
+        encoding="utf-8"
+    )
+    header = text.split("## Summary", 1)[0]
+    assert "**Status:** SUPERSEDED" in header
+    assert "removed" in header.lower()
+    assert "product-spine prune" in header.lower()
 
 
 def test_runtime_profile_docstring_has_no_inspect_api() -> None:

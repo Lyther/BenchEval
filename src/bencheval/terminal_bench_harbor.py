@@ -1,4 +1,4 @@
-"""Terminal-Bench 2.0 adapter via Harbor CLI (control-plane P2)."""
+"""Terminal-Bench 2.1 adapter via Harbor CLI (control-plane)."""
 
 from __future__ import annotations
 
@@ -16,7 +16,8 @@ from bencheval.domain import FailureLabel, RunPlan
 from bencheval.exceptions import AdapterFailureError, BenchEvalError
 from bencheval.path_safety import validate_control_plane_instance_id
 
-HARBOR_DATASET = "terminal-bench@2.0"
+# Harbor Hub dataset id for Terminal-Bench 2.1 (host pulls tasks/images).
+HARBOR_DATASET = "terminal-bench/terminal-bench-2-1"
 TERMINAL_BENCH_ADAPTER_ID = "terminal-bench-harbor"
 CLAUDE_CODE_NPM_IMPORT_PATH = "bencheval.harbor_claude_code_npm:ClaudeCodeNpmInstall"
 
@@ -165,8 +166,11 @@ def build_harbor_run_command(
     plan: RunPlan,
     instance_id: str,
     artifacts_dir: Path,
+    dataset: str = HARBOR_DATASET,
 ) -> tuple[str, ...]:
     validate_control_plane_instance_id(instance_id)
+    if plan.runtime_id is None:
+        raise BenchEvalError("Harbor adapter requires runtime_id (use --runtime)")
     agent = harbor_agent_for_runtime(plan.runtime_id)
     model = plan.model_id
     cmd: list[str] = [
@@ -199,7 +203,7 @@ def build_harbor_run_command(
     cmd.extend(
         [
             "--dataset",
-            HARBOR_DATASET,
+            dataset,
             "--task-name",
             instance_id,
             "--jobs-dir",
@@ -390,18 +394,20 @@ def parse_harbor_instance_outcome(
     )
 
 
-def run_terminal_bench_instance(
+def run_harbor_dataset_instance(
     *,
     plan: RunPlan,
     instance_id: str,
     artifacts_dir: Path,
     repo_root: Path,
+    dataset: str,
+    expected_adapter_id: str,
     process_runner: HarborProcessRunner | None = None,
     timeout_sec: int | None = None,
 ) -> TerminalBenchInstanceOutcome:
-    if plan.adapter_id != TERMINAL_BENCH_ADAPTER_ID:
+    if plan.adapter_id != expected_adapter_id:
         raise BenchEvalError(
-            f"terminal_bench_harbor adapter cannot run adapter_id={plan.adapter_id!r}",
+            f"Harbor adapter {expected_adapter_id!r} cannot run adapter_id={plan.adapter_id!r}",
         )
     revision = harbor_revision()
     if revision is None and process_runner is None:
@@ -417,6 +423,7 @@ def run_terminal_bench_instance(
         plan=plan,
         instance_id=instance_id,
         artifacts_dir=instance_dir,
+        dataset=dataset,
     )
     if timeout_sec is not None:
         wall = timeout_sec
@@ -452,6 +459,27 @@ def run_terminal_bench_instance(
     )
 
 
+def run_terminal_bench_instance(
+    *,
+    plan: RunPlan,
+    instance_id: str,
+    artifacts_dir: Path,
+    repo_root: Path,
+    process_runner: HarborProcessRunner | None = None,
+    timeout_sec: int | None = None,
+) -> TerminalBenchInstanceOutcome:
+    return run_harbor_dataset_instance(
+        plan=plan,
+        instance_id=instance_id,
+        artifacts_dir=artifacts_dir,
+        repo_root=repo_root,
+        dataset=HARBOR_DATASET,
+        expected_adapter_id=TERMINAL_BENCH_ADAPTER_ID,
+        process_runner=process_runner,
+        timeout_sec=timeout_sec,
+    )
+
+
 __all__ = [
     "HARBOR_DATASET",
     "TERMINAL_BENCH_ADAPTER_ID",
@@ -461,5 +489,6 @@ __all__ = [
     "build_harbor_run_command",
     "harbor_agent_for_runtime",
     "parse_harbor_instance_outcome",
+    "run_harbor_dataset_instance",
     "run_terminal_bench_instance",
 ]

@@ -98,7 +98,7 @@ class TestExitCodes:
         assert "error" in err.lower() or "invalid choice" in err.lower()
 
     def test_run_missing_target_returns_2(self, capsys: pytest.CaptureFixture[str]) -> None:
-        rc = self._run_cli(["run", "--model", "gpt-test", "--dry-run"])
+        rc = self._run_cli(["run", "--model", "kimi-k2.7-code", "--dry-run"])
         assert rc == 2
         err = capsys.readouterr().err
         assert "error" in err.lower() or "required" in err.lower()
@@ -109,7 +109,7 @@ class TestExitCodes:
                 "run",
                 "terminal-bench/smoke-5",
                 "--model",
-                "gpt-test",
+                "kimi-k2.7-code",
                 "--dry-run",
             ],
         )

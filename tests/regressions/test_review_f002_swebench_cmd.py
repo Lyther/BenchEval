@@ -13,7 +13,7 @@ def test_swebench_command_uses_mini_extra_swebench() -> None:
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
         runtime_id="claude-code",
-        model_id="gpt-test",
+        model_id="kimi-k2.7-code",
     )
     cmd = build_swebench_run_command(
         plan=plan,

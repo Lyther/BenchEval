@@ -221,7 +221,7 @@ def test_cli_register_rejects_missing_evidence_for_completed(tmp_path: Path) -> 
             "--run-id",
             "run-bad",
             "--model",
-            "gpt-test",
+            "kimi-k2.7-code",
             "--evidence",
             str(missing),
             "--status",
@@ -247,7 +247,7 @@ def test_cli_register_allows_missing_with_dev_flag(tmp_path: Path) -> None:
             "--run-id",
             "run-dev",
             "--model",
-            "gpt-test",
+            "kimi-k2.7-code",
             "--evidence",
             str(missing),
             "--status",
@@ -275,7 +275,7 @@ def test_preflight_only_mode_exits_zero_without_incrementing_failed() -> None:
         env={
             **os.environ,
             "BENCHEVAL_ALLOW_PREFLIGHT_ONLY": "1",
-            "BENCHEVAL_PILOT_MODEL": "gpt-test",
+            "BENCHEVAL_PILOT_MODEL": "kimi-k2.7-code",
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         },
     )

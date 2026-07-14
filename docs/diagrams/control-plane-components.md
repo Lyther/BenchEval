@@ -8,7 +8,7 @@ flowchart TB
 
     subgraph Discovery["Discovery registries"]
         BR["benchmark_registry.py<br/>config/benchmarks.yaml"]
-        SM["slice_manifest.py<br/>config/slices/*.yaml + manifests/*.txt"]
+        SM["slice_manifest.py<br/>config/slices/*.yaml"]
         RR["runtime_registry.py<br/>config/runtimes/*.yaml"]
         AR["agent_registry.py<br/>config/agents/*.yaml"]
         PR["provider_registry.py<br/>config/providers/*.yaml"]

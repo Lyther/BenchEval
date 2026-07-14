@@ -26,7 +26,7 @@ Runtime XOR agent. Omit both for model-only (BFCL generation smoke). Unknown ids
 
 - [ ] **C1** Dev-box live proof for at least one admitted path with registered evidence (`docs/ops/dev-box-pilot.md`).
 - [ ] **C2** Wire official `bfcl evaluate` (or keep BFCL labeled `adapter_smoke` forever until then).
-- [ ] **C3** Harbor CLI contract spike for Terminal-Bench (`harbor run --dataset terminal-bench@2.0`) if live TB is blocked.
+- [ ] **C3** Harbor CLI contract spike for Terminal-Bench (`harbor run --dataset terminal-bench/terminal-bench-2-1`) if live TB is blocked.
 - [ ] **C4** Admit the next benchmark only via deliberate YAML + adapter + live proof — research catalog stays docs-only.
 
 ### Hot files
@@ -60,7 +60,7 @@ Runtime XOR agent. Omit both for model-only (BFCL generation smoke). Unknown ids
 - [ ] **S0.1** Harbor CLI spike for Terminal-Bench.
 - [ ] **S0.2** `claude-code` / `codex-cli` noninteractive + version capture.
 - [ ] **S0.3** EvidenceRecord v0.3 additive parse of v0.2 fixtures.
-- [x] **S0.4** Product catalog pruned to **3** executables; research candidates docs-only.
+- [x] **S0.4** Product catalog expanded to **8** executable thin adapters (no vendored corpora); ops manuals under `docs/ops/benchmarks/`.
 
 ### Phase 1 — MVP skeleton (historical CLI shapes)
 

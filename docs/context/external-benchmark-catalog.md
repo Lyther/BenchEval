@@ -1,7 +1,7 @@
 # External benchmark catalog
 
 > **Status:** Research only (updated 2026-07-14). **Not** the product catalog.
-> **Live product YAML:** [`config/benchmarks.yaml`](../../config/benchmarks.yaml) admits exactly **3** executables (`terminal-bench`, `swe-bench-verified`, `bfcl-v4`). Everything below is a planning shortlist until an adapter is deliberately admitted.
+> **Live product YAML:** [`config/benchmarks.yaml`](../../config/benchmarks.yaml) has **8** catalog rows and **5** Tier-0 executable rows (`terminal-bench`, `swe-bench-verified`, `bfcl-v4`, `gpqa-diamond`, `hle`). `swe-bench-pro`, `cybergym`, and `exploitgym` remain `adapter_pending` until real official task selectors and result parsers are wired. Rows below that are not yet admitted remain a planning shortlist.
 > **Do not** treat entries here as runnable via BenchEval CLI.
 
 Third-party suites popular in coding-agent, tool-use, and security evaluation. Prefer official harnesses when a future adapter is designed.
@@ -59,7 +59,7 @@ Third-party suites popular in coding-agent, tool-use, and security evaluation. P
 |-----------|------:|-------|----------------|
 | **Cybench** | 40 CTF | Professional CTF tasks | Inspect-eval packaged; UK AISI standard. [cybench.github.io](https://cybench.github.io/) |
 | **CyberGym** | 1,507 vulns / 188 projects | Vulnerability **reproduction** (PoC vs pre-patch code) | UC Berkeley; arXiv 2506.02548 (v3 2026-03); ~7.5× larger than prior cyber agent benches; used in Claude-Sonnet-4.5 system card; agents found 34 zero-days + 18 incomplete patches during eval. [rdi.berkeley.edu/blog/cybergym](https://rdi.berkeley.edu/blog/cybergym/) |
-| **ExploitGym** | 869 / 3 domains | Full **exploit generation** (userspace, browser, Linux kernel) | Berkeley RDI; **offensive-restricted Stretch only**; never Core-weighted; explicit safety review required. [cybergym.io](https://www.cybergym.io/) |
+| **ExploitGym** | 869 / 3 domains | Full **exploit generation** (userspace, browser, Linux kernel) | Berkeley RDI; Stretch cybersecurity evaluation workload; never Core-weighted; host/harness policy applies. [cybergym.io](https://www.cybergym.io/) |
 | **CyberGym-E2E** | pending | End-to-end vulnerability lifecycle | Berkeley RDI; paper 2026, full release pending — not yet a runnable public task set. [cybergym.io](https://www.cybergym.io/) |
 | **BountyBench** | 25 systems / 40 bounties ($10–$30,485) | Detect / Exploit / Patch; 9-of-10 OWASP Top 10 | Stanford CRFM; arXiv 2505.15216; uses Detect + Patch in normal lanes, Exploit tasks are Stretch-gated. [bountybench.github.io](https://bountybench.github.io/) |
 | **SECURE** | varies | Secure code generation | Security-aware codegen eval. |

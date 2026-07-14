@@ -20,7 +20,7 @@ def test_plan_control_plane_reuses_cache_across_calls() -> None:
             benchmark_id="bfcl-v4",
             slice_id="smoke-5",
             runtime_id=None,
-            model_id="gpt-test",
+            model_id="kimi-k2.7-code",
         )
         samples.append((time.perf_counter() - t0) * 1000.0)
     p50 = sorted(samples)[len(samples) // 2]

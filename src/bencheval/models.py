@@ -7,8 +7,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class ModelFamily(StrEnum):
     ANTHROPIC = "anthropic"
+    BYTEDANCE = "bytedance"
+    GOOGLE = "google"
+    MINIMAX = "minimax"
+    MISTRAL = "mistral"
     OPENAI = "openai"
     MOONSHOT = "moonshot"
+    QWEN = "qwen"
+    XAI = "xai"
+    ZHIPU = "zhipu"
     LOCAL = "local"
 
 

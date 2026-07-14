@@ -8,7 +8,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 readonly REPO_ROOT
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 readonly STAMP
-readonly MODEL="${BENCHEVAL_PILOT_MODEL:-gpt-test}"
+readonly MODEL="${BENCHEVAL_PILOT_MODEL:-kimi-k2.7-code}"
 readonly TB_CLAUDE_MODEL="${BENCHEVAL_PILOT_CLAUDE_MODEL:-${MODEL}}"
 readonly TB_CODEX_MODEL="${BENCHEVAL_PILOT_CODEX_MODEL:-${MODEL}}"
 readonly BFCL_MODEL="${BENCHEVAL_PILOT_BFCL_MODEL:-${MODEL}}"
@@ -24,7 +24,7 @@ if ! grep -Eq "^[[:space:]]*- id:[[:space:]]*${MODEL}[[:space:]]*$" \
   "${REPO_ROOT}/config/models.yaml"; then
   printf 'error: pilot model %s is not in config/models.yaml\n' "${MODEL}" >&2
   printf 'hint: uv run --no-sync bencheval catalog model list\n' >&2
-  printf 'hint: set BENCHEVAL_PILOT_MODEL to a registered id (default: gpt-test)\n' >&2
+  printf 'hint: set BENCHEVAL_PILOT_MODEL to a registered id (default: kimi-k2.7-code)\n' >&2
   exit 1
 fi
 

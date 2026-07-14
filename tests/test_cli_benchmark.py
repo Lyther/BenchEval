@@ -16,22 +16,35 @@ def _run(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+_PRODUCT_IDS = {
+    "bfcl-v4",
+    "cybergym",
+    "exploitgym",
+    "gpqa-diamond",
+    "hle",
+    "swe-bench-pro",
+    "swe-bench-verified",
+    "terminal-bench",
+}
+
+
 def test_benchmark_list_json_reports_product_catalog() -> None:
     result = _run("benchmark", "list", "--execution-support", "all", "--format", "json")
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert payload["count"] == 3
+    assert payload["count"] == 8
     ids = {benchmark["id"] for benchmark in payload["benchmarks"]}
-    assert ids == {"swe-bench-verified", "terminal-bench", "bfcl-v4"}
+    assert ids == _PRODUCT_IDS
 
 
 def test_benchmark_list_defaults_to_executable_only() -> None:
     result = _run("benchmark", "list", "--format", "json")
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert payload["count"] == 3
+    assert payload["count"] == 5
     ids = {benchmark["id"] for benchmark in payload["benchmarks"]}
-    assert ids == {"bfcl-v4", "swe-bench-verified", "terminal-bench"}
+    assert ids == _PRODUCT_IDS - {"swe-bench-pro", "cybergym", "exploitgym"}
+    assert {"swe-bench-pro", "cybergym", "exploitgym"}.isdisjoint(ids)
 
 
 def test_benchmark_show_resolves_alias() -> None:
@@ -45,4 +58,4 @@ def test_catalog_benchmark_list_matches() -> None:
     result = _run("catalog", "benchmark", "list", "--format", "json")
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert payload["count"] == 3
+    assert payload["count"] == 5

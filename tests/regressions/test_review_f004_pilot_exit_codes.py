@@ -18,7 +18,7 @@ def test_live_pilot_exits_nonzero_without_proof() -> None:
         env={
             **__import__("os").environ,
             "PATH": "/usr/bin:/bin",
-            "BENCHEVAL_PILOT_MODEL": "gpt-test",
+            "BENCHEVAL_PILOT_MODEL": "kimi-k2.7-code",
         },
     )
     assert proc.returncode != 0

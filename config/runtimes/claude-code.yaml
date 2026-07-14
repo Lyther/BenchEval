@@ -5,7 +5,8 @@ runtime:
   display_name: "Claude Code"
   lifecycle: "external_process"
   supported_platforms: ["macos", "linux"]
-  supported_harnesses: ["harbor", "swebench-native"]
+  supported_harnesses:
+    ["harbor", "swebench-native", "cybergym-native", "exploitgym-native"]
   model_binding: "runtime_configured"
 launch:
   command_template:

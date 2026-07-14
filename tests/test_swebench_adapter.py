@@ -23,7 +23,7 @@ def test_build_swebench_run_command() -> None:
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
         runtime_id="claude-code",
-        model_id="gpt-test",
+        model_id="kimi-k2.7-code",
     )
     cmd = build_swebench_run_command(
         plan=plan,
@@ -62,7 +62,7 @@ def test_execute_swebench_smoke_writes_evidence(tmp_path: Path) -> None:
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
         runtime_id="claude-code",
-        model_id="gpt-test",
+        model_id="kimi-k2.7-code",
     )
     assert plan.adapter_id == SWEBENCH_ADAPTER_ID
     evidence_path = tmp_path / "evidence.jsonl"
@@ -102,7 +102,7 @@ def test_run_instance_single(tmp_path: Path) -> None:
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
         runtime_id="claude-code",
-        model_id="gpt-test",
+        model_id="kimi-k2.7-code",
     )
 
     def fake_runner(command, *, cwd, timeout_sec):
@@ -142,7 +142,7 @@ def test_swebench_adapter_failure_record_labels(tmp_path: Path) -> None:
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
         runtime_id="claude-code",
-        model_id="gpt-test",
+        model_id="kimi-k2.7-code",
     )
     evidence_path = tmp_path / "evidence.jsonl"
 

@@ -16,7 +16,7 @@ def test_failed_agent_attempt_writes_runtime_tool_failure(tmp_path: Path) -> Non
         slice_id="smoke-5",
         runtime_id=None,
         agent_id="momo",
-        model_id="gpt-test",
+        model_id="kimi-k2.7-code",
     )
     out = tmp_path / "evidence.jsonl"
 
@@ -50,7 +50,7 @@ def test_agent_launch_failure_still_writes_evidence(tmp_path: Path) -> None:
         slice_id="smoke-5",
         runtime_id=None,
         agent_id="momo",
-        model_id="gpt-test",
+        model_id="kimi-k2.7-code",
     )
     out = tmp_path / "evidence.jsonl"
 

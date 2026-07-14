@@ -20,7 +20,7 @@ EOF
   exit 1
 }
 
-model="${BENCHEVAL_PILOT_MODEL:-gpt-test}"
+model="${BENCHEVAL_PILOT_MODEL:-kimi-k2.7-code}"
 verify_auth=1
 
 while [[ $# -gt 0 ]]; do

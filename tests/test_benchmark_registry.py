@@ -22,7 +22,7 @@ def test_benchmark_registry_exports_from_package() -> None:
 
 def test_default_benchmark_catalog_has_current_expected_count() -> None:
     catalog = load_benchmark_catalog()
-    assert len(catalog.benchmarks) == 3
+    assert len(catalog.benchmarks) == 8
 
 
 def test_public_docs_match_current_catalog_count() -> None:
@@ -43,7 +43,27 @@ def test_public_docs_match_current_catalog_count() -> None:
 def test_product_catalog_ids() -> None:
     catalog = load_benchmark_catalog()
     ids = {b.id for b in catalog.benchmarks}
-    assert ids == {"terminal-bench", "swe-bench-verified", "bfcl-v4"}
+    assert ids == {
+        "terminal-bench",
+        "swe-bench-verified",
+        "bfcl-v4",
+        "swe-bench-pro",
+        "gpqa-diamond",
+        "hle",
+        "cybergym",
+        "exploitgym",
+    }
+    for entry in catalog.benchmarks:
+        if not entry.executable:
+            continue
+        assert entry.default_slice is not None
+
+
+def test_harness_kind_is_not_benchmark_yaml_configuration() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    text = (repo_root / "config" / "benchmarks.yaml").read_text(encoding="utf-8")
+    assert "harness_kind:" not in text
+    assert not hasattr(load_benchmark_catalog().benchmarks[0], "harness_kind")
 
 
 def test_alias_lookup_terminal_bench() -> None:
@@ -58,7 +78,14 @@ def test_catalog_filters_executable_only() -> None:
         catalog,
         BenchmarkFilter(execution_support="executable_adapter"),
     )
-    assert len(entries) == 3
+    assert len(entries) == 5
+    assert {e.id for e in entries} == {
+        "terminal-bench",
+        "swe-bench-verified",
+        "bfcl-v4",
+        "gpqa-diamond",
+        "hle",
+    }
 
 
 def test_catalog_rejects_duplicate_aliases(tmp_path: Path) -> None:
@@ -79,7 +106,6 @@ benchmarks:
     public_indexed: true
     contamination_risk: low
     single_mode_required: false
-    safety_review: standard
     source_url: https://example.com/a
     notes: a
   - id: b
@@ -94,7 +120,6 @@ benchmarks:
     public_indexed: true
     contamination_risk: low
     single_mode_required: false
-    safety_review: standard
     source_url: https://example.com/b
     notes: b
 """,

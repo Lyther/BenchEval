@@ -14,7 +14,6 @@ def _write_minimal_bundle(root: Path) -> None:
     (root / "config" / "runtimes").mkdir(parents=True)
     (root / "config" / "providers").mkdir(parents=True)
     (root / "config" / "slices").mkdir(parents=True)
-    (root / "config" / "manifests").mkdir(parents=True)
     (root / "config" / "benchmarks.yaml").write_text("benchmarks: []\n", encoding="utf-8")
     (root / "config" / "runtimes" / "claude-code.yaml").write_text(
         "schema_version: '0.1'\nruntime:\n  id: claude-code\n  kind: cli_agent\n",

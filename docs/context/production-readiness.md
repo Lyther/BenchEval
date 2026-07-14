@@ -30,8 +30,8 @@ make check-production-v1        # → ./scripts/check-production-v1.sh
 2. `uv run --no-sync ruff check src tests scripts/` and `ruff format --check` — lint + format clean.
 3. `shellcheck scripts/*.sh` and `bash -n scripts/*.sh` — shell hygiene.
 4. `uv lock --check` — lockfile in sync with `pyproject.toml`.
-5. **Executable-adapter count = 3.** `bencheval benchmark list --execution-support executable_adapter --format json` must report exactly `terminal-bench`, `swe-bench-verified`, `bfcl-v4`. Executability is config-declared in [`config/benchmarks.yaml`](../../config/benchmarks.yaml) (`executable: true` + `adapter_id`/`harness_kind`), not hard-coded in Python — so a drift here means a **config** entry was flipped executable without the checklist below. Adding a benchmark on an existing adapter family is a config-only change.
-6. **Negative-evidence gate:** `bencheval run no-such-benchmark/smoke-5 ...` must **fail** before subprocess dispatch with a benchmark-not-found error. The product catalog admits only the three executable benchmarks; research candidates live in docs, not YAML.
+5. **Executable-adapter count = 5.** `bencheval benchmark list --execution-support executable_adapter --format json` must report exactly: `terminal-bench`, `swe-bench-verified`, `bfcl-v4`, `gpqa-diamond`, `hle`. Catalog still has **8** YAML rows (`swe-bench-pro`, `cybergym`, and `exploitgym` remain `adapter_pending` / non-executable until real official task selectors and result parsers are wired). Executability is config-declared in [`config/benchmarks.yaml`](../../config/benchmarks.yaml) (`executable: true` + `adapter_id`). `harness_kind` is derived from adapter code, not YAML, so config cannot introduce a behavior-changing harness. Adding a benchmark on an **existing** adapter family can be config-only; a **new** harness family needs a Python adapter, executor wiring, and official score ingestion — not just a YAML flip.
+6. **Negative-evidence gate:** `bencheval run no-such-benchmark/smoke-5 ...` must **fail** before subprocess dispatch with a benchmark-not-found error. Research candidates live in docs, not as undeclared YAML executables.
 
 **Passing Tier 0 means:** the software is correct. It does **not** mean any benchmark result is real. Non-executable benchmarks stay `metadata_only` / `manifest_only`; reports produced without live deps must carry the `adapter_smoke` interpretation label, never `benchmark_native_claim` (architecture §13.1, §15 risk "Harbor unavailable / Docker absent").
 
@@ -54,7 +54,7 @@ Outputs live under `results/` (gitignored): evidence, reports, bundles (`--redac
 
 ### Peer anchor: the Terminal-Bench `fix-git` pass
 
-The canonical one-instance live-evidence proof for the `terminal-bench-harbor` adapter is the **`fix-git`** instance, the first entry in [`config/manifests/terminal-bench-smoke-5.txt`](../../config/manifests/terminal-bench-smoke-5.txt):
+The canonical one-instance live-evidence proof for the `terminal-bench-harbor` adapter is the **`fix-git`** instance, the first entry in [`config/slices/terminal-bench-smoke-5.yaml`](../../config/slices/terminal-bench-smoke-5.yaml):
 
 ```text
 fix-git
@@ -64,7 +64,7 @@ modernize-scientific-stack
 log-summary-date-ranges
 ```
 
-A "Peer TB `fix-git` pass" means: `fix-git` ran through `harbor run --dataset terminal-bench@2.0 ...` and produced an `EvidenceRecord` whose `native_score`, raw result, stdout/stderr, verifier log, and workspace diff are all present and non-fake. This satisfies architecture §13.1's "native harness invocation ≥1 instance" requirement at the minimum bar. The remaining four instances extend smoke coverage but are **not** required for the single-instance admission floor.
+A "Peer TB `fix-git` pass" means: `fix-git` ran through `harbor run --dataset terminal-bench/terminal-bench-2-1 ...` and produced an `EvidenceRecord` whose `native_score`, raw result, stdout/stderr, verifier log, and workspace diff are all present and non-fake. This satisfies architecture §13.1's "native harness invocation ≥1 instance" requirement at the minimum bar. The remaining four instances extend smoke coverage but are **not** required for the single-instance admission floor.
 
 > Reference unit coverage for the `fix-git` command shape: [`tests/test_terminal_bench_harbor.py`](../../tests/test_terminal_bench_harbor.py) asserts the `--task-name fix-git` argument, version-capture fields, and Harbor agent/import-path wiring. These are Tier 0 (software) proofs of the *plumbing*; the Peer pass is the Tier 1 proof of the *live run*.
 
@@ -82,9 +82,9 @@ A benchmark graduates to **Production v1** only when **all** of the following ho
 
 ### A. Catalog state
 
-- [ ] `execution_support` = `executable_adapter` in `config/benchmarks.yaml` (Tier 0 gate already asserts exactly 3 today).
+- [ ] `execution_support` = `executable_adapter` in `config/benchmarks.yaml` (Tier 0 gate asserts exactly 5).
 - [ ] `adapter_status` flipped to `manifest_available` (not `cataloged` / `adapter_pending` / `unverified`).
-- [ ] `safety_review` set correctly (`standard` / `dual_use` / `offensive_restricted`); offensive tasks Stretch-only behind `--allow-stretch`.
+- [ ] Cybersecurity benchmarks use the same control-plane contract as other benchmarks. Authorization and environment policy belong to the operator host and the official harness; BenchEval does **not** add a separate policy or confirmation layer.
 
 ### B. Adapter admission (architecture §13.1)
 
@@ -93,7 +93,7 @@ A benchmark graduates to **Production v1** only when **all** of the following ho
 - [ ] Evidence completeness: raw result, stdout, stderr, verifier logs, candidate artifacts, run config.
 - [ ] Failure separation: failed attempts written with a failure label, never silently dropped.
 - [ ] Cleanup replay: `--cleanup always|on-success` removes transient dirs (`agent-workspace`, `harbor-package`, `materialized-workspace`) **without** deleting evidence; Docker image pruning deliberately **not** owned by BenchEval (external adapters must document it).
-- [ ] ≥1 smoke manifest committed under `config/manifests/`.
+- [ ] ≥1 typed slice with instance ids committed under `config/slices/`.
 - [ ] Dry-run accuracy: `run --dry-run` plan matches the real envelope (instance count, cost, caveats).
 - [ ] Caveat labels attached (e.g. `contaminated_or_legacy` for SWE-bench-family).
 
@@ -106,7 +106,7 @@ A benchmark graduates to **Production v1** only when **all** of the following ho
 
 - [ ] Any model/runtime superiority claim is gated by identical benchmark/slice/adapter/harness version.
 - [ ] Failed/invalid attempts reported, not dropped.
-- [ ] Interpretation label present: `adapter_smoke` · `rough_regression` · `benchmark_native_claim` · `runtime_comparison` · `model_comparison` · `contaminated_or_legacy` · `defensive_security_only` · `offensive_restricted`.
+- [ ] Interpretation label present: `adapter_smoke` · `rough_regression` · `benchmark_native_claim` · `runtime_comparison` · `model_comparison` · `contaminated_or_legacy` · `defensive_security_only`.
 
 ### E. Honest-labelling floor (non-negotiable)
 
@@ -122,7 +122,7 @@ BenchEval 的"生产就绪"分三个层级，逐级递进，不可跳级：
 
 | 层级 | 名称 | 含义 | 退出标准 |
 |------|------|------|----------|
-| Tier 0 | Phase A 软件 | 控制平面本身在零依赖下正确、确定、安全 | `make check-production-v1` 全绿（pytest / ruff / shellcheck / uv lock / 可执行适配器=3 / unknown benchmark 必须在执行前失败） |
+| Tier 0 | Phase A 软件 | 控制平面本身在零依赖下正确、确定、安全 | `make check-production-v1` 全绿（pytest / ruff / shellcheck / uv lock / 可执行适配器=5 / unknown benchmark 必须在执行前失败） |
 | Tier 1 | Phase B 实证据 | 至少 1 个真实实例通过**基准原生 harness** 端到端跑通（凭据；sandbox 由 harness 按需提供） | 在 **dev-box** 上完成；Peer 锚点：Terminal-Bench `fix-git` 经 Harbor 产出完整 `EvidenceRecord` |
 | Tier 2 | Production v1 | 适配器被准入 + 实证据 + 全清单满足 | 上文 §A–§E 全部勾选，且无豁免 |
 

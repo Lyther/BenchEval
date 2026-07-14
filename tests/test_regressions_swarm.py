@@ -29,7 +29,7 @@ def test_run_execute_payload_interpretation_not_comparison_validity_key(
         benchmark_id="bfcl-v4",
         slice_id="smoke-5",
         runtime_id=None,
-        model_id="gpt-test",
+        model_id="kimi-k2.7-code",
     )
     assert plan.comparison_validity == "adapter_smoke"
     assert control_plane_interpretation_label(plan) == "adapter_smoke"
@@ -61,7 +61,7 @@ def test_cli_run_dry_run_includes_comparison_validity(
 ) -> None:
     from bencheval.cli import main
 
-    assert main(["run", "bfcl-v4/smoke-5", "--model", "gpt-test", "--dry-run"]) == 0
+    assert main(["run", "bfcl-v4/smoke-5", "--model", "kimi-k2.7-code", "--dry-run"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["comparison_validity"] == "adapter_smoke"
     assert payload["runtime_id"] is None
@@ -114,7 +114,7 @@ def test_cli_run_execute_writes_interpretation_on_evidence(
                 "run",
                 "bfcl-v4/smoke-5",
                 "--model",
-                "gpt-test",
+                "kimi-k2.7-code",
                 "--output",
                 str(out),
                 "-y",
@@ -148,7 +148,7 @@ def test_build_harbor_run_command_rejects_unsafe_instance_id(tmp_path: Path) -> 
         benchmark_id="terminal-bench",
         slice_id="smoke-5",
         runtime_id="claude-code",
-        model_id="gpt-test",
+        model_id="kimi-k2.7-code",
     )
     with pytest.raises(BenchEvalError, match="invalid instance_id"):
         build_harbor_run_command(
@@ -163,7 +163,7 @@ def test_build_bfcl_run_command_rejects_unsafe_instance_id() -> None:
         benchmark_id="bfcl-v4",
         slice_id="smoke-5",
         runtime_id=None,
-        model_id="gpt-test",
+        model_id="kimi-k2.7-code",
     )
     with pytest.raises(BenchEvalError, match="invalid instance_id"):
         build_bfcl_run_command(
@@ -178,7 +178,7 @@ def test_execute_control_plane_run_unknown_adapter_raises(tmp_path: Path) -> Non
         benchmark_id="bfcl-v4",
         slice_id="smoke-5",
         runtime_id=None,
-        model_id="gpt-test",
+        model_id="kimi-k2.7-code",
     )
     bad_plan = plan.model_copy(update={"adapter_id": "not-a-real-adapter"})
     with pytest.raises(BenchEvalError, match="no executor for adapter_id"):

@@ -24,7 +24,9 @@ BenchEval is a thin evaluation control plane:
 benchmark/slice  →  (runtime | agent)?  →  model via provider  →  EvidenceRecord + artifacts
 ```
 
-**Runnable today (Production v1):** `terminal-bench`, `swe-bench-verified`, `bfcl-v4`.
+**Tier-0 executable software (gate count = 5):** `terminal-bench`, `swe-bench-verified`, `bfcl-v4`, `gpqa-diamond`, `hle`. Catalog also lists `swe-bench-pro`, `cybergym`, and `exploitgym` as `adapter_pending` (not executable) until real official task selectors are wired.
+
+**Production v1 live-proof set (where Phase B evidence exists / is the historical pilot spine):** `terminal-bench`, `swe-bench-verified`, `bfcl-v4`. Other Tier-0 rows are software-wired; treat live claims as `adapter_smoke` until Phase B evidence is recorded.
 
 **Admitted scaffolds:** runtimes `claude-code`, `codex-cli`; agent `momo`; providers `bytellm`, `ollama-cloud`.
 
@@ -34,7 +36,8 @@ benchmark/slice  →  (runtime | agent)?  →  model via provider  →  Evidence
 benchmark_id / slice_id  = what is being evaluated
 model_id / provider_id   = model + how it is reached
 runtime_id XOR agent_id  = optional scaffold (never both; both null = model-only)
-harness_kind / adapter_id = how BenchEval joins official harness ↔ evidence
+adapter_id = BenchEval adapter selected by config
+harness_kind = derived run-plan/evidence metadata declared by the adapter, not benchmark YAML
 ```
 
 CLI: `bencheval run <bench>/<slice> --model <id> [--runtime|--agent] [--provider bytellm]`.
@@ -93,8 +96,8 @@ flowchart LR
 
 | Component | Responsibility | Status | Module(s) |
 |---|---|---|---|
-| Benchmark Registry | Catalog runnable benchmarks, adapters, source, license, native harness, metrics, caveats. | **Extend** existing `benchmark_registry.py` (catalog -> executable contract) + `config/benchmarks.yaml` (**3** product entries). | `benchmark_registry.py` |
-| Slice Manifest Registry | Typed `smoke`/`lite`/`full`/`custom` instance lists with budget + labels. | **New typed layer** over existing `manifest.py` + `config/manifests/*.txt`. | `manifest.py` (+ new `slice_manifest.py`) |
+| Benchmark Registry | Catalog runnable benchmarks, adapters, source, license, native harness, metrics, caveats. | **Extend** existing `benchmark_registry.py` (catalog -> executable contract) + `config/benchmarks.yaml` (**8** product entries). | `benchmark_registry.py` |
+| Slice Manifest Registry | Typed `smoke`/`lite`/`full`/`custom` instance lists with budget + labels. | Product slices keep instance ids inline; `manifest.py` remains for optional large/generated external lists. | `manifest.py` (+ `slice_manifest.py`) |
 | Model Registry | Model identity, provider, pricing, context limits, version capture. | **Promote** existing `config/models.yaml` + `pricing/` + `models.py` (`ModelFamily`, `RunStamp`). | `models.py`, `pricing.py` |
 | Runtime Registry | Admitted runtimes (`claude-code`, `codex-cli`) + capability metadata. | `runtime_registry.py` + `config/runtimes/*.yaml`. | `runtime_registry.py` |
 | Agent Registry | Admitted agents (`momo`); XOR with runtime on the plan. | `agent_registry.py` + `config/agents/*.yaml`. | `agent_registry.py` |
@@ -103,7 +106,7 @@ flowchart LR
 | Preflight / Doctor | Runtime/provider env checks before live runs (never prints secrets). | `doctor.py`. | `doctor.py` |
 | Materialization Manager | Cleanup policy + adapter-owned ephemeral dirs. | `lifecycle.py` (`CleanupPolicy`); adapters own workspace layout. | `lifecycle.py` |
 | Adapter Dispatcher | Route plan → adapter (runtime XOR agent XOR model-only). | `control_plane_executor.py`. | `control_plane_executor.py` |
-| Adapters | Terminal-Bench Harbor, SWE-bench, BFCL native, external agent. | Product v1 only. | `terminal_bench_harbor.py`, `swebench_adapter.py`, `bfcl_native_adapter.py`, `external_agent_adapter.py` |
+| Adapters | Harbor TB, SWE-bench, BFCL, GPQA, HLE; pending modules for SWE-Pro / ExploitGym / CyberGym. | Tier-0 executable set in YAML. | `terminal_bench_harbor.py`, `swebench_adapter.py`, `bfcl_native_adapter.py`, `gpqa_adapter.py`, `hle_adapter.py`, pending adapter modules |
 | Evidence Normalizer | Convert native output → `EvidenceRecord`. | `evidence.py`. | `evidence.py` |
 | Evidence Store | Evidence JSONL + optional Parquet/DuckDB export. | `evidence.py`, `export.py`. | as listed |
 | Compare/Report/Export | Markdown/JSON reports + cross-run comparisons + run bundles. | `report.py`, `evidence_compare.py`, `export.py`, `run_bundle.py`. | as listed |
@@ -119,7 +122,7 @@ Live product paths use harness-owned sandboxes (Harbor for Terminal-Bench, nativ
 | E1 | Runtime sandbox | Coding / repo tests under admitted runtime | Runtime-owned |
 | E2 | Terminal / harness sandbox | Terminal, multi-step verifier-heavy | Harbor for TB; harness-owned |
 | E3 | Calibration external | Public micro-slices | Adapter-backed; never Core-weighted |
-| E4 | Stretch sandbox | Expensive / safety-gated | Explicit review; research unless admitted |
+| E4 | Stretch sandbox | Expensive official-harness runs | Explicit review; research unless admitted |
 
 Dry-run planning reports `requires_harbor` / `requires_sandbox` when needed. Those flags are operator preflight signals, not a BenchEval-owned Docker plane.
 
@@ -127,7 +130,7 @@ Dry-run planning reports `requires_harbor` / `requires_sandbox` when needed. Tho
 
 ### 7.1 Benchmark Contract (`config/benchmarks.yaml`)
 
-Existing product YAML registry is the authoritative executable catalog (**3** entries). Schema: `BenchmarkCatalog`/`BenchmarkEntry` in `benchmark_registry.py` (Pydantic, `frozen=True, extra="forbid"`). Fields: id, name, aliases, category, tier (`calibration`/`stretch`/`reference_only`), adapter_status (`cataloged`/`adapter_pending`/`manifest_available`/`unverified`), recommended_backend, recommended_profile, task_count, public_indexed, contamination_risk, single_mode_required, safety_review (`standard`/`dual_use`/`offensive_restricted`), source_url, notes.
+Existing product YAML registry is the authoritative catalog (**8** entries; **5** Tier-0 executable). Schema: `BenchmarkCatalog`/`BenchmarkEntry` in `benchmark_registry.py` (Pydantic, `frozen=True, extra="forbid"`). Fields: id, name, aliases, category, tier (`calibration`/`stretch`/`reference_only`), adapter_status (`cataloged`/`adapter_pending`/`manifest_available`/`unverified`), recommended_backend, recommended_profile, task_count, public_indexed, contamination_risk, single_mode_required, source_url, notes, `default_slice`, `adapter_id`, and `executable`. Ops manuals: `docs/ops/benchmarks/`. `harness_kind` is deliberately **not** configurable in benchmark YAML: the adapter implementation declares the official runner kind used for planning and evidence metadata. New harness families need a Python adapter + executor wiring + official score ingestion; config-only expansion applies when reusing an existing adapter family.
 
 ### 7.2 Slice Manifest (new typed layer)
 
@@ -138,7 +141,9 @@ slice:
   benchmark_id: "swe-bench-verified"
   purpose: "adapter_smoke"           # adapter_smoke | rough_regression | benchmark_native_claim | runtime_comparison | model_comparison
   selection_policy: "fixed_instance_ids"
-  instances_source: "config/manifests/swebench-verified-smoke-10.txt"  # plain-text id list (existing)
+  instances:
+    - django__django-11099
+    - sympy__sympy-18087
   valid_for: ["adapter_validation", "rough_regression"]
   invalid_for: ["frontier_model_promotion"]
 budget:
@@ -150,7 +155,7 @@ labels:
   public_benchmark: true
 ```
 
-Plain-text manifests in `config/manifests/*.txt` remain the instance source; the typed YAML wraps them with budget + labels.
+Product slice YAML keeps small fixed instance lists inline. Large generated manifests can still use `instances_source`, but no product benchmark depends on a separate `*-smoke.txt` file.
 
 ### 7.3 Runtime Profile (`config/runtimes/<id>.yaml`)
 
@@ -196,7 +201,7 @@ Nested `run`/`model`/`runtime`/`attempt`/`artifacts`/`integrity` blocks from HLD
 Adapters **prefer native harnesses**. Product v1 allowed shapes:
 
 1. **Native wrapper** — call official runner, parse native result files, preserve raw artifacts (SWE-bench, BFCL generate).
-2. **Harbor wrapper** — Harbor-native terminal tasks (Terminal-Bench 2.0).
+2. **Harbor wrapper** — Harbor-native terminal tasks (Terminal-Bench 2.1).
 3. **External agent wrapper** — admitted agent profiles (`momo`) via `external_agent_adapter.py`.
 
 Deferred / not product: Inspect-as-runtime wrappers. Compatibility shims must be explicitly labeled `adapter_smoke`.
@@ -226,19 +231,19 @@ External runtime launch and tool failures are separate: `runtime_launch_failure`
 
 - **Preserve native metrics.** If Terminal-Bench reports pass rate + CI, keep it. If SWE-bench reports resolved instances, keep it. BenchEval adds an operational layer: cost, latency, token usage, runtime/harness/adapter/model versions, failure class, cleanup status, artifact paths, caveats.
 - **No universal weighted score by default.** Side-by-side only. A user-defined weighted portfolio may exist later as a labeled local-decision policy object, never as a benchmark-native score.
-- **Interpretation labels** on every report: `adapter_smoke` · `rough_regression` · `benchmark_native_claim` · `runtime_comparison` · `model_comparison` · `contaminated_or_legacy` · `defensive_security_only` · `offensive_restricted`.
+- **Interpretation labels** on every report: `adapter_smoke` · `rough_regression` · `benchmark_native_claim` · `runtime_comparison` · `model_comparison` · `contaminated_or_legacy` · `defensive_security_only`.
 
 ## 12. Security Boundary
 
 - **Allowed (Core/defensive):** local toy patching, authorization repair, alert triage JSON, regression tests, local prompt-injection resistance (no network, no exfiltration), vulnerability *reproduction* against **pre-patch** code in a sandbox with sanitizers (CyberGym defensive slice).
-- **Stretch (offensive-restricted, explicit safety review, never Core-weighted, no live targets):** ExploitGym full exploit generation, BountyBench Exploit tasks, CyberGym PoC generation against unpatched code.
+- **Stretch (never Core-weighted, no live targets):** ExploitGym full exploit generation, BountyBench Exploit tasks, CyberGym PoC generation against unpatched code. Official harness and operator-host policy apply; BenchEval does not add a separate policy layer.
 - **Forbidden:** exploit generation against live targets, real-target attack chains, offensive CyberGym-style PoC reproduction as weighted tasks.
 
 ## 13. Verification Gates
 
 ### 13.1 Adapter Admission
 
-A benchmark adapter cannot be marked `manifest_available`/runnable unless: native harness invocation ≥1 instance; version capture (benchmark/harness/adapter/runtime/model); evidence completeness (raw result, stdout/stderr, verifier logs, artifacts, run config); failure separation; cleanup replay without deleting evidence; ≥1 smoke manifest; dry-run accuracy; caveat labels attached.
+A benchmark adapter cannot be marked `manifest_available`/runnable unless: native harness invocation ≥1 instance; version capture (benchmark/harness/adapter/runtime/model); evidence completeness (raw result, stdout/stderr, verifier logs, artifacts, run config); failure separation; cleanup replay without deleting evidence; ≥1 typed slice with instance ids; dry-run accuracy; caveat labels attached.
 
 ### 13.2 Runtime Admission
 
@@ -275,7 +280,7 @@ A report cannot claim model/runtime superiority unless: benchmark id identical; 
 
 ## 16. Tech Debt (acknowledged)
 
-- Plain-text manifests (`config/manifests/*.txt`) coexist with typed `SliceManifest` YAML wrappers until all slices migrate.
+- Plain-text manifests remain supported only for optional large/generated lists; product slices store small fixed ids inline.
 - No DB: JSONL is the store of record; DuckDB/Parquet is a derived analytics export, not transactional.
 - No pyright in repo; type discipline via ruff + Pydantic runtime validation.
 - Broader `docs/context/*` / roadmap still describe pre-prune catalog size and deleted lanes; product face is README + this architecture + `docs/diagrams/`.
@@ -284,8 +289,8 @@ A report cannot claim model/runtime superiority unless: benchmark id identical; 
 
 | Concern | Module | Notes |
 |---|---|---|
-| Benchmark catalog | `benchmark_registry.py`, `config/benchmarks.yaml` | **3** executable entries only. |
-| Slices / manifests | `manifest.py`, `config/slices/`, `config/manifests/` | Typed slice wrappers + instance lists. |
+| Benchmark catalog | `benchmark_registry.py`, `config/benchmarks.yaml` | **8** catalog rows; **5** Tier-0 executable. |
+| Slices / manifests | `manifest.py`, `config/slices/` | Typed slice wrappers + inline instance lists; legacy manifest parser for generated lists. |
 | Models / pricing | `models.py`, `pricing.py`, `config/models.yaml` | Non-secret model routes. |
 | Runtime / agent / provider | `runtime_registry.py`, `agent_registry.py`, `provider_registry.py` | Admitted YAML under `config/{runtimes,agents,providers}/`. |
 | Plan (phase 1) | `benchmark_plan.py` | `RunPlan`; runtime XOR agent; provider default `bytellm`. |

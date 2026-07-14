@@ -22,7 +22,6 @@ from bencheval.benchmark_registry import (
     BenchmarkEntry,
     BenchmarkFilter,
     BenchmarkTier,
-    SafetyReview,
     execution_support_label,
     filter_benchmarks,
     load_benchmark_catalog,
@@ -60,7 +59,6 @@ def _list_benchmarks(args: argparse.Namespace) -> int:
             category=args.category,
             tier=args.tier,
             adapter_status=args.status,
-            safety_review=args.safety,
             execution_support=None if support == "all" else support,
         ),
     )
@@ -77,14 +75,26 @@ def _list_benchmarks(args: argparse.Namespace) -> int:
 
 
 def _parse_target(target: str) -> tuple[str, str]:
-    if "/" not in target:
+    """Parse ``benchmark/slice`` or bare ``benchmark`` (uses catalog ``default_slice``)."""
+    raw = target.strip()
+    if not raw:
+        raise BenchEvalError("run target must be <benchmark> or <benchmark>/<slice>")
+    if "/" in raw:
+        benchmark_id, slice_id = raw.split("/", 1)
+        if not benchmark_id or not slice_id:
+            raise BenchEvalError(f"run target must be <benchmark>/<slice>, got {target!r}")
+        return benchmark_id, slice_id
+    catalog = load_benchmark_catalog()
+    try:
+        entry = catalog.by_id_or_alias(raw)
+    except KeyError as e:
+        raise BenchEvalError(f"benchmark not found: {raw!r}") from e
+    if entry.default_slice is None:
         raise BenchEvalError(
-            f"run target must be <benchmark>/<slice>, got {target!r}",
+            f"run target {raw!r} needs an explicit /<slice> "
+            f"(benchmark {entry.id!r} has no default_slice)",
         )
-    benchmark_id, slice_id = target.split("/", 1)
-    if not benchmark_id or not slice_id:
-        raise BenchEvalError(f"run target must be <benchmark>/<slice>, got {target!r}")
-    return benchmark_id, slice_id
+    return entry.id, entry.default_slice
 
 
 def _build_plan(args: argparse.Namespace) -> RunPlan:
@@ -538,7 +548,6 @@ def _add_benchmark_list_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--category", choices=get_args(BenchmarkCategory), default=None)
     parser.add_argument("--tier", choices=get_args(BenchmarkTier), default=None)
     parser.add_argument("--status", choices=get_args(BenchmarkAdapterStatus), default=None)
-    parser.add_argument("--safety", choices=get_args(SafetyReview), default=None)
     parser.add_argument(
         "--execution-support",
         dest="execution_support",

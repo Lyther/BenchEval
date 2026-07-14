@@ -6,7 +6,7 @@
 **Date:** 2026-06-17 (revised 2026-06-17 — benchmark research + factual corrections, see §16 Changelog)
 **Primary decision:** Reframe BenchEval from a private Core benchmark project into a public benchmark × model × runtime evaluation control plane.
 
-> **Current product contract (2026-07):** Prefer [`docs/architecture.md`](../architecture.md), [`docs/api/internal-contracts.md`](../api/internal-contracts.md), and the root [`README.md`](../../README.md). Live spine is `benchmark → (runtime | agent)? → model via provider → evidence`. Admitted executables: `terminal-bench`, `swe-bench-verified`, `bfcl-v4`. CLI is `bencheval run <benchmark>/<slice> --model <id> [--runtime|--agent] [--provider] [--dry-run|-y]`. Commands documented below such as `plan`, `run --config`, `run --benchmark/--slice`, `task`, and `replay` are **historical** and must not be used as operator instructions.
+> **Current product contract (2026-07):** Prefer [`docs/architecture.md`](../architecture.md), [`docs/api/internal-contracts.md`](../api/internal-contracts.md), and the root [`README.md`](../../README.md). Live spine is `benchmark → (runtime | agent)? → model via provider → evidence`. Tier-0 executables: `terminal-bench`, `swe-bench-verified`, `bfcl-v4`, `gpqa-diamond`, `hle`; `swe-bench-pro`, `cybergym`, and `exploitgym` remain pending. CLI is `bencheval run <benchmark>/<slice> --model <id> [--runtime|--agent] [--provider] [--dry-run|-y]`. Commands documented below such as `plan`, `run --config`, `run --benchmark/--slice`, `task`, and `replay` are **historical** and must not be used as operator instructions.
 
 ---
 
@@ -96,10 +96,10 @@ Claude Code and Codex CLI are not just model endpoints. They are runtimes/scaffo
 
 Recent benchmark-integrity research shows that agent benchmarks can be reward-hacked: Terminal Wrench reports 331 reward-hackable terminal-agent environments and 3,632 exploit trajectories, while Berkeley RDI reports benchmark-scoring vulnerabilities across multiple prominent agent benchmarks. BenchEval must preserve native results but attach verifier-integrity and reward-hacking risk metadata rather than blindly treating public scores as capability truth. [R16] [R17]
 
-Several cybersecurity agent benchmarks are directly relevant to BenchEval's defensive-only Core boundary and to the Stretch/Calibration lanes that may include offensive-restricted evaluation under explicit safety review:
+Several cybersecurity agent benchmarks are directly relevant to BenchEval's defensive-only Core boundary and to Stretch/Calibration evaluation under the official harness and operator-host policy:
 
 - **CyberGym** (arXiv 2506.02548, UC Berkeley, v3 2026-03) is a large-scale benchmark of 1,507 real-world vulnerabilities across 188 open-source projects (OpenSSL, FFmpeg, OpenCV, …). The task is **vulnerability reproduction**: given a vulnerability description and the pre-patch codebase, an agent must generate a proof-of-concept (PoC) that triggers the bug. It is execution-based and objectively verified with sanitizers; it is ~7.5× larger than prior cyber agent benchmarks. Top agents reach ~20–30% single-trial success. It was used in Anthropic's Claude-Sonnet-4.5 system card. During evaluation agents autonomously found 34 zero-day vulnerabilities and 18 incomplete patches (responsibly disclosed). [R18]
-- **ExploitGym** (Berkeley RDI, `cybergym.io`) is a companion benchmark of 869 instances across three domains — userspace, browser, and the Linux kernel — where the task is **full exploit generation**: given a vulnerability and a proof-of-vulnerability input, an agent must craft an exploit achieving unauthorized code execution. This is explicitly **offensive-restricted**: it belongs only in the Stretch lane behind an explicit safety review and must never be Core-weighted. [R19]
+- **ExploitGym** (Berkeley RDI, `cybergym.io`) is a companion benchmark of 869 instances across three domains — userspace, browser, and the Linux kernel — where the task is **full exploit generation**: given a vulnerability and a proof-of-vulnerability input, an agent must craft an exploit achieving unauthorized code execution. It belongs only in the Stretch lane, uses the official sandboxed harness policy, and must never be Core-weighted. [R19]
 - **CyberGym-E2E** (Berkeley RDI, paper 2026, full release pending) extends toward end-to-end evaluation of the full vulnerability lifecycle (find → reproduce → exploit → patch). It is a roadmap item, not yet a runnable public task set. [R20]
 - **BountyBench** (arXiv 2505.15216, Stanford CRFM) is a framework with 25 real-world systems and 40 bug bounties (awards $10–$30,485) covering 9 of the OWASP Top 10. It defines three task types — Detect (find a new vulnerability), Exploit (exploit a given vulnerability), Patch (patch a given vulnerability) — and evaluates agent attackers and defenders in a Kali Linux container. It directly exercises the runtime dimension (Claude Code, Codex CLI, custom agents). [R21]
 
@@ -220,7 +220,7 @@ Core suite only as internal self-test/private regression
 
 ## 5. Benchmark Strategy
 
-BenchEval should classify benchmarks by execution role, not by marketing importance. **Live product YAML** (`config/benchmarks.yaml`) now admits **3** executables only; the broader research catalog is docs-only (`docs/context/external-benchmark-catalog.md`). Historical drafts of this HLD assumed a large metadata catalog (~81 ids) for adapter planning — that count is no longer the product registry.
+BenchEval should classify benchmarks by execution role, not by marketing importance. **Live product YAML** (`config/benchmarks.yaml`) has **8** catalog rows and **5** Tier-0 executables (`cybergym` remains pending full official lifecycle); the broader research catalog is docs-only (`docs/context/external-benchmark-catalog.md`). Historical drafts of this HLD assumed a large metadata catalog (~81 ids) for adapter planning — that count is no longer the product registry.
 
 ### 5.1 Benchmark Classes
 
@@ -234,7 +234,7 @@ BenchEval should classify benchmarks by execution role, not by marketing importa
 | OS/computer-use eval | Test desktop/mobile/multimodal agents. | OSWorld, Windows Agent Arena, OSUniverse, AndroidWorld, VisualAgentBench (VAB). | Post-MVP due VM/GUI complexity. |
 | Long-context eval | Test retrieval over very long contexts. | LongBench, InfiniteBench, LooGLE, Needle-in-a-Haystack. | Cheap model-only smoke; useful for context-window comparison. |
 | Defensive security eval | Test patching, triage, secure-code repair, SOC workflows, vulnerability reproduction. | CyberSecEval 4 AutoPatchBench/CyberSOC, SECURE, SecBench, Cybench (CTF), CyberGym (vulnerability reproduction, 1,507 instances), BountyBench (Detect/Patch tasks), CyberGym-E2E (pending). | Defensive/sandboxed subsets only, post initial adapter. |
-| Offensive-restricted security eval | Full exploit generation against real targets. | ExploitGym (869 instances, userspace/browser/kernel), BountyBench Exploit tasks, CyberGym PoC generation against unpatched code. | **Stretch only**, explicit safety review, never Core-weighted, no live targets. |
+| Dual-use security eval | Full exploit generation in official benchmark sandboxes. | ExploitGym (869 instances, userspace/browser/kernel), BountyBench Exploit tasks, CyberGym PoC generation against unpatched code. | **Stretch only**, host/harness authorization policy, never Core-weighted, no live targets. |
 | General LLM eval harness | Test broad NLP/knowledge/reasoning datasets. | lm-evaluation-harness, HELM. | Optional adapter after product core; not the main runtime-comparison use case. |
 
 ### 5.2 Recommended Initial Adapter Set
@@ -254,7 +254,7 @@ The first adapters should maximize signal per engineering hour. Adapter status i
 | P2 | CyberGym (defensive slice) | 1,507 real-world vulns / 188 projects; vulnerability reproduction | Large-scale, execution-verified; used in Claude-Sonnet-4.5 system card. Defensive framing only (patch verification, not exploit deployment). | `smoke-10` reproduction subset; never live-target exploit. |
 | P3 | BountyBench (Detect + Patch only) | 25 systems / 40 bounties / 9-of-10 OWASP Top 10; Stanford CRFM | Captures dollar-impact offense/defense; restrict to Detect + Patch tasks, exclude Exploit tasks from non-Stretch lanes. | small Kali-container slice. |
 | P3 | OSWorld adapter | 369 desktop/web tasks | GUI/runtime dimension, high operational complexity. | small verified slice. |
-| Stretch | ExploitGym | 869 instances / 3 domains | **Offensive-restricted.** Full exploit generation; requires explicit safety review and approval gate; never Core-weighted, never live targets. | smoke only under safety review. |
+| Stretch | ExploitGym | 869 instances / 3 domains | **Dual-use.** Full exploit generation in the official benchmark harness; never Core-weighted, never live targets. | smoke only under host/harness authorization policy. |
 | Stretch | CyberGym-E2E | pending release (paper 2026) | End-to-end vulnerability lifecycle; wait for public task set before adapter work. | n/a until release. |
 
 SWE-bench Verified should not be used as a frontier promotion benchmark. It can still be used as an adapter smoke test because its ecosystem is widely supported and its task IDs are familiar, but reports must label it as contaminated/legacy for frontier capability inference.
@@ -268,8 +268,8 @@ BenchEval must separate four concepts:
 ```text
 model_id       = the model or provider endpoint used for generation
 runtime_kind   = the agent scaffold/host driving the task
-harness_kind   = the benchmark execution harness or environment manager
-adapter_kind   = the BenchEval glue mapping run spec ↔ native harness ↔ evidence
+harness_kind   = derived metadata for the official runner family declared by adapter code
+adapter_kind   = the BenchEval glue mapping run spec ↔ official runner ↔ evidence
 ```
 
 ### 6.1 Examples
@@ -557,9 +557,9 @@ caveats:
 
 slices:
   - id: "smoke-5"
-    manifest: "config/manifests/terminal-bench-smoke-5.txt"
+    instances: ["fix-git", "overfull-hbox", "..."]
   - id: "lite-20"
-    manifest: "config/manifests/terminal-bench-lite-20.txt"
+    instances: ["..."]
   - id: "full"
     native_selector: "all"
 ```
@@ -813,7 +813,7 @@ A benchmark adapter cannot be marked runnable unless it passes:
 | Evidence completeness | Raw native result, stdout/stderr, verifier logs, artifacts, and run config stored. |
 | Failure separation | Harness, runtime, materialization, budget, and model failures are distinguishable. |
 | Cleanup replay | Workspace cleanup succeeds without deleting evidence. |
-| Slice support | At least one smoke manifest works. |
+| Slice support | At least one typed slice with instance ids works. |
 | Dry-run accuracy | Dry-run predicts instance count, harness, runtime, and budget envelope. |
 | Caveat labels | Contamination/reward-hack/safety caveats attached where applicable. |
 
@@ -928,9 +928,9 @@ Research-driven revision of this proposal after verifying named benchmarks again
 - **Harbor attribution (§2.1, [R2]):** Confirmed Harbor is "from the creators of Terminal-Bench" (same Stanford × Laude team); repo `github.com/harbor-framework/harbor`, Apache-2.0. Harbor pre-integrates Claude Code, OpenHands, Codex CLI and is the official harness for Terminal-Bench 2.0 (`harbor run --dataset terminal-bench@2.0`). Clarified repo vs. leaderboard URLs.
 - **Terminal-Bench task count (§2.1, [R3]):** Confirmed 89 tasks for v2.0 (v1.0 had 80); the "80+" figure in older docs refers to v1.0.
 - **CyberGym (§2.1, [R18]):** Promoted from an integrity footnote to a named first-class benchmark. Verified: 1,507 real-world vulnerabilities across 188 OSS projects; task is vulnerability **reproduction** (PoC generation against pre-patch code), execution-verified with sanitizers; ~7.5× larger than prior cyber agent benchmarks; used in the Claude-Sonnet-4.5 system card; agents discovered 34 zero-days and 18 incomplete patches during eval.
-- **ExploitGym (§2.1, [R19], §5.2):** Added. 869 instances across userspace/browser/kernel for full exploit generation. Classified as **offensive-restricted Stretch only**, never Core-weighted, explicit safety review required.
+- **ExploitGym (§2.1, [R19], §5.2):** Added. 869 instances across userspace/browser/kernel for full exploit generation. Classified as Stretch only, never Core-weighted; host/harness policy applies.
 - **CyberGym-E2E (§2.1, [R20], §5.2):** Added as a pending roadmap item (paper 2026, public release not yet available).
-- **BountyBench (§2.1, [R21], §5.2):** Added. 25 real-world systems, 40 bug bounties ($10–$30,485), 9-of-10 OWASP Top 10, three task types (Detect/Exploit/Patch), Stanford CRFM. BenchEval uses Detect + Patch in normal lanes and keeps Exploit tasks behind the Stretch safety gate.
+- **BountyBench (§2.1, [R21], §5.2):** Added. 25 real-world systems, 40 bug bounties ($10–$30,485), 9-of-10 OWASP Top 10, three task types (Detect/Exploit/Patch), Stanford CRFM. BenchEval uses Detect + Patch in normal lanes and keeps Exploit tasks in Stretch only.
 - **DeepSWE (§2.1, [R22]):** Clarified it is an RL-trained agent/model (`DeepSWE-32B`, All Hands), not a verified standalone public benchmark task set. Registry must keep `deepswe` as `reference_only`/`unverified` until a canonical task source is verified.
 - **Benchmark catalog (§5):** Expanded §5.1 class taxonomy to ~10 classes and added a catalog-size note pointing to the machine-readable `config/benchmarks.yaml` registry (the authoritative source for current count, aliases, safety lane, and adapter status). Expanded §5.2 initial-adapter table to 13 rows with verified scales and explicit safety-lane assignments.
 - **Open issues for follow-up:** (a) verify `deepswe` against the correct arXiv ID / All Hands blog if it becomes reachable; (b) add CyberGym-E2E to `config/benchmarks.yaml` only after its public task release; (c) confirm exact ExploitGym source URL and license once the site stabilizes.

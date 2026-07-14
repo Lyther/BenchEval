@@ -9,20 +9,33 @@ from bencheval.exceptions import ManifestError
 from bencheval.manifest import load_manifest, read_manifest_task_ids
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-MANIFESTS = REPO_ROOT / "config" / "manifests"
 PRICING = REPO_ROOT / "config" / "pricing" / "2026-04-15.yaml"
 
 
-def test_load_terminal_bench_smoke_five() -> None:
-    d = load_manifest(MANIFESTS / "terminal-bench-smoke-5.txt")
+def test_load_manifest_digest_from_plain_text_ids(tmp_path: Path) -> None:
+    manifest = tmp_path / "terminal-bench-smoke-5.txt"
+    manifest.write_text(
+        "fix-git\noverfull-hbox\ncobol-modernization\n"
+        "modernize-scientific-stack\nlog-summary-date-ranges\n",
+        encoding="utf-8",
+    )
+    d = load_manifest(manifest)
     assert len(d.task_ids) == 5
     assert len(d.content_sha256) == 64
     assert int(d.content_sha256, 16) >= 0
     assert d.benchmark == "terminal-bench-smoke-5"
 
 
-def test_load_swebench_smoke_ten() -> None:
-    d = load_manifest(MANIFESTS / "swebench-verified-smoke-10.txt")
+def test_load_manifest_digest_is_sorted(tmp_path: Path) -> None:
+    manifest = tmp_path / "swebench-verified-smoke-10.txt"
+    manifest.write_text(
+        "django__django-11099\nsympy__sympy-18087\nmatplotlib__matplotlib-25498\n"
+        "scikit-learn__scikit-learn-25973\nastropy__astropy-14182\n"
+        "pylint-dev__pylint-6900\npytest-dev__pytest-10356\npsf__requests-2317\n"
+        "django__django-15916\nsphinx-doc__sphinx-8721\n",
+        encoding="utf-8",
+    )
+    d = load_manifest(manifest)
     assert len(d.task_ids) == 10
     assert len(d.content_sha256) == 64
     assert d.benchmark == "swebench-verified-smoke-10"

@@ -146,5 +146,5 @@ def test_execute_rejects_unknown_benchmark() -> None:
             benchmark_id="no-such-benchmark",
             slice_id="smoke-5",
             runtime_id=None,
-            model_id="gpt-test",
+            model_id="kimi-k2.7-code",
         )
