@@ -6,7 +6,7 @@ What this shows: the only product route after the hard-minimal prune. Research c
 flowchart TB
     subgraph Product["Product spine"]
         P1["bencheval list | run | catalog<br/>benchmark/slice × (runtime XOR agent)? × model via provider"]
-        P2["Executable adapters only<br/>TB · SWE-Verified · BFCL"]
+        P2["Executable adapters only<br/>TB · GPQA · HLE"]
         P3["EvidenceRecord + interpretation labels"]
         P1 --> P2 --> P3
     end
@@ -17,4 +17,4 @@ flowchart TB
     P3 --> Reports["report / compare / export"]
 ```
 
-Notes: Runtime and agent are mutually exclusive. Omit both for model-only (BFCL). Do not treat research-catalog row count as product breadth.
+Notes: Runtime and agent are mutually exclusive. Omit both for model-only (GPQA/HLE). Do not treat research-catalog row count as product breadth.

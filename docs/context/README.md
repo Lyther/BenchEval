@@ -1,15 +1,13 @@
 # Context (intent & specs)
 
-Brain dumps and supporting specs. **Product/architecture source of truth:** [`concept-hld.md`](concept-hld.md) (v0.3).
+Brain dumps and supporting specs. Product/architecture sources of truth: [`../architecture.md`](../architecture.md), [`../roadmap.md`](../roadmap.md), [`../api/internal-contracts.md`](../api/internal-contracts.md). [`concept-hld.md`](concept-hld.md) (v0.3) is the historical intent ledger, not current operator guidance.
 
 | Document | Role |
 |----------|------|
-| [`concept-hld.md`](concept-hld.md) | Authoritative HLD |
+| [`concept-hld.md`](concept-hld.md) | Historical intent/HLD ledger (v0.3) |
 | [`runtime-invocation-contracts.md`](runtime-invocation-contracts.md) | Per-runtime launch/monitor contracts |
 | [`production-v1-pilot.md`](production-v1-pilot.md) | Phase A/B gates, live matrix |
 | [`production-readiness.md`](production-readiness.md) | Tier 0/1/2 definitions |
 | [`external-benchmark-catalog.md`](external-benchmark-catalog.md) | External benchmark research catalog |
-| [`core-8-admission.yaml`](core-8-admission.yaml) | Selftest Core-8 admission |
-| [`core-16-admission.yaml`](core-16-admission.yaml) | Selftest Core-16 admission |
 
 Optional paste filenames: `notes-YYYY-MM-DD-topic.md`

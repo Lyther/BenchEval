@@ -1,10 +1,10 @@
 # Runtime invocation contracts (operational)
 
 **Status:** production v1 pins executable paths only. CyBench has no native
-four-axis adapter (`metadata_only`). If an operator runs CyBench through the
-config-driven **external-command** adapter, the profile is an operator artifact;
-BenchEval does not ship solver-specific CyBench profiles or duplicate the
-official benchmark scorer/assets.
+four-axis adapter (`metadata_only`), and the generic **external-command**
+adapter lane has been removed from the product surface; BenchEval does not
+ship solver-specific CyBench profiles or duplicate the official benchmark
+scorer/assets.
 **Scope:** per-runtime fields BenchEval adapters must honor—see also `config/runtimes/*.yaml`.
 
 ## Harbor + Terminal-Bench (`terminal-bench-harbor` adapter)
@@ -15,7 +15,7 @@ official benchmark scorer/assets.
 | Version | `harbor --version` |
 | Command shape | `harbor run` with dataset/slice, `--agent <runtime>`, `--model <model-id>` (exact flags in adapter) |
 | Docker | **Required** (official TB 2.0 harness) |
-| Network | Benchmark-defined; default deny in eval runtimes |
+| Network | `benchmark_required` (Harbor rejects `network_policy=deny`; proxy forwarding is opt-in) |
 | Env (names only) | Provider keys per agent (e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`)—never commit values |
 | Outputs | Verifier logs under `--artifacts-dir`; Harbor stdout/stderr captured by adapter |
 | Timeout | `config/runtimes/*.yaml` `timeout_sec_default`; slice may tighten |
@@ -24,7 +24,10 @@ official benchmark scorer/assets.
 
 Runtimes using Harbor agents: `claude-code`, `codex-cli` (`config/runtimes/claude-code.yaml`, `codex-cli.yaml`).
 
-## mini-SWE-agent + SWE-bench (`swe-bench-verified` adapter)
+## Diagnostic only: mini-SWE-agent + SWE-bench
+
+`swe-bench-verified` is cataloged but non-executable. The table documents retained
+adapter research; it is not a pilot prerequisite or a supported `run` path.
 
 | Field | Contract |
 |-------|----------|
@@ -37,29 +40,26 @@ Runtimes using Harbor agents: `claude-code`, `codex-cli` (`config/runtimes/claud
 | Timeout | Per-instance wall clock in adapter plan |
 | Parser | Harness pass/fail → `primary_pass`, `partial_score` |
 
-Runtime profile: `mini-swe-agent` (`config/runtimes/mini-swe-agent.yaml`).
+Runtime profiles: `claude-code`, `codex-cli` (`config/runtimes/claude-code.yaml`, `config/runtimes/codex-cli.yaml`). mini-SWE-agent is the harness binary, not a BenchEval runtime profile — the old `mini-swe-agent` profile was removed from `config/runtimes/`.
 
-## BFCL v4 native (`bfcl-v4` adapter)
+## Diagnostic only: BFCL v4
+
+`bfcl-v4` is cataloged but non-executable. The retained module can characterize
+generation artifacts, but the CLI/executor refuses it until generation and official
+evaluation are wired as one lifecycle.
 
 | Field | Contract |
 |-------|----------|
 | Package | **`bfcl-eval`**; it installs the `bfcl` console script |
 | Version | `bfcl version` or package metadata |
-| Command shape | **Current:** `bfcl generate --test-category <category> --result-dir <artifacts> --model <model>` only. Evidence interpretation is **`adapter_smoke`**. Official scoring requires a matching `bfcl evaluate` step before any `benchmark_native_claim` / model-comparison claim. |
+| Command shape | **Diagnostic:** `bfcl generate --test-category <category> --result-dir <artifacts> --model <model>`. This is not score authority. Official scoring requires a matching `bfcl evaluate` step before executability or any comparison claim. |
 | Docker | Usually not required for smoke-5; full suite per Gorilla docs |
 | Env (names only) | Provider credential env for generation (via model `provider_route`) |
-| Outputs | BFCL generate result files → normalized evidence rows (smoke) |
-| Parser | Generate-path smoke parser today; official BFCL evaluate score parsing **not wired** |
+| Outputs | Diagnostic BFCL generation files only; no admitted evidence lifecycle |
+| Parser | Generation-path parser retained for development; official BFCL evaluate score parsing **not wired** |
 
-Runtime: model-only (omit `--runtime` / `--agent`). Deleted profiles such as `native-api` are not admitted.
-
-## External-command operator profiles
-
-**Status:** generic adapter path (`adapter_id: external-command`), **not** a
-native four-axis runtime adapter. Profiles define their own solver CLI,
-container policy, cleanup commands, stream parser, and verification policy.
-Benchmark-specific profiles should live with the operator run artifacts unless
-BenchEval owns an official adapter for that benchmark.
+If admitted later, BFCL will be model-only (omit `--runtime` / `--agent`). Deleted
+profiles such as `native-api` remain unadmitted.
 
 ## Monitor semantics (target product)
 
@@ -79,7 +79,7 @@ Do **not** fail on log silence alone. Distinguish: clean exit, alive-but-quiet, 
 
 | Label | Meaning |
 |-------|---------|
-| `executable_adapter` | TB / SWE-verified / BFCL v4 control-plane adapters |
+| `executable_adapter` | TB / GPQA / HLE control-plane adapters (`swe-bench-verified` / `bfcl-v4` demoted until official evaluate) |
 | `manifest_only` | Slice/manifest without full lifecycle adapter |
 | `metadata_only` | Catalog entry only (e.g. CyBench until adapter ships) |
 

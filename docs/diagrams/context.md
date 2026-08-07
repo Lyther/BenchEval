@@ -13,18 +13,18 @@ flowchart TB
 
     Harbor["Harbor CLI"]
     Docker["Docker Engine<br/>harness-owned"]
-    SWE["SWE-bench tooling"]
-    BFCL["BFCL / Gorilla harness"]
+    Inspect["Inspect Evals<br/>GPQA"]
+    HLE["CAIS HLE scripts"]
     Provider["LLM providers<br/>ByteLLM · Ollama Cloud · …"]
     AgentCLI["External agent CLI<br/>e.g. momo"]
-    Catalog["Admitted benchmarks<br/>TB · SWE-Verified · BFCL"]
+    Catalog["Executable benchmarks<br/>TB · GPQA · HLE"]
 
     Op -->|list · catalog · run · compare| BE
     CI -->|Tier 0 gates · unit/integration tests| BE
     BE -->|invokes for Terminal-Bench| Harbor
     Harbor -->|runs agent tasks in| Docker
-    BE -->|native adapter subprocess| SWE
-    BE -->|bfcl generate smoke| BFCL
+    BE -->|model-only Inspect path| Inspect
+    BE -->|model-only HLE path| HLE
     BE -->|model via provider_route; never stores secrets| Provider
     BE -->|optional --agent| AgentCLI
     Catalog -->|config/benchmarks.yaml| BE

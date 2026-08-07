@@ -1,7 +1,7 @@
 # External benchmark catalog
 
 > **Status:** Research only (updated 2026-07-14). **Not** the product catalog.
-> **Live product YAML:** [`config/benchmarks.yaml`](../../config/benchmarks.yaml) has **8** catalog rows and **5** Tier-0 executable rows (`terminal-bench`, `swe-bench-verified`, `bfcl-v4`, `gpqa-diamond`, `hle`). `swe-bench-pro`, `cybergym`, and `exploitgym` remain `adapter_pending` until real official task selectors and result parsers are wired. Rows below that are not yet admitted remain a planning shortlist.
+> **Live product YAML:** [`config/benchmarks.yaml`](../../config/benchmarks.yaml) has **8** catalog rows and **3** Tier-0 executable rows (`terminal-bench`, `gpqa-diamond`, `hle`). `swe-bench-verified` and `bfcl-v4` are demoted until official evaluate paths are wired; `swe-bench-pro`, `cybergym`, and `exploitgym` remain `adapter_pending`. Rows below that are not yet admitted remain a planning shortlist.
 > **Do not** treat entries here as runnable via BenchEval CLI.
 
 Third-party suites popular in coding-agent, tool-use, and security evaluation. Prefer official harnesses when a future adapter is designed.
@@ -76,11 +76,11 @@ As of 2026-06-17, "DeepSWE" (e.g. `DeepSWE-32B`) is an **RL-trained agent/model*
 
 Priority for **future** adapter design only. None of these become product until YAML + adapter + live proof land:
 
-1. SWE-bench Verified Mini or Lite — cheap SWE regression (Verified smoke already admitted separately)
+1. SWE-bench Verified Mini or Lite — cheap SWE regression research; current catalog row is non-executable
 2. Cybench (5–10 task smoke) — security appendix — **research only; not admitted**
 3. τ-bench — stateful tool patterns — **research only; not admitted**
-4. BFCL v4 official `evaluate` — generation smoke is admitted; scoring not wired
-5. Terminal-Bench larger slices — smoke already admitted via Harbor
+4. BFCL v4 official `generate` + `evaluate` lifecycle — current catalog row is non-executable
+5. Terminal-Bench larger slices — smoke is Tier-0 executable via Harbor; live proof remains separate
 
 ## Integration posture (research only)
 

@@ -14,9 +14,9 @@ sequenceDiagram
     participant Ev as Evidence JSONL
 
     Op->>CLI: list / catalog …
-    CLI-->>Op: executable adapters (default 7)
+    CLI-->>Op: executable adapters (default 3)
 
-    Op->>CLI: run bfcl-v4/smoke-5 --model … --dry-run
+    Op->>CLI: run gpqa-diamond/smoke --model … --dry-run
     CLI->>Reg: resolve scaffold (runtime XOR agent; else model-only)
     CLI->>Plan: plan_control_plane(…)
     Plan-->>CLI: RunPlan + envelope + caveats
@@ -41,4 +41,4 @@ sequenceDiagram
     end
 ```
 
-Notes: Harbor/SWE require explicit `--runtime` (`claude-code` | `codex-cli`). BFCL omits runtime/agent. `--agent momo` is XOR with `--runtime`. Defaults for `--output` / `--artifacts-dir` under `results/`.
+Notes: Harbor requires explicit `--runtime` (`claude-code` | `codex-cli`). GPQA/HLE omit runtime/agent. `--agent momo` is XOR with `--runtime`. Defaults for `--output` / `--artifacts-dir` under `results/`.

@@ -1,20 +1,23 @@
 # Production v1 internal pilot
 
-**Scope:** Product catalog has **8** YAML rows; Tier-0 gate admits **5 executable** benchmarks (`terminal-bench`, `swe-bench-verified`, `bfcl-v4`, `gpqa-diamond`, `hle`). `swe-bench-pro`, `cybergym`, and `exploitgym` stay cataloged/`adapter_pending` until real official task selectors and result parsers are wired. Full dataset/image pulls are host-side (2TB test env), not CI.
+**Scope:** Product catalog has **8** YAML rows; Tier-0 gate admits **3 executable** benchmarks (`terminal-bench`, `gpqa-diamond`, `hle`). `swe-bench-verified` and `bfcl-v4` are demoted until official evaluate paths are wired; `swe-bench-pro`, `cybergym`, and `exploitgym` stay cataloged/`adapter_pending`. Full dataset/image pulls are host-side (2TB test env), not CI.
 
 ## Phase A — ship gates (no live deps)
 
 ```bash
+uv sync --dev --extra eval --extra analytics
 make check-production-v1
 ```
 
-Includes: pytest, ruff, shellcheck, `uv lock --check`, executable catalog count = 5, unknown-benchmark `run` must fail before execute.
+Includes: real PyArrow/DuckDB export round trips, full-package coverage, the uninstrumented
+planner timing contract, ruff, shellcheck, `uv lock --check`, executable catalog count =
+3, and an unknown-benchmark `run` that must fail before execute.
 
 ## Phase B — live matrix (credentials + Docker)
 
 **Procedure:** [`docs/ops/dev-box-pilot.md`](../ops/dev-box-pilot.md) (prerequisites, proxy, matrix exit codes, `evidence register`).
 
-**Tier meaning:** Tier 1 = at least one real native-harness instance with a complete `EvidenceRecord`; minimum matrix proof = TB `smoke-5` × two Harbor runtimes + compare + BFCL (see runbook). Details: [`production-readiness.md`](production-readiness.md) §Tier 1–2.
+**Tier meaning:** Tier 1 = at least one real native-harness instance with a complete `EvidenceRecord`; minimum matrix proof = TB `smoke-5` × two Harbor runtimes + compare with ≥1 shared eligible instance (see runbook). Details: [`production-readiness.md`](production-readiness.md) §Tier 1–2.
 
 **Artifacts:** `results/evidence/`, `reports/`, `bundles/` (default `--redaction private`); `results/preflight/*.json` on blockers (negative evidence, not fake pass).
 

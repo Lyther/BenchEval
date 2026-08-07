@@ -8,27 +8,33 @@ flowchart TB
 
     subgraph ProdV1["Production v1 executable adapters<br/>config: executable: true"]
         TB["terminal_bench_harbor.py<br/>adapter_id: terminal-bench-harbor<br/>harness: harbor"]
-        SWE["swebench_adapter.py<br/>adapter_id: swebench<br/>harness: swebench-native"]
-        BFCL["bfcl_native_adapter.py<br/>adapter_id: bfcl<br/>harness: bfcl-native<br/>generation smoke until evaluate"]
+        GPQA["gpqa_adapter.py<br/>adapter_id: gpqa<br/>harness: inspect-evals"]
+        HLE["hle_adapter.py<br/>adapter_id: hle<br/>harness: hle-native"]
         Agent["external_agent_adapter.py<br/>config/agents/*.yaml command contract"]
+    end
+
+    subgraph Demoted["Cataloged but non-executable until official evaluate"]
+        SWE["swebench_adapter.py<br/>adapter_id: swebench"]
+        BFCL["bfcl_native_adapter.py<br/>adapter_id: bfcl"]
     end
 
     subgraph Outside["Harness / runtime / agent ownership"]
         HCLI["Harbor CLI + Docker"]
-        SN["SWE-bench native tooling"]
-        BN["BFCL / Gorilla harness"]
+        Inspect["Inspect Evals"]
+        HLEH["CAIS HLE scripts"]
         ExtAgent["External agent CLI e.g. momo"]
     end
 
-    CPE -->|adapter_id match| TB & SWE & BFCL
+    CPE -->|adapter_id match| TB & GPQA & HLE
     CPE -->|agent_id set| Agent
     TB --> HCLI
-    SWE --> SN
-    BFCL --> BN
+    GPQA --> Inspect
+    HLE --> HLEH
     Agent --> ExtAgent
 
     Cat["config/benchmarks.yaml<br/>adapter_id · executable"]
     Cat -.->|declares executability| ProdV1
+    Cat -.->|executable: false| Demoted
 ```
 
-Notes: Research candidates stay in docs (`external-benchmark-catalog.md`), not product YAML. `harness_kind` is adapter-declared run-plan/evidence metadata, not a benchmark YAML knob. BFCL currently runs `bfcl generate` for adapter smoke; official `bfcl evaluate` is not wired yet, so evidence interpretation stays `adapter_smoke`.
+Notes: Research candidates stay in docs (`external-benchmark-catalog.md`), not product YAML. `harness_kind` is adapter-declared run-plan/evidence metadata, not a benchmark YAML knob. SWE/BFCL modules remain in-tree for future evaluate wiring but are refused by execute/CLI today.

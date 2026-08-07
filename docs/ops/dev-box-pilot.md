@@ -24,20 +24,18 @@ The minimum live proof this runbook targets (matches
    Harbor runtimes (same `model_id` so the compare is runtime-only).
 2. `bencheval compare` of those two evidence files succeeds (single axis:
    `runtime_comparison`).
-3. `bfcl-v4` `smoke-5` model-only (no `--runtime` / no `--agent`).
 
-SWE (`swe-bench-verified` smoke-10 via `--runtime claude-code`) is exercised but is
-**not** part of the minimum proof.
+`bfcl-v4` and `swe-bench-verified` are cataloged but **not** executable until
+official evaluate paths are wired; optional matrix lanes may still exercise them
+for diagnostics only and are not part of the minimum proof.
 
 ## 1. Prerequisites on dev-box-cpu
 
 | Dependency | Why | Check |
 |---|---|---|
 | Python 3.12+, `uv` | control plane | `uv --version` |
-| Docker daemon | Harbor TB harness (when used), some SWE materialization | `docker info` (dev-box only when running those adapters) |
+| Docker daemon | Harbor TB harness | `docker info` |
 | `harbor` CLI | TB runtime | `harbor --version` (or `uv sync --extra eval`) |
-| `bfcl` | BFCL lane (`bfcl-eval` package) | `command -v bfcl && bfcl --help` |
-| `mini-extra` | SWE lane | `command -v mini-extra` |
 | Provider env vars | live model calls | `verify_auth.sh` (below) |
 
 ```bash
@@ -45,8 +43,7 @@ uv sync
 uv sync --extra eval          # inspect_ai / harbor extras
 ```
 
-`bfcl` and `mini-extra` are host/runtime CLIs, not part of the `eval` extra.
-Install them separately before claiming a full Phase B matrix.
+Demoted BFCL/SWE diagnostic tooling is not a prerequisite for the minimum pilot.
 
 Keep all artifacts under `results/` — it is gitignored. Do not commit live
 evidence, raw outputs, or bundles unless you explicitly intend to publish.
@@ -90,7 +87,8 @@ bash scripts/verify_auth.sh
 plane forwards proxy env vars into Harbor task containers when
 `BENCHEVAL_HARBOR_FORWARD_PROXY=1` (the matrix sets this by default). The
 forwarded set is `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` (and lowercase
-variants); `NO_PROXY` is also injected per-agent via `--agent-env`.
+variants) via a mode-0600 Harbor `--env-file` outside the raw evidence tree
+(never `--agent-env` argv). The file is unlinked after Harbor launch.
 
 Generic checklist:
 
@@ -130,8 +128,8 @@ scripts/doctor-pilot.sh
 ```
 
 Runs `verify_auth.sh` (unless `--no-auth`), then
-`uv run bencheval doctor --profile pilot --model <model>` (harbor, docker,
-`bfcl`, `mini-extra`, provider env). Equivalent to the native CLI:
+`uv run bencheval doctor --profile pilot --model <model>` (Harbor, Docker,
+provider env). Equivalent to the native CLI:
 
 ```bash
 uv run bencheval doctor --profile pilot --model "${BENCHEVAL_PILOT_MODEL}"
@@ -163,11 +161,8 @@ What it does, per step:
   terminal-bench/smoke-5 --runtime <rt> -y`. On doctor fail
   → preflight record + step fails. On run fail → artifacts emitted, step
   fails.
-- `bfcl-v4` lane: skipped-with-preflight if `bfcl` is not on `PATH`;
-  otherwise `bencheval run bfcl-v4/smoke-5 -y` (model-only; omit `--runtime`).
-- `swe-bench-verified` lane: skipped-with-preflight if `mini-extra` missing
-  or Docker unavailable; otherwise
-  `bencheval run swe-bench-verified/swe-bench-verified-smoke-10 --runtime claude-code -y`.
+- Demoted catalog lanes (`bfcl-v4`, `swe-bench-verified`) are **not** invoked by
+  the matrix; CLI `run` refuses them until official evaluate paths are wired.
 - Compare: only when **both** TB lanes produced evidence, runs
   `bencheval compare` of `tb-claude-code-<stamp>` vs `tb-codex-cli-<stamp>`.
 
@@ -175,7 +170,9 @@ Artifacts written under `results/` (all gitignored):
 
 - `evidence/*.jsonl` — vNext `EvidenceRecord` lines (primary scoring input)
 - `reports/*.md` — human-readable per-run reports
-- `bundles/<tag>/` — `export-run --redaction private` redacted bundles
+- `bundles/<tag>/` — `export-run --redaction private` copies the full raw tree
+  (unredacted; secret-bearing proxy env files are denied). Use `--redaction public`
+  for redacted evidence/report-only bundles.
 - `compare/*.md` — runtime compare reports
 - `preflight/*.json` — `preflight_v1` negative evidence for blocked steps
 - `raw/<tag>/` — adapter raw outputs (private)
@@ -187,19 +184,18 @@ Treat the exit code as the definition of done, then verify the files exist.
 
 | Exit | Meaning | Required evidence present |
 |---|---|---|
-| `0` | **Full proof** | `evidence/tb-claude-code-<s>.jsonl`, `evidence/tb-codex-cli-<s>.jsonl`, `compare/tb-runtime-<s>.md`, `evidence/bfcl-smoke5-<s>.jsonl` |
-| `0` | **TB proof, BFCL waived** | TB×2 + compare present; BFCL missing; `BENCHEVAL_ALLOW_PREFLIGHT_ONLY=1` set |
+| `0` | **Minimum proof** | `evidence/tb-claude-code-<s>.jsonl`, `evidence/tb-codex-cli-<s>.jsonl`, `compare/tb-runtime-<s>.md`, and ≥1 shared eligible instance |
 | `0` | **Preflight-only** | No live evidence; only `preflight/*.json`; `BENCHEVAL_ALLOW_PREFLIGHT_ONLY=1`, `BLOCKED>0`, `FAILED=0` |
-| `2` | **TB proof OK, BFCL missing, no waiver** | TB×2 + compare present; BFCL missing; waiver not set |
-| `1` | **Minimum proof not met** | TB pair or compare incomplete |
+| `1` | **Minimum proof not met** | TB pair, compare, or shared-eligible set incomplete |
+
+`bfcl-v4` / `swe-bench-verified` are optional diagnostic lanes only (not executable until official evaluate is wired). They are not part of the exit-0 minimum.
 
 The summary line tells you which row you hit:
 
 ```text
-Pilot summary: passed=<n> blocked_preflight=<n> failed=<n> tb_compare=<0|1>
-Live pilot minimum proof: OK (TB×2 + compare + BFCL)        # full
-Live pilot: TB proof OK; BFCL waived (...)                   # waived
-Live pilot: preflight-only mode (no live evidence)           # preflight-only
+Pilot summary: passed=<n> blocked_preflight=<n> failed=<n> tb_compare=<0|1> shared_eligible=<n>
+Live pilot minimum proof: OK (TB runtime comparison on N shared eligible instances)
+Live pilot: preflight-only mode (no live evidence)
 ```
 
 Verify the same-`model_id` invariant before treating a compare as
@@ -274,22 +270,17 @@ It never converts a failure into a pass; it only relaxes the
 
 | Situation | Without flag | With `=1` |
 |---|---|---|
-| Full proof (TB×2 + compare + BFCL) | exit `0` | exit `0` |
-| TB×2 + compare, **BFCL missing** | **exit `2`** | exit `0` (BFCL waived) |
+| Minimum proof (TB×2 + compare + shared eligible ≥1) | exit `0` | exit `0` |
 | Some steps **blocked** (`BLOCKED>0`), **none failed** (`FAILED=0`) | exit `1` | exit `0` (preflight-only) |
 | Any step **failed** (`FAILED>0`) | exit `1` | **exit `1`** — failures are never waived |
 
 Rules of thumb:
 
 - Leave it unset for a real Phase B gate — you want exit `0` to mean "live
-  proof collected".
+  TB runtime-comparison proof collected".
 - Set `=1` only for credential/Docker-blocked environments where preflight
-  negative evidence is the intended artifact, or to waive BFCL when TB proof
-  is the actual goal. It still requires `FAILED=0`; a true run failure is
-  never waived.
-- Exit `2` specifically means "TB proof is good, just set the flag to accept
-  the missing BFCL lane" — re-running with `BENCHEVAL_ALLOW_PREFLIGHT_ONLY=1`
-  is the documented remedy.
+  negative evidence is the intended artifact. It still requires `FAILED=0`; a
+  true run failure is never waived.
 
 ## 7. Troubleshooting
 
@@ -299,6 +290,6 @@ Rules of thumb:
 | Harbor doctor `fail` | `harbor` CLI not installed | `uv sync --extra eval` |
 | Docker doctor `fail` | daemon down / socket perms | `docker info`; start daemon |
 | Compare exits with dual-axis error | TB runtimes used different `model_id` | set `BENCHEVAL_PILOT_CLAUDE_MODEL`/`_CODEX_MODEL` to the same alias |
-| BFCL lane preflighted | `bfcl` not on `PATH` or the `bfcl-eval` install is broken | install/repair `bfcl-eval`; or accept TB-only with the waiver flag |
+| Demoted BFCL/SWE run attempted | Catalog rows are non-executable | Do not invoke; wait for official evaluate wiring |
 | Anthropic router rejects `messages[].role=system` | needs top-level `system` | `BENCHEVAL_ANTHROPIC_SYSTEM_ROLE_SHIM=1` |
 | npm slow inside TB container | default registry throttled | `BENCHEVAL_CLAUDE_CODE_NPM_REGISTRY` |

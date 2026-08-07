@@ -3,10 +3,12 @@
 ## Control plane / release
 
 - `export-config-bundle.sh` — copy control-plane `config/` tree for `BENCHEVAL_HOME` installs.
-- `check-domain-coverage.sh` — local pytest-cov gate.
+- `check-domain-coverage.sh` — full-package Coverage.py gate plus an uninstrumented planner timing assertion.
 - `verify-performance.sh` — micro-benchmarks for planner/catalog/compare hot paths.
-- `check-production-v1.sh` — Tier 0 gate (`make check-production-v1`).
-- `run-live-pilot-matrix.sh` — Phase B live TB/BFCL/SWE matrix; writes `results/preflight/` on blockers.
+- `check-production-v1.sh` — Tier 0 gate (`make check-production-v1`); requires the
+  `analytics` extra so PyArrow/DuckDB round trips cannot skip.
+- `run-live-pilot-matrix.sh` — Phase B live Terminal-Bench runtime matrix; writes
+  `results/preflight/` on blockers. BFCL and SWE-Bench remain non-executable.
   Set `BYTELLM_API_KEY` for ByteLLM pilots; the script keeps real auth on the
   host shim and passes only dummy runtime keys into Harbor containers.
   Set `BENCHEVAL_ANTHROPIC_SYSTEM_ROLE_SHIM=1` for Anthropic-compatible

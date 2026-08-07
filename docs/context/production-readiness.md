@@ -26,14 +26,15 @@ make check-production-v1        # → ./scripts/check-production-v1.sh
 
 `check-production-v1.sh` enforces, with `set -euo pipefail`:
 
-1. `uv run --no-sync pytest -q` — full test suite green (software regression of the control plane + selftest plumbing).
-2. `uv run --no-sync ruff check src tests scripts/` and `ruff format --check` — lint + format clean.
-3. `shellcheck scripts/*.sh` and `bash -n scripts/*.sh` — shell hygiene.
-4. `uv lock --check` — lockfile in sync with `pyproject.toml`.
-5. **Executable-adapter count = 5.** `bencheval benchmark list --execution-support executable_adapter --format json` must report exactly: `terminal-bench`, `swe-bench-verified`, `bfcl-v4`, `gpqa-diamond`, `hle`. Catalog still has **8** YAML rows (`swe-bench-pro`, `cybergym`, and `exploitgym` remain `adapter_pending` / non-executable until real official task selectors and result parsers are wired). Executability is config-declared in [`config/benchmarks.yaml`](../../config/benchmarks.yaml) (`executable: true` + `adapter_id`). `harness_kind` is derived from adapter code, not YAML, so config cannot introduce a behavior-changing harness. Adding a benchmark on an **existing** adapter family can be config-only; a **new** harness family needs a Python adapter, executor wiring, and official score ingestion — not just a YAML flip.
-6. **Negative-evidence gate:** `bencheval run no-such-benchmark/smoke-5 ...` must **fail** before subprocess dispatch with a benchmark-not-found error. Research candidates live in docs, not as undeclared YAML executables.
+1. Installed `analytics` extra — real PyArrow/DuckDB export round trips cannot silently skip.
+2. `scripts/check-domain-coverage.sh` — full test suite green while measuring the complete production package at the configured 80% supporting-evidence floor; the 15 ms planner timing assertion runs separately without coverage instrumentation.
+3. `uv run --no-sync ruff check src tests scripts/` and `ruff format --check` — lint + format clean.
+4. `shellcheck scripts/*.sh` and `bash -n scripts/*.sh` — shell hygiene.
+5. `uv lock --check` — lockfile in sync with `pyproject.toml`.
+6. **Executable-adapter count = 3.** `bencheval benchmark list --execution-support executable_adapter --format json` must report exactly: `terminal-bench`, `gpqa-diamond`, `hle`. Catalog still has **8** YAML rows (`swe-bench-verified` and `bfcl-v4` are demoted until official evaluate paths are wired; `swe-bench-pro`, `cybergym`, and `exploitgym` remain `adapter_pending`). Executability is config-declared in [`config/benchmarks.yaml`](../../config/benchmarks.yaml) (`executable: true` + `adapter_id`). `harness_kind` is derived from adapter code, not YAML, so config cannot introduce a behavior-changing harness. Adding a benchmark on an **existing** adapter family can be config-only; a **new** harness family needs a Python adapter, executor wiring, and official score ingestion — not just a YAML flip.
+7. **Negative-evidence gate:** `bencheval run no-such-benchmark/smoke-5 ...` must **fail** before subprocess dispatch with a benchmark-not-found error. Research candidates live in docs, not as undeclared YAML executables.
 
-**Passing Tier 0 means:** the software is correct. It does **not** mean any benchmark result is real. Non-executable benchmarks stay `metadata_only` / `manifest_only`; reports produced without live deps must carry the `adapter_smoke` interpretation label, never `benchmark_native_claim` (architecture §13.1, §15 risk "Harbor unavailable / Docker absent").
+**Passing Tier 0 means:** the configured local software gates passed. It does **not** prove every behavior is correct or that any benchmark result is real. Non-executable benchmarks stay `metadata_only` / `manifest_only`; reports produced without live deps must carry the `adapter_smoke` interpretation label, never `benchmark_native_claim` (architecture §13.1, §15 risk "Harbor unavailable / Docker absent").
 
 ---
 
@@ -41,7 +42,7 @@ make check-production-v1        # → ./scripts/check-production-v1.sh
 
 **Question answered:** *Did at least one real instance run end-to-end through the benchmark’s native harness and produce a valid `EvidenceRecord`?*
 
-Phase B lifts the Tier 0 live blockers. **Expected operator environment:** dev-box-cpu (or equivalent VPS) — not every developer laptop. **Operator procedure:** [`docs/ops/dev-box-pilot.md`](../ops/dev-box-pilot.md). **Host dependencies:** [`docs/roadmap.md`](../roadmap.md) §Live blockers (provider keys, harness CLIs such as `harbor` / `bfcl`, and **harness-owned** sandboxes when the benchmark requires them).
+Phase B lifts the Tier 0 live blockers. **Expected operator environment:** dev-box-cpu (or equivalent VPS) — not every developer laptop. **Operator procedure:** [`docs/ops/dev-box-pilot.md`](../ops/dev-box-pilot.md). **Host dependencies:** [`docs/roadmap.md`](../roadmap.md) §Live blockers (provider keys; Harbor/Docker for Terminal-Bench; Inspect Evals or the CAIS HLE scripts for those executable model-only paths).
 
 BenchEval does **not** implement a separate Docker orchestration plane. When Terminal-Bench (Harbor) or similar adapters need containers, that isolation is provided by the **official harness/runtime**, not by BenchEval core.
 
@@ -82,7 +83,7 @@ A benchmark graduates to **Production v1** only when **all** of the following ho
 
 ### A. Catalog state
 
-- [ ] `execution_support` = `executable_adapter` in `config/benchmarks.yaml` (Tier 0 gate asserts exactly 5).
+- [ ] `execution_support` = `executable_adapter` in `config/benchmarks.yaml` (Tier 0 gate asserts exactly 3).
 - [ ] `adapter_status` flipped to `manifest_available` (not `cataloged` / `adapter_pending` / `unverified`).
 - [ ] Cybersecurity benchmarks use the same control-plane contract as other benchmarks. Authorization and environment policy belong to the operator host and the official harness; BenchEval does **not** add a separate policy or confirmation layer.
 
@@ -110,7 +111,7 @@ A benchmark graduates to **Production v1** only when **all** of the following ho
 
 ### E. Honest-labelling floor (non-negotiable)
 
-- [ ] **No `benchmark_native_claim` label without a real Phase B run.** While live blockers hold, adapter-smoke with deterministic stand-ins (`local/harness`, `mockllm/model`) is acceptable for admission gates but must be labelled `adapter_smoke`.
+- [ ] **No `benchmark_native_claim` label without a real Phase B run.** Controlled injected-runner tests are diagnostic only: they may exercise local failure/normalization behavior, but cannot satisfy integration, admission, acceptance, security, readiness, or deployment evidence.
 - [ ] No statistical-significance claim from smoke/lite slices alone (VETO, architecture §14).
 - [ ] No mixing of Calibration / Stretch / selftest tasks into weighted public-benchmark totals.
 
@@ -122,10 +123,10 @@ BenchEval 的"生产就绪"分三个层级，逐级递进，不可跳级：
 
 | 层级 | 名称 | 含义 | 退出标准 |
 |------|------|------|----------|
-| Tier 0 | Phase A 软件 | 控制平面本身在零依赖下正确、确定、安全 | `make check-production-v1` 全绿（pytest / ruff / shellcheck / uv lock / 可执行适配器=5 / unknown benchmark 必须在执行前失败） |
+| Tier 0 | Phase A 软件 | 不依赖真实基准服务、凭据或 sandbox 的本地控制平面检查 | 安装 dev/eval/analytics extras 后，`make check-production-v1` 全绿（真实 PyArrow/DuckDB 导出、全包 coverage、独立 15 ms 性能门槛、ruff / shellcheck / uv lock / 可执行适配器=3 / unknown benchmark 必须在执行前失败） |
 | Tier 1 | Phase B 实证据 | 至少 1 个真实实例通过**基准原生 harness** 端到端跑通（凭据；sandbox 由 harness 按需提供） | 在 **dev-box** 上完成；Peer 锚点：Terminal-Bench `fix-git` 经 Harbor 产出完整 `EvidenceRecord` |
 | Tier 2 | Production v1 | 适配器被准入 + 实证据 + 全清单满足 | 上文 §A–§E 全部勾选，且无豁免 |
 
-**关键红线：** 没有 Phase B 真实运行，绝不能打 `benchmark_native_claim` 标签。live blockers 期间可用 `local/harness`、`mockllm/model` 做适配器 smoke，但必须标注 `adapter_smoke`。smoke/lite 切片不得声称统计显著性；Calibration / Stretch / selftest 任务不得混入公开基准加权总分（architecture §14 VETO）。
+**关键红线：** 没有 Phase B 真实运行，绝不能打 `benchmark_native_claim` 标签。受控注入 runner 的测试只能作为诊断证据，不能替代集成、准入、验收、安全、就绪或部署证明。smoke/lite 切片不得声称统计显著性；Calibration / Stretch / selftest 任务不得混入公开基准加权总分（architecture §14 VETO）。
 
 **不要编辑** `concept-hld.md`；本文档是其配套说明，非规格替代。

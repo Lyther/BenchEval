@@ -7,7 +7,7 @@
 
 ## 0. Product Principles
 
-1. **Simple spine.** Product path is `benchmark → (runtime|agent)? → model → evidence`. Runtime and agent are mutually exclusive scaffolds; omit both for model-only (BFCL).
+1. **Simple spine.** Product path is `benchmark → (runtime|agent)? → model → evidence`. Runtime and agent are mutually exclusive scaffolds; omit both for the executable model-only paths (GPQA/HLE).
 2. **Defined benchmarks only.** Live execution is limited to config-declared executable adapters.
 3. **Official-first execution.** Prefer official distributions, runners, and scorers. BenchEval normalizes evidence; it does not reimplement benchmark semantics unless upstream has no usable feedback path (then label it as fallback).
 4. **Config-first expansion.** New slices/runtimes/models/agents/providers on an existing adapter family are YAML/manifest work.
@@ -24,9 +24,9 @@ BenchEval is a thin evaluation control plane:
 benchmark/slice  →  (runtime | agent)?  →  model via provider  →  EvidenceRecord + artifacts
 ```
 
-**Tier-0 executable software (gate count = 5):** `terminal-bench`, `swe-bench-verified`, `bfcl-v4`, `gpqa-diamond`, `hle`. Catalog also lists `swe-bench-pro`, `cybergym`, and `exploitgym` as `adapter_pending` (not executable) until real official task selectors are wired.
+**Tier-0 executable software (gate count = 3):** `terminal-bench`, `gpqa-diamond`, `hle`. Catalog lists `swe-bench-verified` and `bfcl-v4` as non-executable until official evaluate paths are wired, plus `swe-bench-pro`, `cybergym`, and `exploitgym` as `adapter_pending`.
 
-**Production v1 live-proof set (where Phase B evidence exists / is the historical pilot spine):** `terminal-bench`, `swe-bench-verified`, `bfcl-v4`. Other Tier-0 rows are software-wired; treat live claims as `adapter_smoke` until Phase B evidence is recorded.
+**Production v1 live-proof set (pilot minimum):** `terminal-bench` runtime comparison (claude-code vs codex-cli). `gpqa-diamond` / `hle` are Tier-0 executable software; treat live claims as `adapter_smoke` until Phase B evidence is recorded. `swe-bench-verified` / `bfcl-v4` remain non-executable until official evaluate paths are wired.
 
 **Admitted scaffolds:** runtimes `claude-code`, `codex-cli`; agent `momo`; providers `bytellm`, `ollama-cloud`.
 
@@ -61,9 +61,9 @@ flowchart LR
     PF --> AD[Adapter dispatcher]
 
     AD --> A1[TB / Harbor]
-    AD --> A2[SWE native]
-    AD --> A3[BFCL native]
-    AD --> A4[MOMO agent]
+    AD --> A2[GPQA / Inspect Evals]
+    AD --> A3[HLE / CAIS scripts]
+    AD --> A4[External agent]
 
     A1 --> EN[Evidence normalizer]
     A2 --> EN
@@ -106,7 +106,7 @@ flowchart LR
 | Preflight / Doctor | Runtime/provider env checks before live runs (never prints secrets). | `doctor.py`. | `doctor.py` |
 | Materialization Manager | Cleanup policy + adapter-owned ephemeral dirs. | `lifecycle.py` (`CleanupPolicy`); adapters own workspace layout. | `lifecycle.py` |
 | Adapter Dispatcher | Route plan → adapter (runtime XOR agent XOR model-only). | `control_plane_executor.py`. | `control_plane_executor.py` |
-| Adapters | Harbor TB, SWE-bench, BFCL, GPQA, HLE; pending modules for SWE-Pro / ExploitGym / CyberGym. | Tier-0 executable set in YAML. | `terminal_bench_harbor.py`, `swebench_adapter.py`, `bfcl_native_adapter.py`, `gpqa_adapter.py`, `hle_adapter.py`, pending adapter modules |
+| Adapters | Harbor TB, GPQA, HLE; SWE/BFCL diagnostic modules remain non-executable; SWE-Pro / ExploitGym / CyberGym are pending. | Tier-0 executable set in YAML. | `terminal_bench_harbor.py`, `gpqa_adapter.py`, `hle_adapter.py`; SWE/BFCL diagnostic modules and pending adapter modules |
 | Evidence Normalizer | Convert native output → `EvidenceRecord`. | `evidence.py`. | `evidence.py` |
 | Evidence Store | Evidence JSONL + optional Parquet/DuckDB export. | `evidence.py`, `export.py`. | as listed |
 | Compare/Report/Export | Markdown/JSON reports + cross-run comparisons + run bundles. | `report.py`, `evidence_compare.py`, `export.py`, `run_bundle.py`. | as listed |
@@ -114,11 +114,14 @@ flowchart LR
 
 ## 6. Execution Profiles
 
-Live product paths use harness-owned sandboxes (Harbor for Terminal-Bench, native SWE/BFCL runners). Historical E0–E4 labels below are planning vocabulary only — Inspect/`inspect-api` is **not** an admitted product runtime.
+Live product paths use upstream-owned harnesses: Harbor/Docker for Terminal-Bench,
+Inspect Evals for GPQA, and the CAIS scripts for HLE. Historical E0–E4 labels below
+are planning vocabulary only — Inspect is a benchmark harness, not an admitted product
+runtime.
 
 | Profile | Name | Used for | Notes |
 |---------|------|----------|-------|
-| E0 | Model-only / API | Structured output, tool-call generation | BFCL generation smoke today |
+| E0 | Model-only / API | Official model-only benchmark harness | GPQA / HLE |
 | E1 | Runtime sandbox | Coding / repo tests under admitted runtime | Runtime-owned |
 | E2 | Terminal / harness sandbox | Terminal, multi-step verifier-heavy | Harbor for TB; harness-owned |
 | E3 | Calibration external | Public micro-slices | Adapter-backed; never Core-weighted |
@@ -130,7 +133,7 @@ Dry-run planning reports `requires_harbor` / `requires_sandbox` when needed. Tho
 
 ### 7.1 Benchmark Contract (`config/benchmarks.yaml`)
 
-Existing product YAML registry is the authoritative catalog (**8** entries; **5** Tier-0 executable). Schema: `BenchmarkCatalog`/`BenchmarkEntry` in `benchmark_registry.py` (Pydantic, `frozen=True, extra="forbid"`). Fields: id, name, aliases, category, tier (`calibration`/`stretch`/`reference_only`), adapter_status (`cataloged`/`adapter_pending`/`manifest_available`/`unverified`), recommended_backend, recommended_profile, task_count, public_indexed, contamination_risk, single_mode_required, source_url, notes, `default_slice`, `adapter_id`, and `executable`. Ops manuals: `docs/ops/benchmarks/`. `harness_kind` is deliberately **not** configurable in benchmark YAML: the adapter implementation declares the official runner kind used for planning and evidence metadata. New harness families need a Python adapter + executor wiring + official score ingestion; config-only expansion applies when reusing an existing adapter family.
+Existing product YAML registry is the authoritative catalog (**8** entries; **3** Tier-0 executable). Schema: `BenchmarkCatalog`/`BenchmarkEntry` in `benchmark_registry.py` (Pydantic, `frozen=True, extra="forbid"`). Fields: id, name, aliases, category, tier (`calibration`/`stretch`/`reference_only`), adapter_status (`cataloged`/`adapter_pending`/`manifest_available`/`unverified`), recommended_backend, recommended_profile, task_count, public_indexed, contamination_risk, single_mode_required, source_url, notes, `default_slice`, `adapter_id`, and `executable`. Ops manuals: `docs/ops/benchmarks/`. `harness_kind` is deliberately **not** configurable in benchmark YAML: the adapter implementation declares the official runner kind used for planning and evidence metadata. New harness families need a Python adapter + executor wiring + official score ingestion; config-only expansion applies when reusing an existing adapter family.
 
 ### 7.2 Slice Manifest (new typed layer)
 
@@ -184,6 +187,8 @@ class EvidenceRecord(BaseModel):
     runtime_config_hash: str | None = None
     agent_id: str | None = None
     provider_id: str | None = None
+    provider_config_hash: str | None = None
+    judge_model_id: str | None = None
     steps: int | None = None
     token_usage: dict[str, int] | None = None
     native_score: dict[str, JsonValue] | None = None
@@ -200,7 +205,7 @@ Nested `run`/`model`/`runtime`/`attempt`/`artifacts`/`integrity` blocks from HLD
 
 Adapters **prefer native harnesses**. Product v1 allowed shapes:
 
-1. **Native wrapper** — call official runner, parse native result files, preserve raw artifacts (SWE-bench, BFCL generate).
+1. **Native wrapper** — call the official runner/scorer, parse its result files, and preserve raw artifacts (GPQA/HLE today; future adapters must meet the same bar).
 2. **Harbor wrapper** — Harbor-native terminal tasks (Terminal-Bench 2.1).
 3. **External agent wrapper** — admitted agent profiles (`momo`) via `external_agent_adapter.py`.
 
@@ -229,7 +234,7 @@ External runtime launch and tool failures are separate: `runtime_launch_failure`
 
 ## 11. Scoring & Reporting
 
-- **Preserve native metrics.** If Terminal-Bench reports pass rate + CI, keep it. If SWE-bench reports resolved instances, keep it. BenchEval adds an operational layer: cost, latency, token usage, runtime/harness/adapter/model versions, failure class, cleanup status, artifact paths, caveats.
+- **Preserve native metrics.** Keep the official metrics emitted by each admitted harness (for example Terminal-Bench verifier results, Inspect GPQA accuracy, and HLE judged answers). BenchEval adds an operational layer: cost, latency, token usage, runtime/harness/adapter/model/provider versions and hashes, judge identity, failure class, cleanup status, artifact paths, and caveats.
 - **No universal weighted score by default.** Side-by-side only. A user-defined weighted portfolio may exist later as a labeled local-decision policy object, never as a benchmark-native score.
 - **Interpretation labels** on every report: `adapter_smoke` · `rough_regression` · `benchmark_native_claim` · `runtime_comparison` · `model_comparison` · `contaminated_or_legacy` · `defensive_security_only`.
 
@@ -243,7 +248,7 @@ External runtime launch and tool failures are separate: `runtime_launch_failure`
 
 ### 13.1 Adapter Admission
 
-A benchmark adapter cannot be marked `manifest_available`/runnable unless: native harness invocation ≥1 instance; version capture (benchmark/harness/adapter/runtime/model); evidence completeness (raw result, stdout/stderr, verifier logs, artifacts, run config); failure separation; cleanup replay without deleting evidence; ≥1 typed slice with instance ids; dry-run accuracy; caveat labels attached.
+A benchmark adapter cannot claim Tier-1 live proof or Tier-2 readiness unless: native harness invocation ≥1 instance; version capture (benchmark/harness/adapter/runtime/model/provider and any judge); evidence completeness (raw result, stdout/stderr, verifier logs, artifacts, run config); failure separation; cleanup replay without deleting evidence; ≥1 typed slice with instance ids; dry-run accuracy; caveat labels attached. Tier-0 `executable: true` remains a software capability claim only.
 
 ### 13.2 Runtime Admission
 
@@ -256,7 +261,9 @@ A report cannot claim model/runtime superiority unless: benchmark id identical; 
 ## 14. VETOs (unchanged where still relevant)
 
 - Mixing Calibration/Stretch tasks into weighted public-benchmark totals without caveats.
-- LLM-as-judge for authoritative `primary_pass`.
+- BenchEval-authored or ad hoc LLM-as-judge for authoritative `primary_pass`. An
+  upstream benchmark's official judge (HLE) is allowed only when its exact model
+  identity and native judged artifact are bound into evidence.
 - Live internet in MVP tasks.
 - Statistical significance claims from smoke/lite slices alone.
 - Breaking the v0.2 `EvidenceRecord` flat contract (additive only).
@@ -269,7 +276,7 @@ A report cannot claim model/runtime superiority unless: benchmark id identical; 
 |---|---|---|
 | Runtime/model conflation | High | Four-axis identity §2; CLI enforces `--runtime` distinct from `--backend`. |
 | EvidenceRecord break | High | Additive-only v0.3; v0.2 rows stay valid. |
-| Harbor unavailable / Docker absent | High | Doctor gates; mockllm-style deterministic stand-in for adapter-smoke; never claim live success. |
+| Harbor unavailable / Docker absent | High | Doctor gates; local injected-runner tests remain diagnostic only; live acceptance stays blocked. |
 | Public benchmark contamination | High | Caveat labels; prefer fresh benchmarks for promotion; contaminated = smoke/trend only. |
 | Reward-hackable verifiers | High | Preserve native result + label verifier-integrity risk; no promotion on one score. |
 | Cost overrun | High | Default smoke slices; dry-run budgets; per-run + per-instance hard caps. |
@@ -283,20 +290,20 @@ A report cannot claim model/runtime superiority unless: benchmark id identical; 
 - Plain-text manifests remain supported only for optional large/generated lists; product slices store small fixed ids inline.
 - No DB: JSONL is the store of record; DuckDB/Parquet is a derived analytics export, not transactional.
 - No pyright in repo; type discipline via ruff + Pydantic runtime validation.
-- Broader `docs/context/*` / roadmap still describe pre-prune catalog size and deleted lanes; product face is README + this architecture + `docs/diagrams/`.
+- Historical sections under `docs/context/` deliberately preserve pre-prune design decisions and are labeled non-operational; the live product contract is README + this architecture + `docs/api/internal-contracts.md` + `docs/diagrams/`.
 
 ## 17. Module map (current)
 
 | Concern | Module | Notes |
 |---|---|---|
-| Benchmark catalog | `benchmark_registry.py`, `config/benchmarks.yaml` | **8** catalog rows; **5** Tier-0 executable. |
+| Benchmark catalog | `benchmark_registry.py`, `config/benchmarks.yaml` | **8** catalog rows; **3** Tier-0 executable. |
 | Slices / manifests | `manifest.py`, `config/slices/` | Typed slice wrappers + inline instance lists; legacy manifest parser for generated lists. |
 | Models / pricing | `models.py`, `pricing.py`, `config/models.yaml` | Non-secret model routes. |
 | Runtime / agent / provider | `runtime_registry.py`, `agent_registry.py`, `provider_registry.py` | Admitted YAML under `config/{runtimes,agents,providers}/`. |
 | Plan (phase 1) | `benchmark_plan.py` | `RunPlan`; runtime XOR agent; provider default `bytellm`. |
 | Doctor | `doctor.py` | Preflight; never prints secrets. |
 | Execute (phase 2) | `control_plane_executor.py` | Dispatches to product adapters. |
-| Adapters | `terminal_bench_harbor.py`, `swebench_adapter.py`, `bfcl_native_adapter.py`, `external_agent_adapter.py` | Product v1 only. |
-| Evidence | `evidence.py` | Additive `agent_id` / `provider_id`. |
+| Adapters | `terminal_bench_harbor.py`, `gpqa_adapter.py`, `hle_adapter.py`, `external_agent_adapter.py` | Executable TB/GPQA/HLE paths; SWE/BFCL diagnostic modules are retained but demoted. |
+| Evidence | `evidence.py` | Additive agent, provider launch, and judge-model provenance. |
 | Report / compare / export | `report.py`, `evidence_compare.py`, `export.py`, `run_bundle.py` | `export-run --redaction public\|private`. |
 | CLI | `cli.py` | `list`, `run`, `catalog`, `doctor`, evidence surface. |

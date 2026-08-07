@@ -18,7 +18,7 @@ flowchart TB
 
     subgraph Ext["Outside BenchEval ownership"]
         Harbor["Harbor + Docker<br/>Terminal-Bench"]
-        Native["Native harnesses<br/>SWE-bench · BFCL"]
+        Inspect["Inspect / HLE<br/>GPQA · HLE"]
         MOMO["MOMO agent CLI"]
         LLM["Providers<br/>ByteLLM · Ollama"]
     end
@@ -31,13 +31,13 @@ flowchart TB
     Plan --> Doc
     Doc --> Disp
     Disp -->|runtime path| Harbor
-    Disp -->|runtime path| Native
+    Disp -->|model-only path| Inspect
     Disp -->|agent path| MOMO
     Harbor --> LLM
-    Native --> LLM
+    Inspect --> LLM
     MOMO --> LLM
     Harbor --> Art
-    Native --> Art
+    Inspect --> Art
     MOMO --> Art
     Disp --> Ev
     Ev --> Art
@@ -45,4 +45,4 @@ flowchart TB
     Out --> Op
 ```
 
-Notes: Model-only (BFCL) records `runtime_id=null` / `agent_id=null`. Executable adapters: `terminal-bench`, `swe-bench-verified`, `bfcl-v4`. No BenchEval-owned Docker plane.
+Notes: Model-only (GPQA/HLE) records `runtime_id=null` / `agent_id=null`. Executable adapters: `terminal-bench`, `gpqa-diamond`, `hle`. No BenchEval-owned Docker plane.

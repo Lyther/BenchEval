@@ -6,7 +6,7 @@ Evidence-based evaluation control plane. Product spine:
 benchmark  →  (runtime | agent)?  →  model via provider  →  evidence
 ```
 
-Tier-0 executable software entries: **5** (`terminal-bench`, `swe-bench-verified`, `bfcl-v4`, `gpqa-diamond`, `hle`). Catalog keeps `swe-bench-pro`, `cybergym`, and `exploitgym` as `adapter_pending` until real official task selectors are wired. Runtimes `claude-code` / `codex-cli`; agent `momo`; providers `bytellm` / `ollama-cloud`. Runtime XOR agent; omit both for model-only (BFCL / GPQA / HLE). Bare `run <benchmark>` uses each executable row’s `default_slice` (smoke). Ops: [`docs/ops/benchmarks/`](docs/ops/benchmarks/README.md).
+Tier-0 executable software entries: **3** (`terminal-bench`, `gpqa-diamond`, `hle`). `swe-bench-verified` and `bfcl-v4` stay cataloged but non-executable until official evaluate paths are wired. Catalog also keeps `swe-bench-pro`, `cybergym`, and `exploitgym` as `adapter_pending`. Runtimes `claude-code` / `codex-cli`; agent `momo`; providers `bytellm` / `ollama-cloud`. Runtime XOR agent; omit both for model-only (GPQA / HLE). Bare `run <benchmark>` uses each executable row’s `default_slice` (smoke). Ops: [`docs/ops/benchmarks/`](docs/ops/benchmarks/README.md).
 
 Intent / HLD: [`docs/context/concept-hld.md`](docs/context/concept-hld.md) (v0.3). Architecture: [`docs/architecture.md`](docs/architecture.md). Diagrams: [`docs/diagrams/`](docs/diagrams/README.md).
 
@@ -16,7 +16,7 @@ Intent / HLD: [`docs/context/concept-hld.md`](docs/context/concept-hld.md) (v0.3
 # 1. Install
 uv sync
 
-# 2. List runnable benchmarks (expect 5)
+# 2. List runnable benchmarks (expect 3)
 uv run bencheval list --format json
 
 # 3. Catalog discovery
@@ -26,18 +26,17 @@ uv run bencheval catalog agent list
 
 # 4. Dry-run (phase 1 only — envelope/cost/caveats, no execute)
 uv run bencheval run gpqa-diamond --model kimi-k2.7-code --provider bytellm --dry-run
-uv run bencheval run bfcl-v4 --model <model-id> --dry-run
 uv run bencheval run terminal-bench --runtime claude-code --model <model-id> --dry-run
 
 # 5. Live run (-y skips continue prompt; needs provider/runtime + host caches)
-uv run bencheval run bfcl-v4 --model <model-id> --provider bytellm -y
+uv run bencheval run gpqa-diamond --model <model-id> --provider bytellm -y
 ```
 
 Unknown benchmark/runtime/agent/provider ids fail before subprocess. Datasets/images stay on the host — not in this repo. Research catalog: `docs/context/external-benchmark-catalog.md`.
 
 ## Layout
 
-- `config/benchmarks.yaml` — product catalog (**8** rows; **5** Tier-0 executables)
+- `config/benchmarks.yaml` — product catalog (**8** rows; **3** Tier-0 executables)
 - `config/runtimes/` · `config/agents/` · `config/providers/` · `config/slices/` · `config/models.yaml`
 - Wheel install is self-contained: public config ships as `bencheval/_bundled/config/`; `BENCHEVAL_HOME` is an optional override
 - `src/bencheval/` — library + CLI
@@ -52,7 +51,11 @@ uv sync
 uv run bencheval list --format json
 ```
 
-Use `uv sync --extra eval` only for live Inspect / Harbor runs. Pilot gates: [`docs/context/production-v1-pilot.md`](docs/context/production-v1-pilot.md) (`make check-production-v1`).
+Before the full contributor gate, install its real export and harness dependencies with
+`uv sync --dev --extra eval --extra analytics`. Use `uv sync --extra eval` for live
+Inspect / Harbor runs that do not need the analytics gate. Pilot gates:
+[`docs/context/production-v1-pilot.md`](docs/context/production-v1-pilot.md)
+(`make check-production-v1`).
 
 ## CLI overview
 
@@ -81,6 +84,6 @@ uv run bencheval export-run \
 
 ## Production readiness
 
-Tiers and honesty gates: [`docs/context/production-readiness.md`](docs/context/production-readiness.md). Tier-0 executable count must stay **5** until another adapter is deliberately admitted in config. Tier-0 ≠ Production v1 live proof for every row.
+Tiers and honesty gates: [`docs/context/production-readiness.md`](docs/context/production-readiness.md). Tier-0 executable count must stay **3** until another adapter is deliberately admitted in config. Tier-0 ≠ Production v1 live proof for every row.
 
 Research catalog (docs only, not product YAML): [`docs/context/external-benchmark-catalog.md`](docs/context/external-benchmark-catalog.md).
