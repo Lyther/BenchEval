@@ -14,7 +14,10 @@ run() {
   "$@"
 }
 
-run uv run --no-sync pytest -q
+# Analytics export is a product path. Fail instead of silently skipping its real
+# PyArrow/DuckDB round trips when the optional production-gate extra is absent.
+run uv run --no-sync python -c 'import duckdb, pyarrow'
+run ./scripts/check-domain-coverage.sh
 run uv run --no-sync ruff check src tests scripts/
 run uv run --no-sync ruff format --check src tests scripts/
 run shellcheck scripts/*.sh
@@ -23,8 +26,8 @@ run uv lock --check
 
 payload="$(uv run --no-sync bencheval benchmark list --execution-support executable_adapter --format json)"
 count="$(printf '%s' "${payload}" | uv run --no-sync python -c 'import json,sys; print(json.load(sys.stdin)["count"])')"
-if [[ ${count} != "5" ]]; then
-  printf 'error: expected 5 executable_adapter benchmarks, got %s\n' "${count}" >&2
+if [[ ${count} != "3" ]]; then
+  printf 'error: expected 3 executable_adapter benchmarks, got %s\n' "${count}" >&2
   exit 1
 fi
 

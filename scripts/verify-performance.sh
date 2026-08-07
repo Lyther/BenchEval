@@ -69,7 +69,7 @@ bench(
         benchmark_id="terminal-bench",
         slice_id="smoke-5",
         runtime_id="claude-code",
-        model_id="runtime-default",
+        model_id="kimi-k2.7-code",
     ),
 )
 
