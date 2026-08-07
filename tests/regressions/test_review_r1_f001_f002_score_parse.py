@@ -11,7 +11,46 @@ from bencheval.domain import RunPlan
 from bencheval.evidence import read_evidence_jsonl
 from bencheval.exploitgym_adapter import ExploitgymCliResult, run_exploitgym_instance
 from bencheval.gpqa_adapter import GpqaCliResult, build_gpqa_run_command
-from bencheval.hle_adapter import HleCliResult, build_hle_run_commands
+from bencheval.hle_adapter import HleCliResult, build_hle_run_commands, hle_run_paths
+
+# SUBSTITUTE_JUSTIFICATION
+# - substitute: Inspect/HLE/ExploitGym-shaped artifacts, temporary entrypoints,
+#   environment controls, and injected runners in the execution tests below
+# - replaces: charged GPQA/HLE calls and unavailable official ExploitGym execution
+# - necessity: exact zero/partial/missing/malformed results cannot be forced safely live
+# - real-option: live harnesses cannot guarantee these negative states and may charge
+# - proof-limit: proves local fail-closed parsing/execution only, not live acceptance
+# - real-proof: BLOCKED until GPQA/HLE pilots and an official ExploitGym path run
+# - covered tests: test_gpqa_exit_0_with_zero_accuracy_does_not_pass,
+#   test_gpqa_exit_0_with_half_accuracy_sets_partial_not_full,
+#   test_gpqa_exit_0_without_official_scores_excluded_from_pass_at_k,
+#   test_exploitgym_exit_0_without_verdict_does_not_pass,
+#   test_hle_predictions_path_matches_run_isolated_artifacts_contract, and
+#   test_hle_exit_0_parses_judged_metrics_not_returncode
+
+
+def _inspect_eval_log(*, accuracy: float) -> dict[str, object]:
+    return {
+        "version": 2,
+        "status": "success",
+        "eval": {
+            "created": "2024-01-01T00:00:00+00:00",
+            "task": "gpqa_diamond",
+            "task_id": "fixture-task",
+            "model": "openai/kimi-k2.7-code",
+        },
+        "results": {
+            "total_samples": 2,
+            "completed_samples": 2,
+            "scores": [
+                {
+                    "name": "choice",
+                    "scorer": "choice",
+                    "metrics": {"accuracy": {"name": "accuracy", "value": accuracy}},
+                },
+            ],
+        },
+    }
 
 
 def test_gpqa_exit_0_with_zero_accuracy_does_not_pass(tmp_path: Path) -> None:
@@ -23,14 +62,15 @@ def test_gpqa_exit_0_with_zero_accuracy_does_not_pass(tmp_path: Path) -> None:
     )
     evidence = tmp_path / "e.jsonl"
 
-    def fake(command, *, cwd: Path | None, timeout_sec: int) -> GpqaCliResult:
+    def fake(command, *, cwd: Path | None, timeout_sec: int, env=None) -> GpqaCliResult:
         log_dir = Path(command[command.index("--log-dir") + 1])
         log_dir.mkdir(parents=True, exist_ok=True)
-        (log_dir / "official_scores.json").write_text(
-            json.dumps({"accuracy": 0.0, "correct": 0, "total": 2}),
+        log_path = log_dir / "done.json"
+        log_path.write_text(
+            json.dumps(_inspect_eval_log(accuracy=0.0)),
             encoding="utf-8",
         )
-        return GpqaCliResult(0, "ok", "", 0.05, tuple(command))
+        return GpqaCliResult(0, f"Log: {log_path}\n", "", 0.05, tuple(command))
 
     summary = execute_control_plane_run(
         plan=plan,
@@ -56,14 +96,15 @@ def test_gpqa_exit_0_with_half_accuracy_sets_partial_not_full(tmp_path: Path) ->
     )
     evidence = tmp_path / "e.jsonl"
 
-    def fake(command, *, cwd: Path | None, timeout_sec: int) -> GpqaCliResult:
+    def fake(command, *, cwd: Path | None, timeout_sec: int, env=None) -> GpqaCliResult:
         log_dir = Path(command[command.index("--log-dir") + 1])
         log_dir.mkdir(parents=True, exist_ok=True)
-        (log_dir / "official_scores.json").write_text(
-            json.dumps({"accuracy": 0.5, "correct": 1, "total": 2}),
+        log_path = log_dir / "done.json"
+        log_path.write_text(
+            json.dumps(_inspect_eval_log(accuracy=0.5)),
             encoding="utf-8",
         )
-        return GpqaCliResult(0, "ok", "", 0.05, tuple(command))
+        return GpqaCliResult(0, f"Log: {log_path}\n", "", 0.05, tuple(command))
 
     execute_control_plane_run(
         plan=plan,
@@ -87,7 +128,7 @@ def test_gpqa_exit_0_without_official_scores_excluded_from_pass_at_k(tmp_path: P
     )
     evidence = tmp_path / "e.jsonl"
 
-    def fake(command, *, cwd: Path | None, timeout_sec: int) -> GpqaCliResult:
+    def fake(command, *, cwd: Path | None, timeout_sec: int, env=None) -> GpqaCliResult:
         return GpqaCliResult(0, "ok", "", 0.05, tuple(command))
 
     execute_control_plane_run(
@@ -164,7 +205,7 @@ def test_exploitgym_exit_0_without_verdict_does_not_pass(
     assert outcome.counts_toward_pass_at_k is False
 
 
-def test_hle_predictions_path_matches_official_cwd_contract(
+def test_hle_predictions_path_matches_run_isolated_artifacts_contract(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -181,17 +222,26 @@ def test_hle_predictions_path_matches_official_cwd_contract(
         runtime_id=None,
         model_id="kimi-k2.7-code",
     )
+    artifacts = tmp_path / "out"
     pred_cmd, judge_cmd = build_hle_run_commands(
         plan=plan,
         max_samples=2,
-        artifacts_dir=tmp_path / "out",
+        artifacts_dir=artifacts,
+        run_id="hle-path-check",
     )
     assert "--num_workers" in pred_cmd
     assert int(pred_cmd[pred_cmd.index("--num_workers") + 1]) >= 2
-    # Official script writes hle_<basename(model)>.json relative to hle_eval cwd.
-    assert any(part.endswith("hle_kimi-k2.7-code.json") for part in judge_cmd)
+    paths = hle_run_paths(
+        artifacts_dir=artifacts,
+        run_id="hle-path-check",
+        provider_id=plan.provider_id,
+        model_id=plan.model_id,
+    )
     pred_path = Path(judge_cmd[judge_cmd.index("--predictions") + 1])
-    assert pred_path.parent == eval_dir.resolve()
+    assert pred_path == paths.predictions_path
+    assert pred_path.parent == paths.work_dir
+    assert "hle-path-check" in pred_path.name
+    assert plan.provider_id in pred_path.name
 
 
 def test_hle_exit_0_parses_judged_metrics_not_returncode(
@@ -212,16 +262,20 @@ def test_hle_exit_0_parses_judged_metrics_not_returncode(
         model_id="kimi-k2.7-code",
     )
     evidence = tmp_path / "e.jsonl"
+    art = tmp_path / "art"
+    paths = hle_run_paths(
+        artifacts_dir=art,
+        run_id="hle-half",
+        provider_id=plan.provider_id,
+        model_id=plan.model_id,
+    )
 
-    def fake(command, *, cwd: Path | None, timeout_sec: int) -> HleCliResult:
-        assert cwd is not None
-        assert Path(cwd).name == "hle_eval"
+    def fake(command, *, cwd: Path | None, timeout_sec: int, env=None) -> HleCliResult:
+        assert cwd == paths.work_dir
         if "run_model_predictions.py" in " ".join(command):
-            pred = Path(cwd) / "hle_kimi-k2.7-code.json"
-            pred.write_text("{}", encoding="utf-8")
+            paths.default_predictions_path.write_text("{}", encoding="utf-8")
             return HleCliResult(0, "pred", "", 0.05, tuple(command))
-        judged = Path(cwd) / "judged_hle_kimi-k2.7-code.json"
-        judged.write_text(
+        paths.judged_path.write_text(
             json.dumps(
                 {
                     "q1": {"judge_response": {"correct": "yes", "confidence": 80}},
@@ -241,7 +295,7 @@ def test_hle_exit_0_parses_judged_metrics_not_returncode(
     execute_control_plane_run(
         plan=plan,
         output_path=evidence,
-        artifacts_dir=tmp_path / "art",
+        artifacts_dir=art,
         hle_process_runner=fake,
         run_id="hle-half",
     )

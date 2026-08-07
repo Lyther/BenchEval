@@ -19,7 +19,7 @@ from bencheval.control_plane_executor import execute_control_plane_run
 from bencheval.evidence import read_evidence_jsonl
 from bencheval.exceptions import BenchEvalError
 from bencheval.gpqa_adapter import GpqaCliResult, build_gpqa_run_command
-from bencheval.hle_adapter import HleCliResult, build_hle_run_commands
+from bencheval.hle_adapter import HleCliResult, build_hle_run_commands, hle_run_paths
 from bencheval.swebench_pro_harbor import SWEBENCH_PRO_ADAPTER_ID, SWEBENCH_PRO_HARBOR_DATASET
 from bencheval.terminal_bench_harbor import HARBOR_DATASET
 
@@ -62,14 +62,46 @@ def test_execute_gpqa_slice(tmp_path: Path) -> None:
     )
     evidence = tmp_path / "e.jsonl"
 
-    def fake(command, *, cwd: Path | None, timeout_sec: int) -> GpqaCliResult:
+    def fake(command, *, cwd: Path | None, timeout_sec: int, env=None) -> GpqaCliResult:
+        # SUBSTITUTE_JUSTIFICATION
+        # - substitute: synthetic Inspect eval log written by injected runner
+        # - replaces: live Inspect eval log on disk
+        # - necessity: exercise control-plane GPQA wiring without live Inspect
+        # - real-option: live inspect eval; requires credentials + dataset
+        # - proof-limit: parser-only diagnostic path through execute_control_plane_run
+        # - real-proof: BLOCKED until live GPQA pilot
         log_dir = Path(command[command.index("--log-dir") + 1])
         log_dir.mkdir(parents=True, exist_ok=True)
-        (log_dir / "official_scores.json").write_text(
-            json.dumps({"accuracy": 1.0, "correct": 2, "total": 2}),
+        (log_dir / "done.json").write_text(
+            json.dumps(
+                {
+                    "version": 2,
+                    "status": "success",
+                    "eval": {
+                        "created": "2024-01-01T00:00:00+00:00",
+                        "task": "gpqa_diamond",
+                        "task_id": "fixture",
+                        "model": command[command.index("--model") + 1],
+                    },
+                    "results": {
+                        "total_samples": 2,
+                        "completed_samples": 2,
+                        "scores": [
+                            {
+                                "name": "choice",
+                                "scorer": "choice",
+                                "metrics": {
+                                    "accuracy": {"name": "accuracy", "value": 1.0},
+                                },
+                            },
+                        ],
+                    },
+                },
+            ),
             encoding="utf-8",
         )
-        return GpqaCliResult(0, "ok", "", 0.05, tuple(command))
+        log_path = log_dir / "done.json"
+        return GpqaCliResult(0, f"Log: {log_path}\n", "", 0.05, tuple(command))
 
     summary = execute_control_plane_run(
         plan=plan,
@@ -84,6 +116,7 @@ def test_execute_gpqa_slice(tmp_path: Path) -> None:
     assert rows[0].adapter_id == "gpqa"
     assert rows[0].interpretation_label == "adapter_smoke"
     assert rows[0].instance_id.endswith("-aggregate")
+    assert rows[0].provider_config_hash
     assert summary.passed_count == 1
 
 
@@ -100,15 +133,36 @@ def test_execute_hle_slice(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
         runtime_id=None,
         model_id="kimi-k2.7-code",
     )
-    cmds = build_hle_run_commands(plan=plan, max_samples=2, artifacts_dir=tmp_path / "out")
+    art = tmp_path / "art"
+    cmds = build_hle_run_commands(
+        plan=plan,
+        max_samples=2,
+        artifacts_dir=art,
+        run_id="hle-test",
+    )
     assert len(cmds) == 2
+    paths = hle_run_paths(
+        artifacts_dir=art,
+        run_id="hle-test",
+        provider_id=plan.provider_id,
+        model_id=plan.model_id,
+    )
 
     evidence = tmp_path / "e.jsonl"
 
-    def fake(command, *, cwd: Path | None, timeout_sec: int) -> HleCliResult:
-        assert cwd is not None
-        judged = Path(cwd) / "judged_hle_kimi-k2.7-code.json"
-        judged.write_text(
+    def fake(command, *, cwd: Path | None, timeout_sec: int, env=None) -> HleCliResult:
+        # SUBSTITUTE_JUSTIFICATION
+        # - substitute: injected process_runner writing run-local predict/judge JSON
+        # - replaces: CAIS HLE scripts + model/judge API calls
+        # - necessity: control-plane HLE wiring without live HF/API credentials
+        # - real-option: live HLE smoke under BENCHEVAL_HLE_HOME
+        # - proof-limit: diagnostic only — not live harness proof
+        # - real-proof: BLOCKED until live HLE pilot
+        assert cwd == paths.work_dir
+        if "run_model_predictions.py" in " ".join(command):
+            paths.default_predictions_path.write_text("{}", encoding="utf-8")
+            return HleCliResult(0, "pred", "", 0.05, tuple(command))
+        paths.judged_path.write_text(
             json.dumps(
                 {
                     "q1": {"judge_response": {"correct": "yes", "confidence": 90}},
@@ -122,13 +176,16 @@ def test_execute_hle_slice(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> N
     summary = execute_control_plane_run(
         plan=plan,
         output_path=evidence,
-        artifacts_dir=tmp_path / "art",
+        artifacts_dir=art,
         hle_process_runner=fake,
         run_id="hle-test",
     )
     assert summary.instance_count == 1
     assert summary.passed_count == 1
-    assert read_evidence_jsonl(evidence)[0].adapter_id == "hle"
+    row = read_evidence_jsonl(evidence)[0]
+    assert row.adapter_id == "hle"
+    assert row.provider_config_hash
+    assert row.judge_model_id == plan.judge_model_id
 
 
 @pytest.mark.parametrize("benchmark_id", ["swe-bench-pro", "cybergym", "exploitgym"])

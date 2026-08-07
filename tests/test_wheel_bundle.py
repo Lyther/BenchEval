@@ -52,7 +52,7 @@ def test_bencheval_home_supports_dry_run_planner(tmp_path: Path) -> None:
     _copy_control_plane_bundle(repo, bundle)
     dry_run_cmd = (
         "from bencheval.cli import main; "
-        "raise SystemExit(main(['run', 'bfcl-v4/smoke-5', "
+        "raise SystemExit(main(['run', 'gpqa-diamond/smoke', "
         "'--model', 'kimi-k2.7-code', '--dry-run']))"
     )
     proc = subprocess.run(
@@ -118,4 +118,4 @@ def test_wheel_install_is_self_contained_without_bencheval_home(tmp_path: Path) 
     ids = {b["id"] for b in payload["benchmarks"]}
     assert ids  # non-empty: the bundled catalog resolved
     assert all(b["execution_support"] == "executable_adapter" for b in payload["benchmarks"])
-    assert {"terminal-bench", "swe-bench-verified", "bfcl-v4"} <= ids
+    assert {"terminal-bench", "gpqa-diamond", "hle"} <= ids

@@ -15,8 +15,8 @@ from bencheval.exceptions import BenchEvalError
 
 CheckStatus = Literal["pass", "fail", "skip"]
 
-# Scope label for the aggregated pilot host-dependency report. Not an
-# ExecutionBackend: pilot spans harbor/docker/bfcl/mini-extra gates.
+# Scope label for the Terminal-Bench minimum pilot host-dependency report.
+# It is not an ExecutionBackend because the profile combines Harbor and Docker.
 PILOT_DOCTOR_BACKEND = "pilot"
 
 
@@ -173,26 +173,6 @@ def _version_line(binary: str) -> str | None:
     return text.splitlines()[0][:200]
 
 
-def _probe_binary_args(binary: str, args: tuple[str, ...]) -> tuple[bool, str | None]:
-    try:
-        proc = subprocess.run(
-            [binary, *args],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=15,
-        )
-    except OSError as e:
-        return False, f"{type(e).__name__}: {e}"
-    except subprocess.TimeoutExpired:
-        return False, "timed out"
-    text = (proc.stdout or proc.stderr or "").strip()
-    line = text.splitlines()[0][:200] if text else None
-    if proc.returncode != 0:
-        return False, line or f"exit {proc.returncode}"
-    return True, line
-
-
 def _binary_check(check_name: str, binary: str, install_hint: str) -> DoctorCheck:
     if not binary_on_path(binary):
         return DoctorCheck(check_name, "fail", f"{binary} not on PATH; {install_hint}")
@@ -200,26 +180,6 @@ def _binary_check(check_name: str, binary: str, install_hint: str) -> DoctorChec
     if version is not None:
         return DoctorCheck(check_name, "pass", f"{binary} {version} available")
     return DoctorCheck(check_name, "pass", f"{binary} on PATH (version unavailable)")
-
-
-def _bfcl_check() -> DoctorCheck:
-    if not binary_on_path("bfcl"):
-        return DoctorCheck(
-            "bfcl_eval",
-            "fail",
-            "bfcl not on PATH; install the bfcl-eval package",
-        )
-    ok, detail = _probe_binary_args("bfcl", ("--help",))
-    if not ok:
-        return DoctorCheck(
-            "bfcl_eval",
-            "fail",
-            f"bfcl command failed; repair the bfcl-eval install: {detail or 'no output'}",
-        )
-    version_ok, version = _probe_binary_args("bfcl", ("version",))
-    if version_ok and version is not None:
-        return DoctorCheck("bfcl_eval", "pass", f"bfcl {version} available")
-    return DoctorCheck("bfcl_eval", "pass", "bfcl available (bfcl-eval package)")
 
 
 def _provider_credentials_check(model_id: str) -> DoctorCheck:
@@ -235,10 +195,25 @@ def _provider_credentials_check(model_id: str) -> DoctorCheck:
         )
     present = [name for name in env_names if env_var_present(name)]
     if present:
+        from bencheval.model_registry import load_model_registry
+        from bencheval.provider_registry import (
+            load_provider_catalog,
+            resolve_openai_compatible_launch,
+        )
+
+        try:
+            model = load_model_registry().by_id(model_id.strip())
+            route = model.provider_route
+            if route is not None:
+                profile = load_provider_catalog().by_id(route)
+                if profile.provider.kind == "openai_compatible":
+                    resolve_openai_compatible_launch(route)
+        except (KeyError, BenchEvalError) as e:
+            return DoctorCheck("provider_credentials", "fail", str(e))
         return DoctorCheck(
             "provider_credentials",
             "pass",
-            f"provider env present: {', '.join(present)}",
+            f"provider env present and effective client env resolved: {', '.join(present)}",
         )
     return DoctorCheck(
         "provider_credentials",
@@ -349,12 +324,10 @@ def run_doctor(
 
 
 def run_pilot_doctor(*, model_id: str | None = None) -> DoctorReport:
-    """Aggregate pilot host-dependency preflight checks.
+    """Preflight the active Terminal-Bench minimum pilot matrix.
 
-    Mirrors the PATH/Docker gates in ``scripts/run-live-pilot-matrix.sh``:
-    ``harbor``, ``docker info``, ``bfcl`` (from the ``bfcl-eval`` package),
-    and ``mini-extra``. When a model
-    id is supplied, provider credential env vars are also checked.
+    Demoted BFCL/SWE diagnostics are deliberately outside this blocking profile.
+    When a model id is supplied, provider credential env vars are also checked.
     """
     checks: list[DoctorCheck] = [
         _binary_check("harbor_cli", "harbor", "run `uv sync --extra eval`"),
@@ -367,12 +340,6 @@ def run_pilot_doctor(*, model_id: str | None = None) -> DoctorReport:
             "docker daemon reachable"
             if docker_ok
             else "docker daemon unreachable; required for pilot runs",
-        ),
-    )
-    checks.extend(
-        (
-            _bfcl_check(),
-            _binary_check("mini_extra", "mini-extra", "install mini-SWE-agent"),
         ),
     )
     if model_id is not None:

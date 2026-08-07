@@ -65,6 +65,9 @@ def _resolve_instances_source(slice_yaml_path: Path, instances_source: str) -> P
 
 
 def _instance_ids_for_manifest(manifest: SliceManifest, slice_yaml_path: Path) -> tuple[str, ...]:
+    if manifest.slice.selection_policy == "sample_limit":
+        # Planning slots only — not official sample identities claimed by the slice YAML.
+        return tuple(f"limit-{index}" for index in range(1, manifest.budget.max_instances + 1))
     if manifest.slice.instances:
         return manifest.slice.instances
     if manifest.slice.instances_source is None:

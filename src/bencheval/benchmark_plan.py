@@ -61,6 +61,25 @@ _ADAPTER_TO_OFFICIAL_RUNNER: dict[str, str] = {
     "exploitgym": "exploitgym-native",
 }
 
+# Provisional planning labels only — not immutable dataset/harness digests.
+# Live evidence must overwrite with captured harness/package/git revisions
+# (see control_plane_executor runtime/harness version capture). The ``provisional:``
+# prefix prevents these labels from being mistaken for frozen provenance pins.
+_BENCHMARK_VERSION_LABELS: dict[str, str] = {
+    "terminal-bench": "provisional:terminal-bench/2.1",
+    "swe-bench-verified": "provisional:swe-bench-verified/public",
+    "bfcl-v4": "provisional:bfcl-v4/generate-smoke",
+    "gpqa-diamond": "provisional:gpqa-diamond/inspect-evals",
+    "hle": "provisional:hle/cais",
+}
+
+
+def _benchmark_version_pin(benchmark: BenchmarkEntry) -> str:
+    labeled = _BENCHMARK_VERSION_LABELS.get(benchmark.id)
+    if labeled is not None:
+        return labeled
+    return f"provisional:{benchmark.id}/catalog"
+
 
 @dataclass(frozen=True, slots=True)
 class AdapterDescriptor:
@@ -243,8 +262,9 @@ def plan_control_plane(
     model_key = model_id.strip()
     if not model_key:
         raise BenchEvalError("--model is required")
+    model_registry = load_model_registry()
     try:
-        model_entry = load_model_registry().by_id(model_key)
+        model_entry = model_registry.by_id(model_key)
     except KeyError as e:
         raise BenchEvalError(f"unknown model {model_key!r}") from e
 
@@ -275,6 +295,9 @@ def plan_control_plane(
                 f"supported: {list(agent_profile.agent.supported_harnesses)}",
             )
         model_binding = "bencheval_injected"
+        # External agents typically need provider egress; Harbor proxy forward
+        # remains gated by network_policy + BENCHEVAL_HARBOR_FORWARD_PROXY.
+        network = "benchmark_required"
     else:
         resolved_runtime_id = resolve_runtime_id(
             benchmark_id=benchmark.id,
@@ -299,14 +322,36 @@ def plan_control_plane(
                     f"--runtime or --agent is required for harness {harness_kind!r}",
                 )
             model_binding = "bencheval_injected"
+            # Model-only harnesses call providers on the host; deny is not a
+            # sandbox claim here.
+            network = "allow"
 
+    adapter_id = _adapter_for_benchmark(benchmark)
     slice_path = _resolve_slice_yaml(slice_id, benchmark.id)
     slice_manifest = load_slice_manifest(slice_path)
+    judge_model_id = slice_manifest.slice.judge_model_id
+    if adapter_id == "hle":
+        if judge_model_id is None:
+            raise BenchEvalError(f"HLE slice {slice_id!r} must pin judge_model_id")
+        try:
+            judge_entry = model_registry.by_id(judge_model_id)
+        except KeyError as e:
+            raise BenchEvalError(
+                f"HLE slice {slice_id!r} references unknown judge model {judge_model_id!r}",
+            ) from e
+        if judge_entry.provider_route != resolved_provider:
+            raise BenchEvalError(
+                f"HLE judge model {judge_model_id!r} is routed to provider "
+                f"{judge_entry.provider_route!r}, not {resolved_provider!r}",
+            )
+    elif judge_model_id is not None:
+        raise BenchEvalError(
+            f"slice {slice_id!r} sets judge_model_id but adapter {adapter_id!r} has no judge",
+        )
     instance_ids = slice_instance_ids(slice_manifest, slice_path)
     if not instance_ids:
         raise BenchEvalError(f"slice {slice_id!r} has no instances")
 
-    adapter_id = _adapter_for_benchmark(benchmark)
     budget_class = _budget_class_for_slice(
         slice_manifest.budget.max_total_cost_usd,
         slice_manifest.budget.max_wall_clock_sec_per_instance,
@@ -331,13 +376,16 @@ def plan_control_plane(
     support = execution_support_label(benchmark)
     if support != "executable_adapter":
         caveats.append(f"execution_support:{support}")
+    # Aggregate Inspect/HLE adapters report cost_usd=0; envelope max_cost is not a hard cap.
+    if adapter_id in {"gpqa", "hle", "bfcl"}:
+        caveats.append("max_cost_usd_unenforced_estimate")
 
     validity = _comparison_validity(slice_manifest.slice.purpose)
 
     return RunPlan(
         schema_version="0.3",
         benchmark_id=benchmark.id,
-        benchmark_version=None,
+        benchmark_version=_benchmark_version_pin(benchmark),
         slice_id=slice_manifest.slice.id,
         adapter_id=adapter_id,
         harness_kind=harness_kind,
@@ -346,6 +394,7 @@ def plan_control_plane(
         agent_id=agent_arg,
         provider_id=resolved_provider,
         model_id=model_key,
+        judge_model_id=judge_model_id,
         model_binding=model_binding,
         instances=tuple(RunPlanInstance(instance_id=i) for i in instance_ids),
         budget_class=budget_class,

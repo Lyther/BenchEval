@@ -18,7 +18,29 @@ from bencheval.terminal_bench_harbor import (
     harbor_agent_for_runtime,
     parse_harbor_instance_outcome,
     run_terminal_bench_instance,
+    write_harbor_proxy_env_file,
 )
+
+# SUBSTITUTE_JUSTIFICATION
+# - substitute: monkeypatched launch env, injected Harbor runners, and disposable results
+# - replaces: proxy/provider env, Harbor/Docker launches, forced timing/failures, verifier output
+# - necessity: covered tests require exact secret env, timeouts, alternating failures, and
+#   verifier payloads that real Harbor cannot safely and deterministically produce
+# - real-option: real Harbor cannot force these negative cases without disruption/charges
+# - proof-limit: proves construction/parsing/budget/error logic, not live Harbor acceptance
+# - real-proof: BLOCKED until scripts/run-live-pilot-matrix.sh completes on the dev-box
+# - covered tests: test_build_harbor_run_command_claude_code,
+#   test_build_harbor_run_command_claude_code_allowed_tools,
+#   test_build_harbor_run_command_mounts_codex_provider_config,
+#   test_build_harbor_run_command_uses_bytellm_key_for_codex_config,
+#   test_build_harbor_run_command_forwards_proxy_with_env_file,
+#   test_build_harbor_run_command_does_not_forward_bytellm_auth_with_env_file,
+#   test_build_harbor_run_command_forwards_agent_no_proxy,
+#   test_execute_control_plane_smoke_writes_evidence,
+#   test_per_instance_timeout_derived_from_plan,
+#   test_run_terminal_bench_instance_timeout_raises_budget_exceeded,
+#   test_harbor_executor_adapter_failure_on_second_instance_writes_two_rows, and
+#   test_run_instance_harness_failure
 
 
 def test_build_harbor_run_command_claude_code(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -165,18 +187,26 @@ def test_build_harbor_run_command_forwards_proxy_with_env_file(
         model_id="kimi-k2.7-code",
     )
 
-    cmd = build_harbor_run_command(
-        plan=plan,
-        instance_id="fix-git",
-        artifacts_dir=tmp_path,
-    )
-
-    assert "--env-file" in cmd
-    env_file = Path(cmd[cmd.index("--env-file") + 1])
-    assert env_file.read_text(encoding="utf-8") == "https_proxy=http://proxy.example:8118\n"
-    assert env_file.name == ".bencheval-harbor-proxy.env"
-    assert env_file.stat().st_mode & 0o777 == 0o600
-    assert "https_proxy=http://proxy.example:8118" in cmd
+    proxy_env = write_harbor_proxy_env_file(network_policy=plan.network_policy)
+    assert proxy_env is not None
+    try:
+        cmd = build_harbor_run_command(
+            plan=plan,
+            instance_id="fix-git",
+            artifacts_dir=tmp_path,
+            proxy_env_file=proxy_env,
+        )
+        assert "--env-file" in cmd
+        env_file = Path(cmd[cmd.index("--env-file") + 1])
+        assert env_file.resolve() == proxy_env.resolve()
+        assert env_file.read_text(encoding="utf-8") == "https_proxy=http://proxy.example:8118\n"
+        assert "bencheval-harbor-proxy-" in env_file.name
+        assert env_file.parent != tmp_path
+        assert env_file.stat().st_mode & 0o777 == 0o600
+        assert "--agent-env" not in cmd
+        assert "https_proxy=http://proxy.example:8118" not in cmd
+    finally:
+        proxy_env.unlink(missing_ok=True)
 
 
 def test_build_harbor_run_command_does_not_forward_bytellm_auth_with_env_file(
@@ -204,19 +234,24 @@ def test_build_harbor_run_command_does_not_forward_bytellm_auth_with_env_file(
         model_id="kimi-k2.7-code",
     )
 
-    cmd = build_harbor_run_command(
-        plan=plan,
-        instance_id="fix-git",
-        artifacts_dir=tmp_path,
-    )
-
-    assert "--env-file" in cmd
-    env_file = Path(cmd[cmd.index("--env-file") + 1])
-    content = env_file.read_text(encoding="utf-8")
-    assert "https_proxy=http://proxy.example:8118\n" in content
-    assert secret not in content
-    assert env_file.stat().st_mode & 0o777 == 0o600
-    assert secret not in " ".join(cmd)
+    proxy_env = write_harbor_proxy_env_file(network_policy=plan.network_policy)
+    assert proxy_env is not None
+    try:
+        cmd = build_harbor_run_command(
+            plan=plan,
+            instance_id="fix-git",
+            artifacts_dir=tmp_path,
+            proxy_env_file=proxy_env,
+        )
+        assert "--env-file" in cmd
+        env_file = Path(cmd[cmd.index("--env-file") + 1])
+        content = env_file.read_text(encoding="utf-8")
+        assert "https_proxy=http://proxy.example:8118\n" in content
+        assert secret not in content
+        assert env_file.stat().st_mode & 0o777 == 0o600
+        assert secret not in " ".join(cmd)
+    finally:
+        proxy_env.unlink(missing_ok=True)
 
 
 def test_build_harbor_run_command_forwards_agent_no_proxy(
@@ -234,16 +269,26 @@ def test_build_harbor_run_command_forwards_agent_no_proxy(
         model_id="glm-5.2",
     )
 
-    cmd = build_harbor_run_command(
-        plan=plan,
-        instance_id="fix-git",
-        artifacts_dir=tmp_path,
-    )
-
-    assert "--agent-env" in cmd
-    assert "https_proxy=http://proxy.example:8118" in cmd
-    assert "NO_PROXY=127.0.0.1,localhost,172.17.0.1" in cmd
-    assert "no_proxy=127.0.0.1,localhost,172.17.0.1" in cmd
+    proxy_env = write_harbor_proxy_env_file(network_policy=plan.network_policy)
+    assert proxy_env is not None
+    try:
+        cmd = build_harbor_run_command(
+            plan=plan,
+            instance_id="fix-git",
+            artifacts_dir=tmp_path,
+            proxy_env_file=proxy_env,
+        )
+        assert "--env-file" in cmd
+        env_file = Path(cmd[cmd.index("--env-file") + 1])
+        content = env_file.read_text(encoding="utf-8")
+        assert "https_proxy=http://proxy.example:8118" in content
+        assert "NO_PROXY=127.0.0.1,localhost,172.17.0.1" in content
+        assert "no_proxy=127.0.0.1,localhost,172.17.0.1" in content
+        assert "--agent-env" not in cmd
+        assert "https_proxy=http://proxy.example:8118" not in cmd
+        assert "NO_PROXY=127.0.0.1,localhost,172.17.0.1" not in cmd
+    finally:
+        proxy_env.unlink(missing_ok=True)
 
 
 def test_parse_success_from_result_json(tmp_path: Path) -> None:

@@ -78,11 +78,9 @@ def test_catalog_filters_executable_only() -> None:
         catalog,
         BenchmarkFilter(execution_support="executable_adapter"),
     )
-    assert len(entries) == 5
+    assert len(entries) == 3
     assert {e.id for e in entries} == {
         "terminal-bench",
-        "swe-bench-verified",
-        "bfcl-v4",
         "gpqa-diamond",
         "hle",
     }

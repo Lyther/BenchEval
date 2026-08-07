@@ -322,12 +322,14 @@ def assess_software_wiring(
         ),
     )
 
-    artifact_checks = (
+    required_checks = (
+        "catalog_adapter_status",
+        "catalog_executable",
         f"typed_slice_{slice_id}",
         adapter_check_name,
         "control_plane_executor",
     )
-    passed = all(ok for name, ok, _ in checks if name in artifact_checks)
+    passed = all(ok for name, ok, _ in checks if name in required_checks)
     return AdapterAdmissionReport(adapter_id, benchmark_id, passed, tuple(checks))
 
 

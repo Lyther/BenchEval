@@ -7,10 +7,13 @@ Evidence interpretation for the admitted smoke slice is ``adapter_smoke``.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as distribution_version
 from pathlib import Path
 from typing import Protocol
 
@@ -21,7 +24,47 @@ from bencheval.path_safety import validate_control_plane_instance_id
 
 BFCL_ADAPTER_ID = "bfcl"
 BFCL_COMMAND = "bfcl"
-_HARNESS_VERSION_FALLBACK = "bfcl-native-smoke"
+_BFCL_DIST_CANDIDATES = ("bfcl-eval", "bfcl")
+_VERSION_TIMEOUT_SEC = 15
+
+
+def _as_bool_verdict(value: object) -> bool | None:
+    return value if isinstance(value, bool) else None
+
+
+def bfcl_harness_version() -> str | None:
+    """Capture installed BFCL CLI/package revision; None when capture fails."""
+    if shutil.which(BFCL_COMMAND) is not None:
+        try:
+            proc = subprocess.run(
+                [BFCL_COMMAND, "version"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=_VERSION_TIMEOUT_SEC,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            proc = None
+        if proc is not None and proc.returncode == 0:
+            line = (proc.stdout or proc.stderr).strip().splitlines()
+            if line and line[0].strip():
+                return line[0].strip()
+    for dist in _BFCL_DIST_CANDIDATES:
+        try:
+            return f"{dist}@{distribution_version(dist)}"
+        except PackageNotFoundError:
+            continue
+    return None
+
+
+def bfcl_benchmark_version() -> str | None:
+    """BFCL dataset/category revision — not capturable from package version alone.
+
+    Package/CLI output belongs in ``harness_version``. Until an upstream git
+    commit plus dataset/category-map revision is captured, return None so the
+    planner's provisional benchmark label is retained.
+    """
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,21 +215,44 @@ def parse_bfcl_instance_outcome(
         else:
             if isinstance(parsed, dict):
                 native = {**native, **parsed}
+                verdict: bool | None = None
                 if "primary_pass" in parsed:
-                    primary_pass = bool(parsed["primary_pass"])
+                    verdict = _as_bool_verdict(parsed["primary_pass"])
                 elif "correct" in parsed:
-                    primary_pass = bool(parsed["correct"])
+                    verdict = _as_bool_verdict(parsed["correct"])
                 elif "resolved" in parsed:
-                    primary_pass = bool(parsed["resolved"])
-                partial_score = 1.0 if primary_pass else 0.0
+                    verdict = _as_bool_verdict(parsed["resolved"])
+                if "primary_pass" in parsed or "correct" in parsed or "resolved" in parsed:
+                    if verdict is None:
+                        failure_class = "runtime_output_unparseable"
+                        primary_pass = False
+                        partial_score = 0.0
+                    else:
+                        primary_pass = verdict
+                        partial_score = 1.0 if primary_pass else 0.0
+                else:
+                    # Result file present without an explicit bool verdict → fail closed.
+                    failure_class = "runtime_output_unparseable"
+                    primary_pass = False
+                    partial_score = 0.0
                 if "cost_usd" in parsed and isinstance(parsed["cost_usd"], (int, float)):
                     cost_usd = float(parsed["cost_usd"])
+            else:
+                failure_class = "runtime_output_unparseable"
+                primary_pass = False
+                partial_score = 0.0
     elif cli.returncode != 0:
         failure_class = "harness_failure"
     elif cli.returncode == 0:
         failure_class = "harness_failure"
         primary_pass = False
         partial_score = 0.0
+
+    if cli.returncode != 0:
+        primary_pass = False
+        partial_score = 0.0
+        if failure_class is None:
+            failure_class = "harness_failure"
 
     if not primary_pass and failure_class is None:
         failure_class = "model_wrong_solution"
@@ -195,8 +261,9 @@ def parse_bfcl_instance_outcome(
         "adapter_id": BFCL_ADAPTER_ID,
         "harness_kind": "bfcl-native",
         "bfcl_command": " ".join(cli.command),
-        "harness_version": harness_version or _HARNESS_VERSION_FALLBACK,
     }
+    if harness_version:
+        metadata["harness_version"] = harness_version
 
     return BfclInstanceOutcome(
         instance_id=instance_id,
@@ -226,8 +293,9 @@ def run_bfcl_instance(
     if plan.adapter_id != BFCL_ADAPTER_ID:
         raise BenchEvalError(f"bfcl adapter cannot run adapter_id={plan.adapter_id!r}")
     validate_control_plane_instance_id(instance_id)
-    instance_dir = artifacts_dir / instance_id
-    instance_dir.mkdir(parents=True, exist_ok=True)
+    from bencheval.run_isolation import prepare_instance_artifacts_dir
+
+    instance_dir = prepare_instance_artifacts_dir(artifacts_dir / instance_id)
     command = build_bfcl_run_command(
         plan=plan,
         instance_id=instance_id,
@@ -237,7 +305,7 @@ def run_bfcl_instance(
         wall = timeout_sec
     else:
         n = max(len(plan.instances), 1)
-        wall = max(plan.max_wall_clock_sec // n, 60)
+        wall = max(1, plan.max_wall_clock_sec // n)
     runner = process_runner or _default_process_runner
     cli = runner(command, cwd=repo_root, timeout_sec=wall)
     return parse_bfcl_instance_outcome(
@@ -255,6 +323,8 @@ __all__ = [
     "BfclCliResult",
     "BfclInstanceOutcome",
     "BfclProcessRunner",
+    "bfcl_benchmark_version",
+    "bfcl_harness_version",
     "build_bfcl_run_command",
     "parse_bfcl_instance_outcome",
     "run_bfcl_instance",

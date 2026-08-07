@@ -36,9 +36,12 @@ benchmarks:
     contamination_risk: high
     single_mode_required: true
     source_url: https://www.swebench.com/verified.html
-    notes: Human-filtered SWE-bench subset; public calibration only.
+    notes: >
+      Demoted from executable until the adapter pins a supported mini-SWE-agent
+      revision, selects instances via the official CLI, and binds the official
+      SWE-bench evaluator `resolved` result (not invented verifier.json).
     adapter_id: swebench
-    executable: true
+    executable: false
     default_slice: swe-bench-verified-smoke-10
   - id: bfcl-v4
     name: Berkeley Function Calling Leaderboard v4
@@ -58,11 +61,11 @@ benchmarks:
     single_mode_required: false
     source_url: https://gorilla.cs.berkeley.edu/leaderboard.html
     notes: >
-      Generation smoke via bfcl-native adapter (`bfcl generate` only). Official
-      `bfcl evaluate` scoring is not wired yet; evidence interpretation stays
-      adapter_smoke until evaluate is admitted.
+      Demoted from executable: adapter runs `bfcl generate` only and does not
+      wire `bfcl evaluate` or official score artifacts. Keep as catalog/planning
+      surface until generate+evaluate is one bounded lifecycle.
     adapter_id: bfcl
-    executable: true
+    executable: false
     default_slice: smoke-5
   - id: swe-bench-pro
     name: SWE-bench Pro

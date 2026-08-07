@@ -17,6 +17,23 @@ from bencheval.exceptions import BenchEvalError, EvidenceValidationError, Manife
 from bencheval.manifest import read_manifest_task_ids
 from bencheval.path_safety import ensure_resolved_under_root, validate_control_plane_instance_id
 
+# SUBSTITUTE_JUSTIFICATION
+# - substitute: generated or fixed adversarial values, constructed evidence JSON, and
+#   disposable filesystem trees in test_validate_instance_id_never_raises_uncaught,
+#   test_manifest_task_ids_rejects_or_returns,
+#   test_manifest_rejects_only_comments_and_blanks,
+#   test_ensure_resolved_under_root_escape_or_accept,
+#   test_evidence_record_rejects_non_finite_scores,
+#   test_evidence_jsonl_line_never_raises_system_error,
+#   test_evidence_jsonl_minimal_shrink_reproducer, and
+#   test_instance_id_path_traversal_strings_rejected
+# - replaces: an unbounded population of malformed external inputs and persistent files
+# - necessity: real-world malformed input is not finite/reproducible; minimized generated
+#   cases exercise the real validators without replacing implementation
+# - real-option: a fixed production corpus cannot deterministically cover the input space
+# - proof-limit: property diagnostics prove stated local invariants, not external acceptance
+# - real-proof: real workflows separately cover valid input through production entrypoints
+
 _EDGE_SETTINGS = settings(
     max_examples=150,
     deadline=None,

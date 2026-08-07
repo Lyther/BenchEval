@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, JsonValue, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, field_validator
 
 from bencheval.backends import LOCAL_BACKEND, ExecutionBackend
 from bencheval.domain import (
@@ -29,7 +29,10 @@ class EvidenceRecord(BaseModel):
     v0.2 fields (run_id .. created_at) are a frozen public contract: they MUST stay
     unchanged and all v0.2 rows must keep parsing. v0.3 adds optional fields below
     with safe defaults so a v0.2 row validates with all v0.3 fields absent.
+    Unknown keys are rejected so provenance typos cannot be silently discarded.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     # --- v0.2 (unchanged; do not reorder or drop) ---
     run_id: str
@@ -68,6 +71,8 @@ class EvidenceRecord(BaseModel):
     runtime_config_hash: str | None = None
     agent_id: str | None = None
     provider_id: str | None = None
+    provider_config_hash: str | None = None
+    judge_model_id: str | None = None
     # Attempt operational metadata.
     instance_id: str | None = None
     steps: int | None = Field(default=None, ge=0)

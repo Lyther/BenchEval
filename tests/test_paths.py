@@ -9,6 +9,19 @@ import pytest
 from bencheval.exceptions import BenchEvalError
 from bencheval.paths import repo_root, validate_config_bundle
 
+# SUBSTITUTE_JUSTIFICATION
+# - substitute: monkeypatched cwd/BENCHEVAL_HOME/importlib.resources and disposable config
+#   trees in test_repo_root_from_bencheval_home, test_repo_root_walks_up_from_cwd,
+#   test_repo_root_cwd_marker_without_bundle_raises,
+#   test_repo_root_invalid_bencheval_home_raises,
+#   test_bundled_config_root_resolves_packaged_config, and
+#   test_bundled_config_root_absent_returns_none
+# - replaces: process-global discovery state and installed package-resource layouts
+# - necessity: mutually exclusive discovery states require isolated deterministic roots
+# - real-option: mutating the operator installation is unsafe and non-isolated
+# - proof-limit: proves local path/config discovery only, not wheel installation
+# - real-proof: tests/test_wheel_bundle.py exercises the built wheel in a subprocess
+
 
 def _write_minimal_bundle(root: Path) -> None:
     (root / "config" / "runtimes").mkdir(parents=True)

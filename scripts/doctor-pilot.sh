@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase B pilot doctor: harbor/docker/bfcl/mini-extra + optional provider creds.
+# Phase B minimum-pilot doctor: Harbor/Docker + optional provider credentials.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

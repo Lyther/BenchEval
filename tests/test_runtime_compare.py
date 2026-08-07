@@ -43,7 +43,11 @@ def _cp_record(
         harness_kind="harbor",
         harness_version=harness_version,
         runtime_id=runtime_id,
+        runtime_version=f"{runtime_id}@test",
         runtime_kind="cli_agent",
+        runtime_config_hash=f"sha256:{runtime_id}-config",
+        provider_id="bytellm",
+        provider_config_hash="sha256:bytellm-test",
         instance_id=instance_id,
         interpretation_label="adapter_smoke",
     )

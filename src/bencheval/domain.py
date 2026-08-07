@@ -307,14 +307,27 @@ class SliceManifestSlice(BaseModel):
     id: str = Field(pattern=_ID_PATTERN)
     benchmark_id: str = Field(pattern=_ID_PATTERN)
     purpose: SlicePurpose
-    selection_policy: Literal["fixed_instance_ids", "native_selector_all", "custom"]
+    selection_policy: Literal[
+        "fixed_instance_ids",
+        "native_selector_all",
+        "custom",
+        "sample_limit",
+    ]
     instances: tuple[str, ...] = ()
     instances_source: str | None = Field(default=None, min_length=1)
+    # Evaluator identity for benchmarks whose official scorer calls a judge model.
+    judge_model_id: str | None = Field(default=None, min_length=1)
     valid_for: tuple[SlicePurpose, ...] = Field(min_length=1)
     invalid_for: tuple[SlicePurpose, ...] = ()
 
     @model_validator(mode="after")
     def _exactly_one_instance_source(self) -> Self:
+        if self.selection_policy == "sample_limit":
+            if self.instances or self.instances_source is not None:
+                raise ValueError(
+                    "sample_limit slices must not declare fixed instances or instances_source",
+                )
+            return self
         if bool(self.instances) == bool(self.instances_source):
             raise ValueError("slice must set exactly one of instances or instances_source")
         return self
@@ -356,6 +369,7 @@ class RunPlan(BaseModel):
     agent_id: str | None = Field(default=None, pattern=_ID_PATTERN)
     provider_id: str = Field(default="bytellm", pattern=_ID_PATTERN)
     model_id: str = Field(min_length=1)
+    judge_model_id: str | None = Field(default=None, min_length=1)
     model_binding: RuntimeModelBinding
     instances: tuple[RunPlanInstance, ...] = Field(min_length=1)
     budget_class: BudgetClass

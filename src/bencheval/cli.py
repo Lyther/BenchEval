@@ -115,8 +115,11 @@ def _print_plan_envelope(plan: RunPlan, *, slice_resolution: dict[str, object]) 
 
 
 def _confirm_continue(plan: RunPlan) -> bool:
+    cost_note = f"~${plan.max_cost_usd:.2f}"
+    if "max_cost_usd_unenforced_estimate" in plan.caveats:
+        cost_note = f"~${plan.max_cost_usd:.2f} unenforced estimate"
     prompt = (
-        f"Continue? (~${plan.max_cost_usd:.2f}, {len(plan.instances)} instances, "
+        f"Continue? ({cost_note}, {len(plan.instances)} instances, "
         f"provider={plan.provider_id}) [y/N] "
     )
     try:
@@ -361,71 +364,90 @@ def _compare_run(args: argparse.Namespace) -> int:
         render_runtime_comparison_markdown,
     )
 
-    baseline = read_evidence_jsonl(Path(args.baseline))
-    current = read_evidence_jsonl(Path(args.current))
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        baseline = read_evidence_jsonl(Path(args.baseline))
+        current = read_evidence_jsonl(Path(args.current))
+        output_path = Path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    if is_dual_axis_comparison_drift(baseline, current):
-        sys.stderr.write(
-            "error: dual-axis drift: hold either model_id or runtime_id constant for comparison\n",
-        )
-        return 2
-
-    use_runtime = is_runtime_comparison_evidence(baseline, current)
-    use_model = not use_runtime and is_model_comparison_evidence(baseline, current)
-    fmt = "json" if args.format == "json" else "markdown"
-    if use_model:
-        model_report = compare_model_evidence(baseline, current)
-        if fmt == "json":
-            output_path.write_text(render_model_comparison_json(model_report), encoding="utf-8")
-        else:
-            output_path.write_text(render_model_comparison_markdown(model_report), encoding="utf-8")
-        payload = {
-            "mode": "model",
-            "baseline": str(Path(args.baseline).resolve()),
-            "current": str(Path(args.current).resolve()),
-            "format": fmt,
-            "output": str(output_path.resolve()),
-            "interpretation_label": model_report.interpretation_label,
-            "pass_rate_delta": model_report.pass_rate_delta,
-            "comparison_valid": model_report.validity.valid,
-        }
-    elif use_runtime:
-        runtime_report = compare_runtime_evidence(baseline, current)
-        if fmt == "json":
-            output_path.write_text(render_runtime_comparison_json(runtime_report), encoding="utf-8")
-        else:
-            output_path.write_text(
-                render_runtime_comparison_markdown(runtime_report),
-                encoding="utf-8",
+        if is_dual_axis_comparison_drift(baseline, current):
+            sys.stderr.write(
+                "error: dual-axis drift: hold either model_id or runtime_id constant "
+                "for comparison\n",
             )
-        payload = {
-            "mode": "runtime",
-            "baseline": str(Path(args.baseline).resolve()),
-            "current": str(Path(args.current).resolve()),
-            "format": fmt,
-            "output": str(output_path.resolve()),
-            "interpretation_label": runtime_report.interpretation_label,
-            "pass_rate_delta": runtime_report.pass_rate_delta,
-            "comparison_valid": runtime_report.validity.valid,
-        }
-    else:
-        report = compare_evidence_runs(baseline, current)
-        if fmt == "json":
-            output_path.write_text(render_comparison_json(report), encoding="utf-8")
+            return 2
+
+        use_runtime = is_runtime_comparison_evidence(baseline, current)
+        use_model = not use_runtime and is_model_comparison_evidence(baseline, current)
+        fmt = "json" if args.format == "json" else "markdown"
+        if use_model:
+            model_report = compare_model_evidence(baseline, current)
+            if fmt == "json":
+                output_path.write_text(
+                    render_model_comparison_json(model_report),
+                    encoding="utf-8",
+                )
+            else:
+                output_path.write_text(
+                    render_model_comparison_markdown(model_report),
+                    encoding="utf-8",
+                )
+            payload = {
+                "mode": "model",
+                "baseline": str(Path(args.baseline).resolve()),
+                "current": str(Path(args.current).resolve()),
+                "format": fmt,
+                "output": str(output_path.resolve()),
+                "interpretation_label": model_report.interpretation_label,
+                "pass_rate_delta": model_report.pass_rate_delta,
+                "comparison_valid": model_report.validity.valid,
+            }
+            comparison_valid = model_report.validity.valid
+        elif use_runtime:
+            runtime_report = compare_runtime_evidence(baseline, current)
+            if fmt == "json":
+                output_path.write_text(
+                    render_runtime_comparison_json(runtime_report),
+                    encoding="utf-8",
+                )
+            else:
+                output_path.write_text(
+                    render_runtime_comparison_markdown(runtime_report),
+                    encoding="utf-8",
+                )
+            payload = {
+                "mode": "runtime",
+                "baseline": str(Path(args.baseline).resolve()),
+                "current": str(Path(args.current).resolve()),
+                "format": fmt,
+                "output": str(output_path.resolve()),
+                "interpretation_label": runtime_report.interpretation_label,
+                "pass_rate_delta": runtime_report.pass_rate_delta,
+                "comparison_valid": runtime_report.validity.valid,
+            }
+            comparison_valid = runtime_report.validity.valid
         else:
-            output_path.write_text(render_comparison_markdown(report), encoding="utf-8")
-        payload = {
-            "mode": "legacy",
-            "baseline": str(Path(args.baseline).resolve()),
-            "current": str(Path(args.current).resolve()),
-            "format": fmt,
-            "output": str(output_path.resolve()),
-            "pass_rate_delta": report.pass_rate_delta,
-        }
-    sys.stdout.write(json.dumps(payload, indent=2) + "\n")
-    return 0
+            report = compare_evidence_runs(baseline, current)
+            if fmt == "json":
+                output_path.write_text(render_comparison_json(report), encoding="utf-8")
+            else:
+                output_path.write_text(render_comparison_markdown(report), encoding="utf-8")
+            payload = {
+                "mode": "legacy",
+                "baseline": str(Path(args.baseline).resolve()),
+                "current": str(Path(args.current).resolve()),
+                "format": fmt,
+                "output": str(output_path.resolve()),
+                "pass_rate_delta": report.pass_rate_delta,
+            }
+            comparison_valid = True
+        sys.stdout.write(json.dumps(payload, indent=2) + "\n")
+        # Pilot proof treats a zero exit as a successful comparison; invalid
+        # model/runtime comparisons must not look green (F005).
+        return 0 if comparison_valid else 1
+    except BenchEvalError as e:
+        sys.stderr.write(f"error: {e}\n")
+        return 1
 
 
 def _report_generate(args: argparse.Namespace) -> int:

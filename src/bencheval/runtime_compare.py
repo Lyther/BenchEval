@@ -12,6 +12,12 @@ from bencheval.evidence import (
     eligible_for_pass_at_k,
 )
 from bencheval.exceptions import ComparisonError
+from bencheval.provenance_gates import (
+    is_captured_axis,
+    is_captured_harness_version,
+    is_provisional_benchmark_version,
+    is_uncaptured_harness_version,
+)
 from bencheval.stats import newcombe_diff, wilson
 
 
@@ -181,14 +187,24 @@ def _pass_rate_ci(records: list[EvidenceRecord]) -> RuntimePassRateCI:
     )
 
 
+def _eligible_shared_instance_ids(
+    baseline: list[EvidenceRecord],
+    current: list[EvidenceRecord],
+) -> list[str]:
+    """Instance IDs eligible for pass@k on *both* sides (paired population)."""
+    base_eligible = {_instance_key(r) for r in baseline if eligible_for_pass_at_k(r)}
+    cur_eligible = {_instance_key(r) for r in current if eligible_for_pass_at_k(r)}
+    return sorted(base_eligible & cur_eligible)
+
+
 def _pass_rate_ci_on_shared_instances(
     baseline: list[EvidenceRecord],
     current: list[EvidenceRecord],
 ) -> tuple[RuntimePassRateCI, RuntimePassRateCI]:
-    """Wilson CI on the instance intersection only (aligned with ``instance_count``)."""
+    """Wilson CI on the paired eligible intersection only."""
     base_by = _index_by_instance(baseline, "baseline")
     cur_by = _index_by_instance(current, "current")
-    shared = sorted(set(base_by) & set(cur_by))
+    shared = _eligible_shared_instance_ids(baseline, current)
     if not shared:
         empty = RuntimePassRateCI(0.0, 0.0, 0.0, 0, 0)
         return empty, empty
@@ -212,6 +228,10 @@ def assess_runtime_comparison_validity(
     slices = _axis_values(baseline + current, lambda r: r.slice_id)
     adapters = _axis_values(baseline + current, lambda r: r.adapter_id)
     harness_versions = _axis_values(baseline + current, lambda r: r.harness_version)
+    benchmark_versions = _axis_values(baseline + current, lambda r: r.benchmark_version)
+    providers = _axis_values(baseline + current, lambda r: r.provider_id)
+    provider_hashes = _axis_values(baseline + current, lambda r: r.provider_config_hash)
+    judge_models = _axis_values(baseline + current, lambda r: r.judge_model_id)
     models = _axis_values(baseline + current, lambda r: r.model_id)
     runtimes_b = {r.runtime_id for r in baseline if r.runtime_id}
     runtimes_c = {r.runtime_id for r in current if r.runtime_id}
@@ -222,14 +242,75 @@ def assess_runtime_comparison_validity(
         reasons.append("slice_id must be identical across all rows")
     if None in adapters or len(adapters) != 1:
         reasons.append("adapter_id must be identical across all rows")
-    if len({v for v in harness_versions if v is not None}) > 1:
-        reasons.append("harness_version differs; waive explicitly or re-run with pinned harness")
+    if None in benchmark_versions or len(benchmark_versions) != 1:
+        reasons.append("benchmark_version must be present and identical across all rows")
+    elif any(not is_captured_axis(v) for v in benchmark_versions):
+        reasons.append("benchmark_version must be a nonempty captured axis")
+    elif any(is_provisional_benchmark_version(v) for v in benchmark_versions):
+        reasons.append("provisional benchmark_version cannot qualify a runtime comparison")
+    if None in harness_versions or len(harness_versions) != 1:
+        reasons.append("harness_version must be present and identical across all rows")
+    elif any(not is_captured_harness_version(v) for v in harness_versions):
+        reasons.append("harness_version must be a nonempty captured revision")
+    # Independent of identity drift: any fallback/uncaptured label disqualifies.
+    if any(is_uncaptured_harness_version(v) for v in harness_versions):
+        reasons.append("uncaptured harness_version fallback cannot qualify a runtime comparison")
+    if None in providers or len(providers) != 1:
+        reasons.append("provider_id must be present and identical across all rows")
+    elif any(not is_captured_axis(v) for v in providers):
+        reasons.append("provider_id must be a nonempty captured axis")
+    if (
+        None in provider_hashes
+        or len(provider_hashes) != 1
+        or any(not is_captured_axis(v) for v in provider_hashes)
+    ):
+        reasons.append("provider_config_hash must be present and identical across all rows")
+    if judge_models != {None} and (
+        None in judge_models
+        or len(judge_models) != 1
+        or any(not is_captured_axis(v) for v in judge_models)
+    ):
+        reasons.append("judge_model_id must be present and identical when a judge is used")
+    # runtime_version / runtime_config_hash: constant within each side; may differ across sides.
+    for side_name, side_rows in (("baseline", baseline), ("current", current)):
+        side_versions = {r.runtime_version for r in side_rows}
+        side_hashes = {r.runtime_config_hash for r in side_rows}
+        if None in side_versions or any(not is_captured_axis(v) for v in side_versions):
+            reasons.append(f"runtime_version must be present on all {side_name} rows")
+        elif len(side_versions) != 1:
+            reasons.append(f"runtime_version must be constant within {side_name}")
+        if None in side_hashes or any(not is_captured_axis(v) for v in side_hashes):
+            reasons.append(f"runtime_config_hash must be present on all {side_name} rows")
+        elif len(side_hashes) != 1:
+            reasons.append(f"runtime_config_hash must be constant within {side_name}")
     if len(models) != 1 or None in models:
         reasons.append("model_id must match for runtime comparison (hold model constant)")
     if len(runtimes_b) != 1 or len(runtimes_c) != 1:
         reasons.append("each file must have exactly one runtime_id")
     elif runtimes_b == runtimes_c:
         reasons.append("runtime_id must differ between baseline and current for runtime comparison")
+
+    eligible_b = [r for r in baseline if eligible_for_pass_at_k(r)]
+    eligible_c = [r for r in current if eligible_for_pass_at_k(r)]
+    if not eligible_b or not eligible_c:
+        reasons.append("zero eligible attempts; comparison requires eligible rows")
+    else:
+        base_by = _index_by_instance(baseline, "baseline")
+        cur_by = _index_by_instance(current, "current")
+        shared_ids = set(base_by) & set(cur_by)
+        base_eligible_ids = {_instance_key(r) for r in eligible_b}
+        cur_eligible_ids = {_instance_key(r) for r in eligible_c}
+        paired = base_eligible_ids & cur_eligible_ids
+        if not paired:
+            reasons.append("zero shared eligible instances between baseline and current")
+        asymmetric = [
+            iid for iid in shared_ids if (iid in base_eligible_ids) != (iid in cur_eligible_ids)
+        ]
+        if asymmetric:
+            reasons.append(
+                "shared instances must be eligible on both sides "
+                f"(asymmetric: {','.join(sorted(asymmetric))})",
+            )
 
     failed_b = sum(1 for r in baseline if not r.primary_pass)
     failed_c = sum(1 for r in current if not r.primary_pass)
@@ -354,12 +435,12 @@ def compare_runtime_evidence(
     cur_by_inst = _index_by_instance(current, "current")
     base_keys = set(base_by_inst)
     cur_keys = set(cur_by_inst)
-    shared = sorted(base_keys & cur_keys)
+    paired = _eligible_shared_instance_ids(baseline, current)
     missing_in_current = sorted(base_keys - cur_keys)
     missing_in_baseline = sorted(cur_keys - base_keys)
 
     instance_deltas: list[RuntimeInstanceDelta] = []
-    for iid in shared:
+    for iid in paired:
         b_row = base_by_inst[iid]
         c_row = cur_by_inst[iid]
         instance_deltas.append(
@@ -406,7 +487,7 @@ def compare_runtime_evidence(
         interpretation_label=validity.interpretation_label,
         validity=validity,
         caveats=all_caveats,
-        instance_count=len(shared),
+        instance_count=len(paired),
         baseline_pass_rate=b_ci.pass_rate,
         current_pass_rate=c_ci.pass_rate,
         pass_rate_delta=delta,
@@ -414,12 +495,12 @@ def compare_runtime_evidence(
         current_pass_ci=c_ci,
         pass_rate_delta_ci_low=float(delta_lo),
         pass_rate_delta_ci_high=float(delta_hi),
-        baseline_total_cost_usd=sum(r.cost_usd for r in baseline),
-        current_total_cost_usd=sum(r.cost_usd for r in current),
-        baseline_total_latency_sec=sum(r.latency_sec for r in baseline),
-        current_total_latency_sec=sum(r.latency_sec for r in current),
-        baseline_failed_attempts=sum(1 for r in baseline if not r.primary_pass),
-        current_failed_attempts=sum(1 for r in current if not r.primary_pass),
+        baseline_total_cost_usd=sum(base_by_inst[i].cost_usd for i in paired),
+        current_total_cost_usd=sum(cur_by_inst[i].cost_usd for i in paired),
+        baseline_total_latency_sec=sum(base_by_inst[i].latency_sec for i in paired),
+        current_total_latency_sec=sum(cur_by_inst[i].latency_sec for i in paired),
+        baseline_failed_attempts=sum(1 for i in paired if not base_by_inst[i].primary_pass),
+        current_failed_attempts=sum(1 for i in paired if not cur_by_inst[i].primary_pass),
         baseline_invalid_excluded=count_ineligible_pass_at_k(baseline),
         current_invalid_excluded=count_ineligible_pass_at_k(current),
         instance_deltas=tuple(instance_deltas),

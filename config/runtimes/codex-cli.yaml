@@ -24,7 +24,8 @@ capabilities:
   supports_noninteractive: true
   supports_json_output: "partial"
 safety:
-  network_default: "deny"
+  # Provider egress via controlled host proxy is required for Harbor TB runs.
+  network_default: "benchmark_required"
   workspace_boundary: "ephemeral_only"
   requires_user_approval: false
   forbidden_features_for_eval:

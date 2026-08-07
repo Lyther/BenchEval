@@ -3,10 +3,7 @@ slice:
   id: "smoke"
   benchmark_id: "gpqa-diamond"
   purpose: "adapter_smoke"
-  selection_policy: "fixed_instance_ids"
-  instances:
-    - sample-0
-    - sample-1
+  selection_policy: "sample_limit"
   valid_for: ["adapter_smoke", "rough_regression"]
   invalid_for: ["benchmark_native_claim", "model_comparison"]
 budget:

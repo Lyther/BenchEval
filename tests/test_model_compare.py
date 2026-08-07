@@ -20,6 +20,8 @@ def _cp_record(
     model_id: str,
     runtime_id: str = "claude-code",
     primary_pass: bool = True,
+    interpretation_label: str = "model_comparison",
+    benchmark_version: str = "terminal-bench@2.0",
 ) -> EvidenceRecord:
     return EvidenceRecord(
         run_id=f"run-{model_id}-{instance_id}",
@@ -33,12 +35,19 @@ def _cp_record(
         latency_sec=1.0,
         created_at=_TS,
         benchmark_id="terminal-bench",
+        benchmark_version=benchmark_version,
         slice_id="smoke-5",
         adapter_id="terminal-bench-harbor",
         harness_kind="harbor",
         harness_version="harbor@1",
         runtime_id=runtime_id,
+        runtime_version=f"{runtime_id}@test",
+        runtime_kind="cli_agent",
+        runtime_config_hash=f"sha256:{runtime_id}-config",
+        provider_id="bytellm",
+        provider_config_hash="sha256:bytellm-test",
         instance_id=instance_id,
+        interpretation_label=interpretation_label,
     )
 
 

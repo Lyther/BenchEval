@@ -14,6 +14,9 @@ agent:
     - exploitgym-native
   notes: >
     External MOMO CLI. Contract: `<command> run --benchmark <id> --instance <id>
-    --model <id> --provider <id> --output-dir <path>`. Exit 0 = pass.
-    DeepAudit stays inside MOMO. Not valid for model-only harnesses (e.g. bfcl-native).
+    --model <id> --provider <id> --output-dir <path>`. Exit 0 means the agent
+    command completed only. Files under --output-dir are agent-writable and are
+    never scoring authority. BenchEval records primary_pass=false
+    (harness_failure) until a benchmark-owned verifier path is wired. DeepAudit
+    stays inside MOMO. Not valid for model-only harnesses (e.g. bfcl-native).
 admission: admitted

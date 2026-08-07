@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 from bencheval.benchmark_plan import plan_control_plane
-from bencheval.bfcl_native_adapter import build_bfcl_run_command
 from bencheval.control_plane_executor import (
     control_plane_interpretation_label,
     execute_control_plane_run,
@@ -16,18 +15,27 @@ from bencheval.control_plane_executor import (
 from bencheval.domain import RunPlan
 from bencheval.evidence import read_evidence_jsonl
 from bencheval.exceptions import BenchEvalError
+from bencheval.gpqa_adapter import GpqaCliResult, build_gpqa_run_command
 from bencheval.path_safety import ensure_resolved_under_root
 from bencheval.terminal_bench_harbor import build_harbor_run_command
+
+# SUBSTITUTE_JUSTIFICATION
+# - substitute: injected GPQA runners and monkeypatched run_gpqa_slice in
+#   test_run_execute_payload_interpretation_not_comparison_validity_key and
+#   test_cli_run_execute_writes_interpretation_on_evidence
+# - replaces: charged Inspect GPQA call while retaining planning/scoring/evidence/CLI code
+# - necessity: exact deterministic score and a non-dry CLI run are required without charge
+# - real-option: live Inspect GPQA cannot guarantee the score fixture
+# - proof-limit: proves interpretation propagation only, not live GPQA acceptance
+# - real-proof: BLOCKED until a real GPQA dev-box pilot retains its Inspect artifact
 
 
 def test_run_execute_payload_interpretation_not_comparison_validity_key(
     tmp_path: Path,
 ) -> None:
-    from bencheval.bfcl_native_adapter import BfclCliResult
-
     plan = plan_control_plane(
-        benchmark_id="bfcl-v4",
-        slice_id="smoke-5",
+        benchmark_id="gpqa-diamond",
+        slice_id="smoke",
         runtime_id=None,
         model_id="kimi-k2.7-code",
     )
@@ -36,20 +44,40 @@ def test_run_execute_payload_interpretation_not_comparison_validity_key(
 
     evidence_path = tmp_path / "evidence.jsonl"
 
-    def fake_runner(command, *, cwd: Path | None, timeout_sec: int) -> BfclCliResult:
-        out_dir = Path(command[command.index("--result-dir") + 1])
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "verdict.json").write_text(
-            json.dumps({"primary_pass": True}),
+    def fake_runner(command, *, cwd: Path | None, timeout_sec: int, env=None) -> GpqaCliResult:
+        log_dir = Path(command[command.index("--log-dir") + 1])
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / "done.json"
+        log_path.write_text(
+            json.dumps(
+                {
+                    "version": 2,
+                    "status": "success",
+                    "eval": {
+                        "task": "gpqa_diamond",
+                        "model": command[command.index("--model") + 1],
+                    },
+                    "results": {
+                        "total_samples": 2,
+                        "completed_samples": 2,
+                        "scores": [
+                            {
+                                "name": "choice",
+                                "metrics": {"accuracy": {"value": 1.0}},
+                            },
+                        ],
+                    },
+                },
+            ),
             encoding="utf-8",
         )
-        return BfclCliResult(0, "", "", 0.1, tuple(command))
+        return GpqaCliResult(0, f"Log: {log_path}\n", "", 0.1, tuple(command))
 
     execute_control_plane_run(
         plan=plan,
         output_path=evidence_path,
         artifacts_dir=tmp_path / "art",
-        bfcl_process_runner=fake_runner,
+        gpqa_process_runner=fake_runner,
         run_id="regression-run",
     )
     row = read_evidence_jsonl(evidence_path)[0]
@@ -61,7 +89,7 @@ def test_cli_run_dry_run_includes_comparison_validity(
 ) -> None:
     from bencheval.cli import main
 
-    assert main(["run", "bfcl-v4/smoke-5", "--model", "kimi-k2.7-code", "--dry-run"]) == 0
+    assert main(["run", "gpqa-diamond/smoke", "--model", "kimi-k2.7-code", "--dry-run"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["comparison_validity"] == "adapter_smoke"
     assert payload["runtime_id"] is None
@@ -71,40 +99,58 @@ def test_cli_run_execute_writes_interpretation_on_evidence(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from bencheval.bfcl_native_adapter import BfclCliResult, run_bfcl_instance
     from bencheval.cli import main
+    from bencheval.gpqa_adapter import run_gpqa_slice
 
-    def fake_runner(command, *, cwd: Path | None, timeout_sec: int) -> BfclCliResult:
-        out_dir = Path(command[command.index("--result-dir") + 1])
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "verdict.json").write_text(
-            json.dumps({"primary_pass": True}),
+    monkeypatch.setenv("BYTELLM_API_KEY", "diagnostic-provider-key")
+
+    def fake_runner(command, *, cwd: Path | None, timeout_sec: int, env=None) -> GpqaCliResult:
+        log_dir = Path(command[command.index("--log-dir") + 1])
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / "done.json"
+        log_path.write_text(
+            json.dumps(
+                {
+                    "version": 2,
+                    "status": "success",
+                    "eval": {
+                        "task": "gpqa_diamond",
+                        "model": command[command.index("--model") + 1],
+                    },
+                    "results": {
+                        "total_samples": 2,
+                        "completed_samples": 2,
+                        "scores": [
+                            {
+                                "name": "choice",
+                                "metrics": {"accuracy": {"value": 1.0}},
+                            },
+                        ],
+                    },
+                },
+            ),
             encoding="utf-8",
         )
-        return BfclCliResult(0, "", "", 0.1, tuple(command))
+        return GpqaCliResult(0, f"Log: {log_path}\n", "", 0.1, tuple(command))
 
     def patched_run(
         *,
         plan: RunPlan,
-        instance_id: str,
         artifacts_dir: Path,
         repo_root: Path,
         process_runner=None,
         timeout_sec: int | None = None,
-        harness_version: str | None = None,
     ):
-        return run_bfcl_instance(
+        return run_gpqa_slice(
             plan=plan,
-            instance_id=instance_id,
             artifacts_dir=artifacts_dir,
             repo_root=repo_root,
             process_runner=fake_runner,
             timeout_sec=timeout_sec,
-            harness_version=harness_version,
         )
 
     monkeypatch.setattr(
-        "bencheval.control_plane_executor.run_bfcl_instance",
+        "bencheval.control_plane_executor.run_gpqa_slice",
         patched_run,
     )
     out = tmp_path / "evidence.jsonl"
@@ -112,7 +158,7 @@ def test_cli_run_execute_writes_interpretation_on_evidence(
         main(
             [
                 "run",
-                "bfcl-v4/smoke-5",
+                "gpqa-diamond/smoke",
                 "--model",
                 "kimi-k2.7-code",
                 "--output",
@@ -158,25 +204,25 @@ def test_build_harbor_run_command_rejects_unsafe_instance_id(tmp_path: Path) -> 
         )
 
 
-def test_build_bfcl_run_command_rejects_unsafe_instance_id() -> None:
+def test_build_gpqa_run_command_rejects_unsafe_instance_id() -> None:
     plan = plan_control_plane(
-        benchmark_id="bfcl-v4",
-        slice_id="smoke-5",
+        benchmark_id="gpqa-diamond",
+        slice_id="smoke",
         runtime_id=None,
         model_id="kimi-k2.7-code",
     )
-    with pytest.raises(BenchEvalError, match="invalid instance_id"):
-        build_bfcl_run_command(
-            plan=plan,
-            instance_id="../etc/passwd",
-            artifacts_dir=Path("/tmp/out"),
+    with pytest.raises(BenchEvalError, match="model-only"):
+        build_gpqa_run_command(
+            plan=plan.model_copy(update={"runtime_id": "claude-code"}),
+            sample_limit=1,
+            log_dir=Path("/tmp/logs"),
         )
 
 
 def test_execute_control_plane_run_unknown_adapter_raises(tmp_path: Path) -> None:
     plan = plan_control_plane(
-        benchmark_id="bfcl-v4",
-        slice_id="smoke-5",
+        benchmark_id="gpqa-diamond",
+        slice_id="smoke",
         runtime_id=None,
         model_id="kimi-k2.7-code",
     )
@@ -185,7 +231,7 @@ def test_execute_control_plane_run_unknown_adapter_raises(tmp_path: Path) -> Non
         execute_control_plane_run(
             plan=bad_plan,
             output_path=tmp_path / "out.jsonl",
-            bfcl_process_runner=lambda *a, **k: None,
+            gpqa_process_runner=lambda *a, **k: None,
         )
 
 
