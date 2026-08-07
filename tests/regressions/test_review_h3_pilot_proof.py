@@ -532,7 +532,9 @@ def main(argv: list[str]) -> int:
             run_id=run_id,
         )
         sink.append_jsonl(Path(parsed["output"]), row)
-    return 0 if scenario == "qualified" else 3
+    # Match the real CLI boundary: a native model_wrong_solution row makes the
+    # aggregate run exit nonzero even though the lane remains proof-eligible.
+    return 1 if scenario == "qualified" else 3
 
 
 if __name__ == "__main__":

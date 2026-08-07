@@ -49,8 +49,7 @@ from bencheval.lifecycle import cleanup_transient_artifacts
 from bencheval.paths import repo_root as _repo_root
 from bencheval.provider_registry import resolve_openai_compatible_launch
 from bencheval.run_isolation import (
-    claim_exclusive_evidence_path,
-    claim_exclusive_run_artifacts,
+    claim_exclusive_run_outputs,
 )
 from bencheval.runtime_registry import load_runtime_catalog
 from bencheval.terminal_bench_harbor import (
@@ -665,9 +664,8 @@ def _claim_control_plane_outputs(
     root: Path,
 ) -> Path:
     """Exclusive evidence file + empty run-artifacts tree for one control-plane run."""
-    claim_exclusive_evidence_path(output_path)
     run_artifacts = artifacts_dir or (root / "results" / "raw" / rid)
-    claim_exclusive_run_artifacts(run_artifacts)
+    claim_exclusive_run_outputs(evidence_path=output_path, artifacts_path=run_artifacts)
     return run_artifacts
 
 

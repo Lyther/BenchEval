@@ -259,16 +259,12 @@ def execute_external_agent_run(
 ) -> ExternalAgentRunSummary:
     if not plan.agent_id:
         raise BenchEvalError("external agent run requires plan.agent_id")
-    from bencheval.run_isolation import (
-        claim_exclusive_evidence_path,
-        claim_exclusive_run_artifacts,
-    )
+    from bencheval.run_isolation import claim_exclusive_run_outputs
 
     root = _repo_root()
     rid = run_id or new_run_id()
-    claim_exclusive_evidence_path(output_path)
     run_artifacts = artifacts_dir or (root / "results" / "raw" / rid)
-    claim_exclusive_run_artifacts(run_artifacts)
+    claim_exclusive_run_outputs(evidence_path=output_path, artifacts_path=run_artifacts)
     sink = JsonlEvidenceSink()
     profile: ExecutionProfile = "E1"
     provider_config_hash = resolve_openai_compatible_launch(

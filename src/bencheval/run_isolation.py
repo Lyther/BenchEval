@@ -36,15 +36,28 @@ def reject_symlink_path(path: Path, *, role: str) -> None:
 
 
 def claim_exclusive_evidence_path(path: Path) -> None:
-    """Refuse reuse of an existing evidence JSONL path."""
+    """Atomically reserve a missing evidence JSONL path for one run."""
     target = path.expanduser()
-    if target.exists():
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise BenchEvalError(
+            f"cannot create evidence output parent {target.parent}: {e}",
+        ) from e
+
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_CLOEXEC", 0)
+    try:
+        descriptor = os.open(target, flags, 0o600)
+    except FileExistsError as e:
         raise BenchEvalError(
             f"evidence output already exists (exclusive write required): {target}",
-        )
+        ) from e
+    except OSError as e:
+        raise BenchEvalError(f"cannot reserve evidence output {target}: {e}") from e
+    os.close(descriptor)
 
 
-def claim_exclusive_run_artifacts(path: Path) -> None:
+def claim_exclusive_run_artifacts(path: Path) -> bool:
     """Require a missing or empty run-artifacts directory; reject symlink roots."""
     target = path.expanduser()
     if target.exists():
@@ -56,8 +69,23 @@ def claim_exclusive_run_artifacts(path: Path) -> None:
                 "run artifacts directory is not empty "
                 f"(exclusive run ownership required): {target}",
             )
-        return
+        return False
     target.mkdir(parents=True, exist_ok=False)
+    return True
+
+
+def claim_exclusive_run_outputs(*, evidence_path: Path, artifacts_path: Path) -> None:
+    """Claim an artifacts tree and atomically reserve its paired evidence file."""
+    artifacts_created = claim_exclusive_run_artifacts(artifacts_path)
+    try:
+        claim_exclusive_evidence_path(evidence_path)
+    except BenchEvalError:
+        if artifacts_created:
+            try:
+                artifacts_path.expanduser().rmdir()
+            except OSError:
+                pass
+        raise
 
 
 def prepare_instance_artifacts_dir(
@@ -86,6 +114,7 @@ __all__ = [
     "AUTHORITATIVE_ARTIFACT_NAMES",
     "claim_exclusive_evidence_path",
     "claim_exclusive_run_artifacts",
+    "claim_exclusive_run_outputs",
     "prepare_instance_artifacts_dir",
     "reject_symlink_path",
 ]

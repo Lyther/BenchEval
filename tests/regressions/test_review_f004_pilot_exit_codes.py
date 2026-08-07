@@ -42,10 +42,12 @@ def test_live_pilot_exports_failed_terminal_bench_evidence() -> None:
 
     assert 'emit_artifacts "${tag}" "${evidence}" "${raw}" || true' in content
     # H3: row-count-only admission was replaced by live_proof lane qualification
-    # (clean run exit + eligible native-harness rows + provenance + artifacts).
+    # (eligible native-harness rows + provenance + artifacts). A scored model
+    # failure makes `bencheval run` nonzero but remains a valid native attempt.
     assert "require_qualified_lane" in content
     assert "python -m bencheval.live_proof qualify-lane" in content
-    assert "lane disqualified (live proof requires a clean run)" in content
+    assert "checking evidence completeness" in content
+    assert "lane disqualified (live proof requires a clean run)" not in content
     assert "BENCHEVAL_PILOT_TB_EXPECTED_INSTANCES" in content
 
 
