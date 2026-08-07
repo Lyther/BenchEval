@@ -615,7 +615,7 @@ def _build_parser() -> argparse.ArgumentParser:
     run.set_defaults(handler=_run_command)
 
     doctor = sub.add_parser("doctor", help="Preflight checks")
-    doctor.add_argument("--backend", choices=("local", "inspect", "harbor"), default=None)
+    doctor.add_argument("--backend", choices=("inspect", "harbor"), default=None)
     doctor.add_argument("--profile", choices=("E0", "E1", "E2", "E3", "E4", "pilot"), default=None)
     doctor.add_argument("--model", default=None)
     doctor.set_defaults(handler=_doctor_run)
@@ -728,7 +728,11 @@ def main(argv: list[str] | None = None) -> int:
     if handler is None:
         parser.print_help()
         return 2
-    return int(handler(args))
+    try:
+        return int(handler(args))
+    except BenchEvalError as e:
+        sys.stderr.write(f"error: {e}\n")
+        return 1
 
 
 if __name__ == "__main__":

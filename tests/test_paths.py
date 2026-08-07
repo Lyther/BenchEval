@@ -14,6 +14,7 @@ from bencheval.paths import repo_root, validate_config_bundle
 #   trees in test_repo_root_from_bencheval_home, test_repo_root_walks_up_from_cwd,
 #   test_repo_root_cwd_marker_without_bundle_raises,
 #   test_repo_root_invalid_bencheval_home_raises,
+#   test_validate_config_bundle_rejects_missing_models,
 #   test_bundled_config_root_resolves_packaged_config, and
 #   test_bundled_config_root_absent_returns_none
 # - replaces: process-global discovery state and installed package-resource layouts
@@ -28,6 +29,7 @@ def _write_minimal_bundle(root: Path) -> None:
     (root / "config" / "providers").mkdir(parents=True)
     (root / "config" / "slices").mkdir(parents=True)
     (root / "config" / "benchmarks.yaml").write_text("benchmarks: []\n", encoding="utf-8")
+    (root / "config" / "models.yaml").write_text("models: []\n", encoding="utf-8")
     (root / "config" / "runtimes" / "claude-code.yaml").write_text(
         "schema_version: '0.1'\nruntime:\n  id: claude-code\n  kind: cli_agent\n",
         encoding="utf-8",
@@ -84,6 +86,14 @@ def test_validate_config_bundle_rejects_benchmarks_only(tmp_path: Path) -> None:
     (bundle / "config").mkdir(parents=True)
     (bundle / "config" / "benchmarks.yaml").write_text("benchmarks: []\n", encoding="utf-8")
     with pytest.raises(BenchEvalError, match="missing required directory"):
+        validate_config_bundle(bundle)
+
+
+def test_validate_config_bundle_rejects_missing_models(tmp_path: Path) -> None:
+    bundle = tmp_path / "no-models"
+    _write_minimal_bundle(bundle)
+    (bundle / "config" / "models.yaml").unlink()
+    with pytest.raises(BenchEvalError, match=r"models[.]yaml"):
         validate_config_bundle(bundle)
 
 

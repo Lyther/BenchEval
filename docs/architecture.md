@@ -189,14 +189,23 @@ class EvidenceRecord(BaseModel):
     provider_id: str | None = None
     provider_config_hash: str | None = None
     judge_model_id: str | None = None
+    instance_id: str | None = None
     steps: int | None = None
     token_usage: dict[str, int] | None = None
     native_score: dict[str, JsonValue] | None = None
+    normalized_score: float | None = None
     contamination_label: str | None = None
     reward_hack_risk_label: str | None = None
     verifier_integrity_label: str | None = None
     cleanup_result: str | None = None
     interpretation_label: str | None = None   # adapter_smoke | rough_regression | ...
+    failure_class: str | None = None
+    attempt_validity: str | None = None       # valid | invalid
+    invalid_reason: str | None = None
+    counts_toward_pass_at_k: bool | None = None
+    physical_launch_id: str | None = None
+    logical_attempt_number: int | None = None
+    runtime_output_cap: int | None = None
 ```
 
 Nested `run`/`model`/`runtime`/`attempt`/`artifacts`/`integrity` blocks from HLD §9.3 are **not** adopted as the on-disk shape (would break v0.2 readers); they remain a *report projection* only.
@@ -297,7 +306,8 @@ A report cannot claim model/runtime superiority unless: benchmark id identical; 
 | Concern | Module | Notes |
 |---|---|---|
 | Benchmark catalog | `benchmark_registry.py`, `config/benchmarks.yaml` | **8** catalog rows; **3** Tier-0 executable. |
-| Slices / manifests | `manifest.py`, `config/slices/` | Typed slice wrappers + inline instance lists; legacy manifest parser for generated lists. |
+| Slices / manifests | `slice_manifest.py`, `manifest.py`, `config/slices/` | Typed slice wrappers + inline instance lists; legacy manifest parser for generated lists. |
+| Config root / bundle | `paths.py` | Checkout, `BENCHEVAL_HOME`, and packaged-wheel config resolution and validation. |
 | Models / pricing | `models.py`, `pricing.py`, `config/models.yaml` | Non-secret model routes. |
 | Runtime / agent / provider | `runtime_registry.py`, `agent_registry.py`, `provider_registry.py` | Admitted YAML under `config/{runtimes,agents,providers}/`. |
 | Plan (phase 1) | `benchmark_plan.py` | `RunPlan`; runtime XOR agent; provider default `bytellm`. |
@@ -305,5 +315,6 @@ A report cannot claim model/runtime superiority unless: benchmark id identical; 
 | Execute (phase 2) | `control_plane_executor.py` | Dispatches to product adapters. |
 | Adapters | `terminal_bench_harbor.py`, `gpqa_adapter.py`, `hle_adapter.py`, `external_agent_adapter.py` | Executable TB/GPQA/HLE paths; SWE/BFCL diagnostic modules are retained but demoted. |
 | Evidence | `evidence.py` | Additive agent, provider launch, and judge-model provenance. |
+| Live run registry | `live_run_manifest.py` | Append-only run identity and evidence/report/bundle references. |
 | Report / compare / export | `report.py`, `evidence_compare.py`, `export.py`, `run_bundle.py` | `export-run --redaction public\|private`. |
 | CLI | `cli.py` | `list`, `run`, `catalog`, `doctor`, evidence surface. |

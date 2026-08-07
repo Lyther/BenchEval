@@ -32,7 +32,7 @@ class EvidenceRecord(BaseModel):
     Unknown keys are rejected so provenance typos cannot be silently discarded.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     # --- v0.2 (unchanged; do not reorder or drop) ---
     run_id: str

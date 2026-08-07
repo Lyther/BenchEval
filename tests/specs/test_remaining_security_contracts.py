@@ -1,8 +1,17 @@
 """RED contracts for the remaining security-sensitive development work.
 
-These tests exercise real loopback HTTP servers and the real public evidence
-serializer. They intentionally do not replace an upstream provider or the
-redaction implementation with a test double.
+SUBSTITUTE_JUSTIFICATION
+- substitute: loopback ``_RecordingServer`` upstream and alternate-origin servers in
+  ``test_anthropic_shim_confines_forwarding_to_configured_origin``
+- replaces: a credentialed external provider endpoint and an attacker-controlled origin
+- necessity: forwarding a provider credential to a real hostile endpoint would expose a
+  secret; two isolated loopback origins deterministically prove which server receives it
+- real-option: a real provider cannot safely serve as both the trusted and hostile origin
+- proof-limit: proves local origin confinement and credential routing, not provider behavior
+- real-proof: BLOCKED until the provisioned dev-box exercises the shim against its real
+  provider endpoint and retained sanitized request metadata
+
+The public-evidence test exercises the real serializer without a replacement.
 """
 
 from __future__ import annotations
