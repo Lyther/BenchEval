@@ -1,6 +1,6 @@
-# Four-Axis Run Sequence
+# Product Run Sequence
 
-What this shows: primary value path — discover axes, plan without model calls, then live execute through an executable adapter into EvidenceRecord JSONL.
+What this shows: primary value path — list runnable benchmarks, dry-run (phase 1 of `run`), then live execute into EvidenceRecord JSONL.
 
 ```mermaid
 sequenceDiagram
@@ -13,30 +13,32 @@ sequenceDiagram
     participant Ad as Adapter harness
     participant Ev as Evidence JSONL
 
-    Op->>CLI: plan terminal-bench/smoke-5 --runtime … --model …
-    CLI->>Reg: load benchmark/slice/runtime/model
-    Reg-->>CLI: contracts + instance ids
-    CLI->>Plan: plan_control_plane(…)
-    Plan-->>CLI: RunPlan + cost envelope + caveats
-    CLI-->>Op: JSON dry-run plan (no model calls)
+    Op->>CLI: list / catalog …
+    CLI-->>Op: executable adapters (default 3)
 
-    Op->>CLI: run terminal-bench/smoke-5 --runtime … --model …
-    CLI->>Reg: resolve axes + execution_support
-    alt metadata_only / not executable
-        CLI-->>Op: fail before subprocess (execution_support)
+    Op->>CLI: run gpqa-diamond/smoke --model … --dry-run
+    CLI->>Reg: resolve scaffold (runtime XOR agent; else model-only)
+    CLI->>Plan: plan_control_plane(…)
+    Plan-->>CLI: RunPlan + envelope + caveats
+    CLI-->>Op: JSON phase-1 (no model calls)
+
+    Op->>CLI: run terminal-bench/smoke-5 --runtime … --model … -y
+    CLI->>Reg: execution_support gate
+    alt unknown / not executable
+        CLI-->>Op: fail before subprocess
     else executable_adapter
         CLI->>Plan: RunPlan
-        CLI->>Doc: require_doctor_ok
-        Doc-->>CLI: ok / abort (no evidence)
+        CLI->>Doc: require_doctor_ok when needed
+        Doc-->>CLI: ok / abort
         CLI->>CPE: execute_control_plane_run(plan)
         loop each instance
-            CPE->>Ad: run_*_instance
+            CPE->>Ad: run_*_instance or momo
             Ad-->>CPE: native outcome + artifacts
             CPE->>Ev: append EvidenceRecord
         end
-        CPE-->>CLI: ControlPlaneRunSummary
-        CLI-->>Op: evidence path under results/
+        CPE-->>CLI: summary
+        CLI-->>Op: evidence under results/
     end
 ```
 
-Notes: Shorthand `benchmark/slice` and `plan` alias live in [`cli.py`](../../src/bencheval/cli.py). Defaults for `--output` / `--artifacts-dir` land under `results/` when omitted. Doctor failures abort without writing evidence; post-preflight adapter failures still write `primary_pass=false` rows ([architecture §10](../architecture.md)).
+Notes: Harbor requires explicit `--runtime` (`claude-code` | `codex-cli`). GPQA/HLE omit runtime/agent. `--agent momo` is XOR with `--runtime`. Defaults for `--output` / `--artifacts-dir` under `results/`.

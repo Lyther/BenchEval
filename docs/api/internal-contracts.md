@@ -1,171 +1,49 @@
 # Internal API contracts
 
-BenchEval has **no public HTTP surface**. Boundaries are **Python protocols** (caller <-> implementation), Python modules, and **DTOs** (Pydantic models) shared by CLI scripts.
+BenchEval has **no public HTTP surface**. Boundaries are Python modules, Pydantic DTOs, and the CLI.
 
-> **v0.3 supplement (2026-06-17):** the control-plane pivot adds a four-axis CLI surface (`benchmark/runtime/model/adapter` discovery + `run --benchmark/--slice/--runtime/--model`) and v0.3 Protocols. The legacy selftest/Core/summary contracts below are unchanged. The new contracts are frozen for feature implementation per the `roadmap → model → contract → breakdown → feature` pipeline.
+Product spine: `benchmark → (runtime | agent)? → model via provider → evidence`.
 
-## Frozen contracts
-
-### v0.2 legacy (selftest / Core / summary pipeline)
+## Frozen modules
 
 | Artifact | Role |
 | --- | --- |
-| [`src/bencheval/models.py`](../../src/bencheval/models.py) | Legacy DTOs: `SummaryRow`, `ManifestDigest`, `RunStamp`, `ComparisonReport`, ... |
-| [`src/bencheval/contracts.py`](../../src/bencheval/contracts.py) | Legacy `typing.Protocol` capabilities: load manifest, read `.eval`, build summary, append JSONL, compare runs |
-| [`src/bencheval/task_contract.py`](../../src/bencheval/task_contract.py) | Canonical task contract schema v0.2 |
-| [`src/bencheval/evidence.py`](../../src/bencheval/evidence.py) | vNext `EvidenceRecord` JSONL schema (v0.3 fields are additive, all optional) |
-| [`src/bencheval/evidence_compare.py`](../../src/bencheval/evidence_compare.py) | vNext evidence compare (baseline vs current by task/model/backend) |
-| [`src/bencheval/exceptions.py`](../../src/bencheval/exceptions.py) | Normalized error types crossing boundaries (`BenchEvalError`, `AdapterFailureError`, ...) |
+| [`domain.py`](../../src/bencheval/domain.py) | Shared enums, `RunPlan`, runtime/slice DTOs, failure labels |
+| [`evidence.py`](../../src/bencheval/evidence.py) | `EvidenceRecord` JSONL schema |
+| [`evidence_compare.py`](../../src/bencheval/evidence_compare.py) | Compare two evidence JSONL runs |
+| [`benchmark_registry.py`](../../src/bencheval/benchmark_registry.py) | `config/benchmarks.yaml` → catalog (8 rows; 3 Tier-0 executables) |
+| [`runtime_registry.py`](../../src/bencheval/runtime_registry.py) | `config/runtimes/*.yaml` |
+| [`agent_registry.py`](../../src/bencheval/agent_registry.py) | `config/agents/*.yaml` |
+| [`provider_registry.py`](../../src/bencheval/provider_registry.py) | `config/providers/*.yaml` |
+| [`model_registry.py`](../../src/bencheval/model_registry.py) | `config/models.yaml` |
+| [`benchmark_plan.py`](../../src/bencheval/benchmark_plan.py) | Phase-1 planner (`RunPlanner`) |
+| [`control_plane_executor.py`](../../src/bencheval/control_plane_executor.py) | Adapter dispatch (`AdapterDispatcher`) |
+| [`external_agent_adapter.py`](../../src/bencheval/external_agent_adapter.py) | Generic agent CLI runner from agent YAML |
+| [`doctor.py`](../../src/bencheval/doctor.py) | Preflight; credentials via model → provider route |
+| [`exceptions.py`](../../src/bencheval/exceptions.py) | `BenchEvalError`, `AdapterFailureError`, … |
 
-### v0.3 control-plane
-
-| Artifact | Role |
-| --- | --- |
-| [`src/bencheval/domain.py`](../../src/bencheval/domain.py) | Single source of truth: branded IDs (`NewType`), shared enums, `RuntimeProfile`, `SliceManifest`, `RunPlan` (DTO), `TokenUsage`, `AttemptSummaryDTO`, `IntegrityMetadata` |
-| [`src/bencheval/contracts.py`](../../src/bencheval/contracts.py) | v0.3 Protocols: `BenchmarkCatalogSource`, `RuntimeCatalogSource`, `SliceManifestSource`, `RunPlanner`, `AdapterDispatcher` (plus the v0.2 Protocols above) |
-| [`src/bencheval/runtime_registry.py`](../../src/bencheval/runtime_registry.py) | Loads `config/runtimes/*.yaml` → `RuntimeCatalog` (implements `RuntimeCatalogSource`) |
-| [`src/bencheval/slice_manifest.py`](../../src/bencheval/slice_manifest.py) | Typed slice wrapper over `manifest.py` (implements `SliceManifestSource`) |
-| [`src/bencheval/benchmark_registry.py`](../../src/bencheval/benchmark_registry.py) | `config/benchmarks.yaml` → `BenchmarkCatalog` (implements `BenchmarkCatalogSource`) |
-| [`src/bencheval/planner.py`](../../src/bencheval/planner.py) | Four-axis `RunPlan` builder (implements `RunPlanner`) |
-| [`src/bencheval/executor.py`](../../src/bencheval/executor.py) | Adapter dispatch (implements `AdapterDispatcher`) |
-| [`src/bencheval/external_command_adapter.py`](../../src/bencheval/external_command_adapter.py) | Generic external-command runner for config-driven external projects; writes raw run records + `EvidenceRecord` JSONL |
-| [`src/bencheval/replay.py`](../../src/bencheval/replay.py) | General-purpose raw run record/replay: v1 `RecordHeader`/`RecordEvent`/`RecordFooter` + legacy `LegacyMomoEvent`, `RunRecordWriter`, `load_run_record`, `replay`, `verify_bound_evidence` |
-| [`src/bencheval/presentation.py`](../../src/bencheval/presentation.py) | Derived public presentation helpers: `redact_for_public_presentation`, `strip_ansi` |
-
-## CLI command surface (v0.3, frozen during impl)
-
-BenchEval is a CLI tool. The command tree is the public API. Exit codes are the status contract.
-
-### Command tree
+## CLI surface
 
 ```text
-bencheval task lint|validate|audit ...          # selftest lane (v0.2, unchanged)
-bencheval benchmark list|show|slices ...         # discovery
-bencheval runtime list|show <id>                 # discovery (NEW)
-bencheval model list|show <id>                   # discovery (NEW)
-bencheval adapter list                           # discovery (NEW)
-bencheval doctor [--benchmark <id>] [--runtime <id>]
-bencheval run --config <run-profile.yaml> [--run-root <path>] [--dry-run]          # external command profile (recommended)
-bencheval run --dry-run --benchmark <id> --slice <id> --runtime <id> --model <id>   # plan (NEW)
-bencheval run --benchmark <id> --slice <id> --runtime <id> --model <id> --output <evidence.jsonl> [--cleanup always]   # execute (NEW)
-bencheval run --task|--suite|--manifest ... --backend local|inspect|harbor           # selftest compat (v0.2, unchanged)
-bencheval report <evidence.jsonl> --output <report.md>
-bencheval compare <baseline.jsonl> <current.jsonl> --format md|json
-bencheval export <evidence.jsonl> --format parquet|duckdb --output <warehouse/...>
-bencheval export-run --evidence <evidence.jsonl> --output <bundle-dir> [--raw-dir ...] [--redaction public|private]
-bencheval evidence register --evidence <evidence.jsonl> [--artifacts-dir ...] [--notes ...]
-bencheval replay <events.jsonl> [--no-color] [--speed N] [--max-delay S] [--verify-evidence [evidence.jsonl]] [--format text|json]
+bencheval list [--format json]                          # runnable benchmarks (default: 3)
+bencheval benchmark list|show|slices …                  # compat catalog
+bencheval catalog runtime|provider|agent|model list|show
+bencheval doctor --backend … | --profile pilot --model <id>
+bencheval run <benchmark>/<slice> --model <id>
+            [--runtime <id> | --agent <id>] [--provider <id>]
+            [--dry-run | -y] [--output …] [--artifacts-dir …]
+bencheval report|compare|export|export-run …
+bencheval evidence register …
 ```
 
-### External command profiles and run record / replay
+`run` is two-phase: print envelope → confirm (`-y` skips) → execute. `--dry-run` stops after phase 1.
 
-`bencheval run --config <profile.yaml>` runs an external project through the
-generic external-command adapter. The profile contains benchmark/runtime/model
-identity, command template, stream parser, verification policy, and artifact
-layout. This is the preferred CLI for large external benchmark integrations
-whose native harness already owns materialization, sandboxing, and cleanup.
+Planning rejects unknown models, provider_route mismatches, runtime/agent XOR violations, and agents whose `supported_harnesses` excludes the benchmark harness.
 
-`bencheval replay` replays a captured **run record** (`events.jsonl`) to the terminal with original timing and colors, and can verify `EvidenceRecord` rows bound to that run. This lane is **benchmark-agnostic**: any external runner may emit `bencheval_run_record_v1` and optionally bind evidence — it is not tied to a Production v1 adapter.
+## Evidence
 
-Benchmark-specific external-command profiles are operator artifacts unless they
-are official, reusable BenchEval adapters. CyBench assets and scoring are not
-duplicated here; an operator-supplied profile may consume this API while keeping
-the official benchmark as the source of truth.
+Primary scoring is `EvidenceRecord` JSONL + `bencheval compare`. Failed adapter attempts must still append a row with a canonical `FailureLabel` (never crash on construct).
 
-#### Canonical vs derived lanes (integrity policy)
+## Config bundle
 
-There are two lanes that must never be confused:
-
-- **Canonical run record** (`events.jsonl`): **raw, private, integrity-preserving**. It is the scoring/audit source of truth. It MAY contain flags, secrets, prompts, model outputs, tool calls, stack traces, filesystem paths, and challenge content. Redaction is forbidden here by default. `replay()` operates on this lane and prints exactly what was recorded.
-- **Derived public artifacts** (public reports, demo videos, shareable transcripts): MAY redact sensitive material via `redact_for_public_presentation()`, but they are never used as scoring truth and must carry provenance (source path/hash, redaction mode, generated time).
-
-#### Schema
-
-- **`bencheval_run_record_v1`** — production schema with `header`/`event`/`footer` record types, integrity binding (`run_id`, `benchmark_id`, optional `evidence_sha256` in header or footer), per-event monotonically increasing `seq`, and `redaction_policy: "none"` for canonical records.
-- **`momo_event_v1`** — legacy flat event stream with no header, emitted by early reference integrations. Accepted for backward compatibility; flagged `legacy_unbound` (no integrity binding). "Legacy flat event" is a descriptive compatibility lane, not a separate schema identifier.
-- Schema-less lines are tolerated as legacy flat events so older captured files keep replaying. Mixed-schema files are rejected fast.
-
-#### Backward compatibility
-
-Reference integrations may delegate replay to the general module. Producers
-write **raw** canonical records to `events.jsonl`; redaction is reserved for
-explicit derived public artifacts, never canonical evidence.
-
-#### `--verify-evidence [path]`
-
-`nargs="?"` — without a path argument, derives the sibling evidence file by convention (`<results_root>/evidence/<run_id>.jsonl`). With a path, uses it explicitly. Loads and cross-checks evidence rows against the run record (run_id, benchmark_id, instance_id, evidence_sha256). Prints a summary (`text`) or `{record, row_count, rows}` (`json`). This **verifies** bound evidence; it does not rerun verifiers or regenerate evidence.
-
-#### Redaction
-
-`redact_for_public_presentation()` lives in `bencheval.presentation` and is the helper for derived public artifacts only. It is NOT called by `replay()` or `load_run_record()`. The deprecated alias `sanitize_for_replay()` still works from `bencheval.replay` for old imports, but new code should import presentation helpers from `bencheval.presentation`.
-
-#### Idempotency
-
-`replay` writes only to stdout; no files mutated. `verify_bound_evidence` is read-only over evidence files. Both are safe to retry.
-
-### Exit-code contract (frozen)
-
-| Code | Meaning | When |
-| ---:|---|---|
-| `0` | success | command completed |
-| `1` | business/admission failure | admission gates not met; invalid config; provider model mismatch; `BenchEvalError`/`TaskContractError`/`ValueError` caught in `main()` |
-| `2` | usage/config error | mutually exclusive flags chosen together; missing required `--output`; `--cleanup` without `--mode single` |
-
-Errors write a single `error: <message>` line to **stderr** and return the code; never a `200`-with-error-body pattern.
-
-### JSON output contract (`--format json`)
-
-Discovery and dry-run commands emit a single JSON object to **stdout** (indented, stable key order). Text format is the default for humans; JSON is the machine contract.
-
-- `benchmark list --format json` → `{ "benchmarks": [ <BenchmarkEntry dict>, ... ] }`
-- `benchmark show <id> --format json` → `<BenchmarkEntry dict>`
-- `runtime list --format json` → `{ "runtimes": [ { "id", "kind", "display_name", "admission" }, ... ] }`
-- `runtime show <id> --format json` → `<RuntimeProfile dict>` (no secrets — env var names only, never values)
-- `run --dry-run ...` → `<RunPlan dict>` (see `domain.RunPlan`; `comparison_validity` is one of `model_comparison|runtime_comparison|adapter_smoke|diagnostic_only|invalid`)
-- `run --config ... --dry-run` → `<ExternalRunConfig-derived plan dict>` (`benchmark_id`, `slice_id`, `runtime_id`, `model_id`, `instances`, `events`, `evidence`, `snapshot_enabled`)
-
-**Never leaked** in any JSON output: secret values (`*_API_KEY` contents), artifact file contents, raw model outputs, `password_hash`-equivalents. Env vars are represented by **name only**.
-
-### Dry-run output fields (frozen)
-
-`run --dry-run` emits these fields (per HLD §8.2), all derived from the `RunPlan` DTO:
-
-`schema_version`, `benchmark_id`, `benchmark_version`, `slice_id`, `adapter_id`, `harness_kind`, `runtime_id`, `runtime_kind`, `model_id`, `model_binding`, `instance_count`, `instances`, `budget_class`, `max_cost_usd`, `max_wall_clock_sec`, `requires_harbor`, `requires_sandbox`, `network_policy`, `cleanup_policy`, `caveats`, `comparison_validity`, plus additive `slice_resolution` (instance manifest SHA256, `execution_support`, resolved ids).
-
-Evidence JSONL v0.3 additive fields may include `attempt_validity`, `invalid_reason`, `counts_toward_pass_at_k`, `physical_launch_id`, `logical_attempt_number`, `runtime_output_cap`, and extended `failure_class` values (`runtime_output_cap_reached`, `operator_interrupted`, …). See `docs/context/runtime-invocation-contracts.md`.
-
-The external-command adapter also writes a free-form `adapter_metadata` dict on each `EvidenceRecord` (`external_command_adapter._write_evidence`). Alongside `run_kind`, `runtime_id`, `stream_parser`, `verification_kind`, `target_host`, `raw_log`, `stderr_log`, and `result_check`, it carries join/attribution keys such as `variant`, `configured_model_id`, and the per-attempt `telemetry_id` / `trace_id` (`{run_id}:{instance_id}:attempt{N}`) that an operator profile may use to bind a row to provider telemetry.
-
-## Coupling rules
-
-- **Callers** depend on Protocols, DTOs, and CLI/library entrypoints — not on Inspect/Harbor SDK classes directly.
-- **Adapters** implement execution backends (`inspect_adapter`, `harbor_adapter`, native, runtime-CLI, local harness). They return `EvidenceRecord` rows; they never return native SDK objects across the boundary.
-- **Services return domain objects / DTOs, never DB/native entities.** `RunPlan` is a DTO (no paths, no secrets). `EvidenceRecord` is the store (has artifact paths). `AttemptSummaryDTO` is the public report row (no paths). Map entity → DTO at the boundary.
-- **Shell scripts** (`scripts/*.sh`) orchestrate process boundaries; legacy `.eval` parsing and vNext scoring stay in Python entrypoints.
-- **`SummaryBuilder.build`** takes a `ManifestDigest` so implementers can verify `stamp.task_manifest_hash`, align `n_samples` with `len(manifest.task_ids)`, and refuse inconsistent rows before writing JSONL.
-- **v0.3 planner** takes the four-axis tuple and returns a frozen `RunPlan`; it performs NO execution and touches NO filesystem artifacts. The executor turns a `RunPlan` into `EvidenceRecord` rows.
-
-## Error shape (standardized)
-
-- Recoverable validation failures → `SummaryValidationError` / `EvidenceValidationError` / `ComparisonError` / `TaskContractError` with a single human-readable message.
-- Adapter preflight/infrastructure failures → `AdapterFailureError` (abort, no evidence) or a post-preflight `EvidenceRecord` with `primary_pass=False` + canonical `FailureLabel`.
-- Scripts and CLI exit non-zero on any `BenchEvalError` subclass. One error shape, everywhere.
-
-## Versioning
-
-- Breaking changes to `SummaryRow` require a new JSONL file stem or a documented migration in `docs/architecture.md`; treat the schema as a public contract for longitudinal analysis.
-- **`EvidenceRecord` v0.3 is additive only.** v0.2 fields and the permissive model config (no `extra="forbid"`) are a frozen contract; v0.3 optional fields default to `None`/absent so v0.2 JSONL rows keep parsing. New domain models (`RuntimeProfile`, `SliceManifest`, `RunPlan`, `TokenUsage`, `AttemptSummaryDTO`) use `frozen=True, extra="forbid"`.
-- CLI commands are versioned by behavior, not a `/v1/` prefix (there is no HTTP layer). New flags are additive; removing/renaming a flag is a breaking change documented in `docs/architecture.md` §16 Changelog.
-
-## Idempotency & safety
-
-- `run --dry-run` is idempotent and side-effect-free (no filesystem writes, no network). Safe to retry.
-- `run` (execute) is **not idempotent** — it writes evidence and may mutate transient workspaces. Documented. `--cleanup always` with `--mode single` is the bounded-lifecycle path.
-- `report` / `compare` / `export` are read-only over evidence files; idempotent.
-- `doctor` is read-only preflight; idempotent.
-
-## Related
-
-- Canonical field definitions: [`docs/architecture.md`](../architecture.md)
-- Domain types (single source of truth): [`src/bencheval/domain.py`](../../src/bencheval/domain.py)
-- System shape: [`docs/architecture.md`](../architecture.md) §3
+Wheel installs ship `bencheval/_bundled/config/`. `BENCHEVAL_HOME` overrides for a custom bundle.

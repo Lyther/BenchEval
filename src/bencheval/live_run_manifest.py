@@ -73,7 +73,7 @@ class LiveRunRecord(BaseModel):
     paths are optional because a run may be registered before all artifacts exist.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(frozen=True, extra="forbid")
 
     schema_version: Literal["live_run_v1"] = LIVE_RUN_SCHEMA_VERSION
     run_id: str = Field(min_length=1)

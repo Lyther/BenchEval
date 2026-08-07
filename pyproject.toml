@@ -21,16 +21,19 @@ bencheval = "bencheval.cli:main"
 [tool.hatch.build.targets.wheel.force-include]
 "config/benchmarks.yaml" = "bencheval/_bundled/config/benchmarks.yaml"
 "config/models.yaml" = "bencheval/_bundled/config/models.yaml"
-"config/suites.yaml" = "bencheval/_bundled/config/suites.yaml"
 "config/runtimes" = "bencheval/_bundled/config/runtimes"
+"config/providers" = "bencheval/_bundled/config/providers"
+"config/agents" = "bencheval/_bundled/config/agents"
 "config/slices" = "bencheval/_bundled/config/slices"
-"config/manifests" = "bencheval/_bundled/config/manifests"
 
 [project.optional-dependencies]
 eval = [
-    "inspect-ai>=0.3.99",
+    # >=0.3.252: first release allowing click>=8.3.3 (GHSA/PYSEC click fix; older
+    # inspect-ai caps click<8.2.2, which pins us to a vulnerable click).
+    "inspect-ai>=0.3.252",
     "inspect-evals",
-    "inspect-harbor>=0.4.5",
+    # >=0.5.0: drops the litellm<1.82.7 pin so litellm can move past its GHSA fixes.
+    "inspect-harbor>=0.5.0",
     "inspect-swe",
 ]
 analytics = ["duckdb>=1.2.0", "pyarrow>=18.0.0"]
@@ -92,4 +95,5 @@ source_pkgs = ["bencheval"]
 omit = ["*/tests/*"]
 
 [tool.coverage.report]
-fail_under = 80
+# Full-suite fail_under is intentionally unset. Domain coverage gate lives in
+# scripts/check-domain-coverage.sh (80% across the production package).

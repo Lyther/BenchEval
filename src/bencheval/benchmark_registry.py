@@ -40,7 +40,6 @@ BenchmarkAdapterStatus = Literal[
 BenchmarkBackend = Literal["inspect", "harbor", "external"]
 BenchmarkProfile = Literal["E3", "E4"]
 ContaminationRisk = Literal["low", "medium", "high", "unknown"]
-SafetyReview = Literal["standard", "dual_use", "offensive_restricted"]
 
 _KEY_SEPARATOR_RE = re.compile(r"[\s_-]+")
 
@@ -62,22 +61,21 @@ class BenchmarkEntry(BaseModel):
     public_indexed: bool
     contamination_risk: ContaminationRisk
     single_mode_required: bool
-    safety_review: SafetyReview
     source_url: str | None = Field(default=None, min_length=1)
     notes: str = Field(min_length=1)
-    # Config-driven adapter binding (replaces the former hard-coded maps). A
-    # benchmark reusing an existing adapter family becomes runnable by setting these
-    # in config alone — no Python change. ``executable`` marks that a dispatchable
-    # control-plane adapter exists today; dispatch still validates ``adapter_id``.
+    # Config-driven benchmark-to-adapter binding. The adapter implementation, not
+    # benchmark YAML, declares the official runner family so config cannot silently
+    # insert a behavior-changing harness layer.
     adapter_id: str | None = Field(default=None, min_length=1)
-    harness_kind: str | None = Field(default=None, min_length=1)
     executable: bool = False
+    # Bare `bencheval run <benchmark>` resolves to this slice id when set.
+    default_slice: str | None = Field(default=None, min_length=1)
 
     @model_validator(mode="after")
     def _executable_requires_adapter_binding(self) -> Self:
-        if self.executable and not (self.adapter_id and self.harness_kind):
+        if self.executable and not self.adapter_id:
             raise ValueError(
-                f"benchmark {self.id!r} is executable but is missing adapter_id/harness_kind",
+                f"benchmark {self.id!r} is executable but is missing adapter_id",
             )
         return self
 
@@ -136,7 +134,6 @@ class BenchmarkFilter:
     category: BenchmarkCategory | None = None
     tier: BenchmarkTier | None = None
     adapter_status: BenchmarkAdapterStatus | None = None
-    safety_review: SafetyReview | None = None
     execution_support: ExecutionSupport | None = None
 
 
@@ -179,7 +176,7 @@ def execution_support_label(entry: BenchmarkEntry) -> str:
 
     Config-driven: a benchmark is ``executable_adapter`` iff its catalog entry sets
     ``executable: true`` (which the model validator requires be paired with an
-    ``adapter_id``/``harness_kind``). No benchmark IDs are hard-coded here.
+    ``adapter_id``). No benchmark IDs are hard-coded here.
     """
     if entry.executable:
         return "executable_adapter"
@@ -199,8 +196,6 @@ def filter_benchmarks(
         entries = tuple(b for b in entries if b.tier == filters.tier)
     if filters.adapter_status is not None:
         entries = tuple(b for b in entries if b.adapter_status == filters.adapter_status)
-    if filters.safety_review is not None:
-        entries = tuple(b for b in entries if b.safety_review == filters.safety_review)
     if filters.execution_support is not None:
         entries = tuple(
             b for b in entries if execution_support_label(b) == filters.execution_support

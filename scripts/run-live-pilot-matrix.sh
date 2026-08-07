@@ -8,15 +8,21 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 readonly REPO_ROOT
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 readonly STAMP
-readonly MODEL="${BENCHEVAL_PILOT_MODEL:-openai/gpt-test}"
+readonly MODEL="${BENCHEVAL_PILOT_MODEL:-kimi-k2.7-code}"
 readonly TB_CLAUDE_MODEL="${BENCHEVAL_PILOT_CLAUDE_MODEL:-${MODEL}}"
 readonly TB_CODEX_MODEL="${BENCHEVAL_PILOT_CODEX_MODEL:-${MODEL}}"
-readonly BFCL_MODEL="${BENCHEVAL_PILOT_BFCL_MODEL:-${MODEL}}"
-readonly SWE_MODEL="${BENCHEVAL_PILOT_SWE_MODEL:-${MODEL}}"
 readonly TB_EXPECTED_INSTANCES="${BENCHEVAL_PILOT_TB_EXPECTED_INSTANCES:-5}"
-readonly BFCL_EXPECTED_INSTANCES="${BENCHEVAL_PILOT_BFCL_EXPECTED_INSTANCES:-5}"
-readonly SWE_EXPECTED_INSTANCES="${BENCHEVAL_PILOT_SWE_EXPECTED_INSTANCES:-10}"
 export BENCHEVAL_HARBOR_FORWARD_PROXY="${BENCHEVAL_HARBOR_FORWARD_PROXY:-1}"
+
+cd "${REPO_ROOT}"
+
+if ! grep -Eq "^[[:space:]]*- id:[[:space:]]*${MODEL}[[:space:]]*$" \
+  "${REPO_ROOT}/config/models.yaml"; then
+  printf 'error: pilot model %s is not in config/models.yaml\n' "${MODEL}" >&2
+  printf 'hint: uv run --no-sync bencheval catalog model list\n' >&2
+  printf 'hint: set BENCHEVAL_PILOT_MODEL to a registered id (default: kimi-k2.7-code)\n' >&2
+  exit 1
+fi
 
 PASSED=0
 BLOCKED=0
@@ -33,7 +39,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-cd "${REPO_ROOT}"
 mkdir -p results/evidence results/raw results/reports results/bundles results/preflight results/compare
 
 root_from_v1_base() {
@@ -94,7 +99,18 @@ start_anthropic_role_shim() {
     --host "${host}" --port "${port}" --upstream "${upstream}"
   )
   if [[ -n ${BENCHEVAL_SHIM_AUTH_TOKEN_ENV:-} ]]; then
+    if [[ -z ${BENCHEVAL_SHIM_INBOUND_TOKEN:-} ]]; then
+      BENCHEVAL_SHIM_INBOUND_TOKEN="$(openssl rand -hex 24)"
+    fi
+    export BENCHEVAL_SHIM_INBOUND_TOKEN
     shim_cmd+=(--auth-token-env "${BENCHEVAL_SHIM_AUTH_TOKEN_ENV}")
+    shim_cmd+=(--inbound-token-env BENCHEVAL_SHIM_INBOUND_TOKEN)
+    # Agents present the inbound capability; upstream secret stays in AUTH_TOKEN_ENV.
+    export ANTHROPIC_API_KEY="${BENCHEVAL_SHIM_INBOUND_TOKEN}"
+    export ANTHROPIC_AUTH_TOKEN="${BENCHEVAL_SHIM_INBOUND_TOKEN}"
+    if [[ ${BENCHEVAL_OPENAI_VIA_ROLE_SHIM:-} == "1" ]]; then
+      export OPENAI_API_KEY="${BENCHEVAL_SHIM_INBOUND_TOKEN}"
+    fi
   fi
   "${shim_cmd[@]}" >"${log}" 2>&1 &
   SHIM_PID="$!"
@@ -127,11 +143,6 @@ preflight() {
   BLOCKED=$((BLOCKED + 1))
 }
 
-bfcl_model_supported() {
-  local model="$1"
-  bfcl models 2>/dev/null | grep -Fx -- "${model}" >/dev/null
-}
-
 emit_artifacts() {
   local tag="$1"
   local evidence="$2"
@@ -146,34 +157,19 @@ emit_artifacts() {
   fi
 }
 
-evidence_record_count() {
-  local evidence="$1"
-  if [[ ! -s ${evidence} ]]; then
-    printf '0\n'
-    return 0
-  fi
-  uv run --no-sync python - "${evidence}" <<'PY'
-from pathlib import Path
-import sys
-
-from bencheval.evidence import read_evidence_jsonl
-
-print(len(read_evidence_jsonl(Path(sys.argv[1]))))
-PY
-}
-
-require_evidence_records() {
+require_qualified_lane() {
   local evidence="$1"
   local expected="$2"
   local tag="$3"
-  local count
-
-  count="$(evidence_record_count "${evidence}")"
-  if [[ ${count} -ge ${expected} ]]; then
+  shift 3
+  local qstatus=0
+  uv run --no-sync python -m bencheval.live_proof qualify-lane "${evidence}" \
+    --expected "${expected}" "$@" || qstatus=$?
+  if [[ ${qstatus} -eq 0 ]]; then
     return 0
   fi
-  printf 'error: %s produced %s/%s evidence records\n' \
-    "${tag}" "${count}" "${expected}" >&2
+  printf 'error: %s evidence did not qualify for live proof (exit %s)\n' \
+    "${tag}" "${qstatus}" >&2
   return 1
 }
 
@@ -196,89 +192,16 @@ run_tb() {
     return 1
   fi
   local run_status=0
-  uv run --no-sync bencheval run \
-    --benchmark terminal-bench --slice smoke-5 --runtime "${runtime}" \
-    --model "${model}" --output "${evidence}" --artifacts-dir "${raw}" || run_status=$?
+  uv run --no-sync bencheval run "terminal-bench/smoke-5" \
+    --runtime "${runtime}" \
+    --model "${model}" -y --output "${evidence}" --artifacts-dir "${raw}" || run_status=$?
   emit_artifacts "${tag}" "${evidence}" "${raw}" || true
   if [[ ${run_status} -ne 0 ]]; then
-    printf 'note: %s exited %s; checking evidence completeness\n' \
+    printf 'note: %s run exited %s; checking evidence completeness\n' \
       "${tag}" "${run_status}" >&2
   fi
-  if ! require_evidence_records "${evidence}" "${TB_EXPECTED_INSTANCES}" "${tag}"; then
-    FAILED=$((FAILED + 1))
-    return 1
-  fi
-  PASSED=$((PASSED + 1))
-}
-
-run_bfcl() {
-  local tag="bfcl-smoke5-${STAMP}"
-  local evidence="results/evidence/${tag}.jsonl"
-  local raw="results/raw/${tag}"
-  if ! command -v bfcl >/dev/null 2>&1; then
-    preflight "results/preflight/${tag}.json" \
-      --benchmark bfcl-v4 --slice smoke-5 --runtime native-api \
-      --model "${BFCL_MODEL}" --ok false --reason "bfcl not on PATH (install bfcl-eval)"
-    return 1
-  fi
-  if ! bfcl --help >/dev/null 2>&1; then
-    preflight "results/preflight/${tag}.json" \
-      --benchmark bfcl-v4 --slice smoke-5 --runtime native-api \
-      --model "${BFCL_MODEL}" --ok false --reason "bfcl command failed (repair bfcl-eval)"
-    return 1
-  fi
-  if ! bfcl_model_supported "${BFCL_MODEL}"; then
-    preflight "results/preflight/${tag}.json" \
-      --benchmark bfcl-v4 --slice smoke-5 --runtime native-api \
-      --model "${BFCL_MODEL}" --ok false \
-      --reason "bfcl model is not supported by bfcl models; set BENCHEVAL_PILOT_BFCL_MODEL"
-    return 1
-  fi
-  local run_status=0
-  uv run --no-sync bencheval run \
-    --benchmark bfcl-v4 --slice smoke-5 --runtime native-api \
-    --model "${BFCL_MODEL}" --output "${evidence}" --artifacts-dir "${raw}" || run_status=$?
-  emit_artifacts "${tag}" "${evidence}" "${raw}" || true
-  if [[ ${run_status} -ne 0 ]]; then
-    printf 'note: %s exited %s; checking evidence completeness\n' \
-      "${tag}" "${run_status}" >&2
-  fi
-  if ! require_evidence_records "${evidence}" "${BFCL_EXPECTED_INSTANCES}" "${tag}"; then
-    FAILED=$((FAILED + 1))
-    return 1
-  fi
-  PASSED=$((PASSED + 1))
-}
-
-run_swe() {
-  local tag="swe-smoke10-${STAMP}"
-  local evidence="results/evidence/${tag}.jsonl"
-  local raw="results/raw/${tag}"
-  if ! command -v mini-extra >/dev/null 2>&1; then
-    preflight "results/preflight/${tag}.json" \
-      --benchmark swe-bench-verified --slice swe-bench-verified-smoke-10 \
-      --runtime mini-swe-agent --model "${SWE_MODEL}" --ok false \
-      --reason "mini-extra not on PATH"
-    return 1
-  fi
-  if ! docker info >/dev/null 2>&1; then
-    preflight "results/preflight/${tag}.json" \
-      --benchmark swe-bench-verified --slice swe-bench-verified-smoke-10 \
-      --runtime mini-swe-agent --model "${SWE_MODEL}" --ok false \
-      --reason "docker not available"
-    return 1
-  fi
-  local run_status=0
-  uv run --no-sync bencheval run \
-    --benchmark swe-bench-verified --slice swe-bench-verified-smoke-10 \
-    --runtime mini-swe-agent --model "${SWE_MODEL}" \
-    --output "${evidence}" --artifacts-dir "${raw}" || run_status=$?
-  emit_artifacts "${tag}" "${evidence}" "${raw}" || true
-  if [[ ${run_status} -ne 0 ]]; then
-    printf 'note: %s exited %s; checking evidence completeness\n' \
-      "${tag}" "${run_status}" >&2
-  fi
-  if ! require_evidence_records "${evidence}" "${SWE_EXPECTED_INSTANCES}" "${tag}"; then
+  if ! require_qualified_lane "${evidence}" "${TB_EXPECTED_INSTANCES}" "${tag}" \
+    --benchmark-id terminal-bench --slice-id smoke-5 --require-runtime; then
     FAILED=$((FAILED + 1))
     return 1
   fi
@@ -292,14 +215,14 @@ start_anthropic_role_shim
 
 TB_CC=0
 TB_CX=0
+# bfcl-v4 / swe-bench-verified are demoted (non-executable). Do not invoke them here:
+# CLI refuse increments FAILED and poisons BENCHEVAL_ALLOW_PREFLIGHT_ONLY.
 if run_tb claude-code; then
   TB_CC=1
 fi
 if run_tb codex-cli; then
   TB_CX=1
 fi
-run_bfcl || true
-run_swe || true
 
 COMPARE_OK=0
 base="results/evidence/tb-claude-code-${STAMP}.jsonl"
@@ -311,21 +234,22 @@ if [[ ${TB_CC} -eq 1 && ${TB_CX} -eq 1 ]]; then
   fi
 fi
 
-printf 'Pilot summary: passed=%s blocked_preflight=%s failed=%s tb_compare=%s\n' \
-  "${PASSED}" "${BLOCKED}" "${FAILED}" "${COMPARE_OK}"
+SHARED_ELIGIBLE=0
+if [[ ${COMPARE_OK} -eq 1 ]]; then
+  shared_count=""
+  if shared_count="$(uv run --no-sync python -m bencheval.live_proof shared-instances \
+    "${base}" "${cur}" --require-runtime)"; then
+    SHARED_ELIGIBLE="${shared_count}"
+  fi
+fi
 
-if [[ ${TB_CC} -eq 1 && ${TB_CX} -eq 1 && ${COMPARE_OK} -eq 1 ]]; then
-  bfcl_ev="results/evidence/bfcl-smoke5-${STAMP}.jsonl"
-  if [[ -f ${bfcl_ev} ]]; then
-    printf 'Live pilot minimum proof: OK (TB×2 + compare + BFCL)\n'
-    exit 0
-  fi
-  if [[ ${BENCHEVAL_ALLOW_PREFLIGHT_ONLY:-} == "1" ]]; then
-    printf 'Live pilot: TB proof OK; BFCL waived (BENCHEVAL_ALLOW_PREFLIGHT_ONLY=1)\n'
-    exit 0
-  fi
-  printf 'error: TB proof OK but BFCL evidence missing (set BENCHEVAL_ALLOW_PREFLIGHT_ONLY=1 to waive)\n' >&2
-  exit 2
+printf 'Pilot summary: passed=%s blocked_preflight=%s failed=%s tb_compare=%s shared_eligible=%s\n' \
+  "${PASSED}" "${BLOCKED}" "${FAILED}" "${COMPARE_OK}" "${SHARED_ELIGIBLE}"
+
+if [[ ${TB_CC} -eq 1 && ${TB_CX} -eq 1 && ${COMPARE_OK} -eq 1 && ${SHARED_ELIGIBLE} -ge 1 ]]; then
+  printf 'Live pilot minimum proof: OK (TB runtime comparison on %s shared eligible instances)\n' \
+    "${SHARED_ELIGIBLE}"
+  exit 0
 fi
 
 if [[ ${BENCHEVAL_ALLOW_PREFLIGHT_ONLY:-} == "1" && ${BLOCKED} -gt 0 && ${FAILED} -eq 0 ]]; then

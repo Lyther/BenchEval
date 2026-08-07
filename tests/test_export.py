@@ -9,6 +9,23 @@ from bencheval.evidence import EvidenceRecord, JsonlEvidenceSink
 from bencheval.exceptions import BenchEvalError
 from bencheval.export import export_evidence
 
+# SUBSTITUTE_JUSTIFICATION
+# - substitute: constructed EvidenceRecord inputs in test_export_requires_analytics_extra,
+#   test_export_duckdb_missing_raises_bencheval_error,
+#   test_export_control_plane_record_without_task_contract,
+#   test_export_provenance_round_trips_through_parquet, and
+#   test_export_all_pass_duckdb_succeeds; monkeypatched missing duckdb import in
+#   test_export_duckdb_missing_raises_bencheval_error
+# - replaces: uninstalling a dependency and charged benchmark-generated evidence
+# - necessity: import failure cannot be forced safely by mutating the active environment;
+#   exact export rows require controlled input
+# - real-option: uninstalling DuckDB corrupts the test env; live scores vary
+# - proof-limit: proves local schema and export behavior against the real analytics
+#   libraries; constructed rows do not prove a benchmark or provider run
+# - real-proof: make check-production-v1 requires the analytics extra and runs these
+#   real PyArrow/DuckDB file round trips; live benchmark evidence remains BLOCKED on
+#   the provisioned dev-box and provider credentials
+
 
 def _record(**overrides: object) -> EvidenceRecord:
     base: dict[str, object] = {
@@ -75,7 +92,7 @@ def test_export_control_plane_record_without_task_contract(tmp_path: Path) -> No
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
         adapter_id="swebench",
-        runtime_id="mini-swe-agent",
+        runtime_id="claude-code",
         instance_id="django__django-11099",
     )
     JsonlEvidenceSink().append_jsonl(evidence, row)
@@ -89,9 +106,45 @@ def test_export_control_plane_record_without_task_contract(tmp_path: Path) -> No
     assert (out / "model.parquet").is_file()
 
 
+def test_export_provenance_round_trips_through_parquet(tmp_path: Path) -> None:
+    try:
+        import pyarrow.parquet as pq
+    except ImportError:
+        pytest.skip("analytics extra not installed")
+
+    evidence = tmp_path / "evidence.jsonl"
+    row = _record(
+        benchmark_id="hle",
+        benchmark_version="hle@official",
+        slice_id="smoke",
+        adapter_id="hle",
+        harness_kind="hle-native",
+        harness_version="hle@captured",
+        provider_id="bytellm",
+        provider_config_hash="sha256:provider-export-sentinel",
+        judge_model_id="gpt-5.4-2026-03-05",
+        instance_id="hle-smoke-aggregate",
+    )
+    JsonlEvidenceSink().append_jsonl(evidence, row)
+
+    out = export_evidence(evidence, fmt="parquet", output_dir=tmp_path / "warehouse")
+    exported = pq.read_table(out / "attempts.parquet").to_pylist()
+
+    assert exported[0]["provider_id"] == "bytellm"
+    assert exported[0]["provider_config_hash"] == "sha256:provider-export-sentinel"
+    assert exported[0]["judge_model_id"] == "gpt-5.4-2026-03-05"
+
+
 def test_export_all_pass_duckdb_succeeds(tmp_path: Path) -> None:
     evidence = tmp_path / "evidence.jsonl"
-    JsonlEvidenceSink().append_jsonl(evidence, _record())
+    JsonlEvidenceSink().append_jsonl(
+        evidence,
+        _record(
+            provider_id="bytellm",
+            provider_config_hash="sha256:provider-export-sentinel",
+            judge_model_id="gpt-5.4-2026-03-05",
+        ),
+    )
     try:
         import duckdb
         import pyarrow  # noqa: F401
@@ -104,8 +157,16 @@ def test_export_all_pass_duckdb_succeeds(tmp_path: Path) -> None:
         failures_count = con.execute("SELECT COUNT(*) FROM failures").fetchone()[0]
         metadata_count = con.execute("SELECT COUNT(*) FROM adapter_metadata").fetchone()[0]
         attempts_count = con.execute("SELECT COUNT(*) FROM attempts").fetchone()[0]
+        provenance = con.execute(
+            "SELECT provider_id, provider_config_hash, judge_model_id FROM attempts",
+        ).fetchone()
         assert failures_count == 0
         assert metadata_count == 0
         assert attempts_count == 1
+        assert provenance == (
+            "bytellm",
+            "sha256:provider-export-sentinel",
+            "gpt-5.4-2026-03-05",
+        )
     finally:
         con.close()

@@ -1,0 +1,16 @@
+schema_version: "0.1"
+slice:
+  id: "smoke"
+  benchmark_id: "gpqa-diamond"
+  purpose: "adapter_smoke"
+  selection_policy: "sample_limit"
+  valid_for: ["adapter_smoke", "rough_regression"]
+  invalid_for: ["benchmark_native_claim", "model_comparison"]
+budget:
+  max_instances: 2
+  max_wall_clock_sec_per_instance: 300
+  max_total_cost_usd: 5
+labels:
+  contamination_warning: false
+  public_benchmark: true
+  full_suite_required_for_public_claim: true

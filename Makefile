@@ -4,7 +4,7 @@ install sync:
 	uv sync
 
 dev:
-	@echo "Define inspect eval entrypoints in a later phase." && exit 0
+	uv sync --dev
 
 build:
 	uv build

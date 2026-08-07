@@ -1,9 +1,11 @@
-"""BFCL v4 adapter unit tests (injected process runner)."""
+"""BFCL v4 adapter unit tests (parse/build; execute demoted until evaluate)."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
+
+import pytest
 
 from bencheval.adapter_admission import assess_bfcl_v4_admission
 from bencheval.benchmark_plan import plan_control_plane
@@ -14,8 +16,7 @@ from bencheval.bfcl_native_adapter import (
     parse_bfcl_instance_outcome,
 )
 from bencheval.control_plane_executor import execute_control_plane_run
-from bencheval.evidence import read_evidence_jsonl
-from bencheval.exceptions import AdapterFailureError
+from bencheval.exceptions import BenchEvalError
 
 
 def test_bfcl_admission_passes() -> None:
@@ -27,8 +28,8 @@ def test_build_bfcl_run_command() -> None:
     plan = plan_control_plane(
         benchmark_id="bfcl-v4",
         slice_id="smoke-5",
-        runtime_id="native-api",
-        model_id="openai/gpt-test",
+        runtime_id=None,
+        model_id="kimi-k2.7-code",
     )
     cmd = build_bfcl_run_command(
         plan=plan,
@@ -60,56 +61,17 @@ def test_parse_verdict_json(tmp_path: Path) -> None:
     assert out.adapter_metadata["adapter_id"] == BFCL_ADAPTER_ID
 
 
-def test_execute_bfcl_smoke_writes_evidence(tmp_path: Path) -> None:
+def test_execute_bfcl_refuses_until_evaluate_wired(tmp_path: Path) -> None:
     plan = plan_control_plane(
         benchmark_id="bfcl-v4",
         slice_id="smoke-5",
-        runtime_id="native-api",
-        model_id="openai/gpt-test",
+        runtime_id=None,
+        model_id="kimi-k2.7-code",
     )
-    evidence_path = tmp_path / "evidence.jsonl"
-
-    def fake_runner(command, *, cwd: Path | None, timeout_sec: int) -> BfclCliResult:
-        out_dir = Path(command[command.index("--result-dir") + 1])
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "verdict.json").write_text(
-            json.dumps({"primary_pass": True}),
-            encoding="utf-8",
+    with pytest.raises(BenchEvalError, match="executable_adapter"):
+        execute_control_plane_run(
+            plan=plan,
+            output_path=tmp_path / "evidence.jsonl",
+            artifacts_dir=tmp_path / "art",
+            run_id="bfcl-run",
         )
-        return BfclCliResult(0, "", "", 0.1, tuple(command))
-
-    summary = execute_control_plane_run(
-        plan=plan,
-        output_path=evidence_path,
-        artifacts_dir=tmp_path / "art",
-        bfcl_process_runner=fake_runner,
-        run_id="bfcl-run",
-    )
-    assert summary.instance_count == 5
-    rows = read_evidence_jsonl(evidence_path)
-    assert len(rows) == 5
-    assert rows[0].interpretation_label == "model_comparison"
-
-
-def test_adapter_failure_row_includes_benchmark_version(tmp_path: Path) -> None:
-    plan = plan_control_plane(
-        benchmark_id="bfcl-v4",
-        slice_id="smoke-5",
-        runtime_id="native-api",
-        model_id="openai/gpt-test",
-    )
-    evidence_path = tmp_path / "evidence.jsonl"
-
-    def failing_runner(command, *, cwd: Path | None, timeout_sec: int) -> BfclCliResult:
-        raise AdapterFailureError("injected", failure_label="harness_failure")
-
-    execute_control_plane_run(
-        plan=plan,
-        output_path=evidence_path,
-        artifacts_dir=tmp_path / "art",
-        bfcl_process_runner=failing_runner,
-        run_id="bfcl-fail-run",
-    )
-    row = read_evidence_jsonl(evidence_path)[0]
-    assert row.benchmark_version == plan.benchmark_version
-    assert row.primary_pass is False

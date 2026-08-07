@@ -9,7 +9,29 @@ import pytest
 from bencheval.cli import main
 from bencheval.doctor import PILOT_DOCTOR_BACKEND, run_doctor, run_pilot_doctor
 
-_PILOT_BINARIES = ("harbor", "bfcl", "mini-extra")
+# SUBSTITUTE_JUSTIFICATION
+# - substitute: pytest monkeypatch controls for binary discovery, version/command probes,
+#   Docker availability, Inspect import state, and credential environment
+# - replaces: host PATH binaries, Docker daemon state, provider env, and Inspect import
+# - necessity: covered tests deterministically exercise present, absent, broken, and
+#   credential-missing states that one real host cannot expose simultaneously and safely
+# - real-option: real doctor commands cannot force every negative state without mutating
+#   the operator host
+# - proof-limit: proves doctor decision logic only, not real host/provider availability
+# - real-proof: BLOCKED until scripts/doctor-pilot.sh runs on the provisioned dev-box
+# - covered tests: test_pilot_doctor_all_present,
+#   test_pilot_doctor_ignores_demoted_bfcl_dependency,
+#   test_pilot_doctor_ignores_broken_demoted_bfcl_cli,
+#   test_pilot_doctor_ignores_demoted_swe_dependency,
+#   test_pilot_doctor_missing_harbor, test_pilot_doctor_docker_unavailable,
+#   test_pilot_doctor_version_probe_failure_still_pass,
+#   test_pilot_doctor_bytellm_route_credentials,
+#   test_pilot_doctor_bytellm_route_missing_key, test_pilot_doctor_model_credentials_fail,
+#   test_pilot_doctor_requires_provider_credentials, test_cli_doctor_profile_pilot_json,
+#   test_cli_doctor_pilot_requires_no_backend, and
+#   test_run_doctor_provider_check_unchanged_after_refactor
+
+_PILOT_BINARIES = ("harbor",)
 
 
 def _patch_binaries(
@@ -41,72 +63,49 @@ def _patch_pilot_host(
     versions = versions or {}
     _patch_binaries(monkeypatch, present=present, versions=versions)
 
-    def fake_probe(binary: str, args: tuple[str, ...]) -> tuple[bool, str | None]:
-        if binary not in present:
-            return False, f"{binary} missing"
-        if binary == "bfcl" and args == ("version",):
-            return True, versions.get("bfcl")
-        return True, versions.get(binary)
-
-    monkeypatch.setattr("bencheval.doctor._probe_binary_args", fake_probe)
     monkeypatch.setattr("bencheval.doctor.docker_available", lambda: docker_ok)
 
 
 def test_pilot_doctor_all_present(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_pilot_host(
         monkeypatch,
-        versions={"harbor": "0.9.0", "bfcl": "2025.8.6.2", "mini-extra": "1.2.0"},
+        versions={"harbor": "0.9.0"},
     )
     report = run_pilot_doctor()
     assert report.backend == PILOT_DOCTOR_BACKEND
     assert report.ok is True
-    assert [c.name for c in report.checks] == [
-        "harbor_cli",
-        "docker",
-        "bfcl_eval",
-        "mini_extra",
-    ]
+    assert [c.name for c in report.checks] == ["harbor_cli", "docker"]
 
 
-def test_pilot_doctor_missing_bfcl_eval(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_pilot_host(monkeypatch, present={"harbor", "mini-extra"})
+def test_pilot_doctor_ignores_demoted_bfcl_dependency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_pilot_host(monkeypatch, present={"harbor"})
     report = run_pilot_doctor()
-    bfcl = next(c for c in report.checks if c.name == "bfcl_eval")
-    assert bfcl.status == "fail"
-    assert "bfcl" in bfcl.message
-    assert report.ok is False
+    assert all(c.name != "bfcl_eval" for c in report.checks)
+    assert report.ok is True
 
 
-def test_pilot_doctor_broken_bfcl_cli_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_pilot_host(monkeypatch)
-    monkeypatch.setattr(
-        "bencheval.doctor._probe_binary_args",
-        lambda binary, args: (
-            (
-                False,
-                "ModuleNotFoundError: No module named 'soundfile'",
-            )
-            if binary == "bfcl"
-            else (True, None)
-        ),
-    )
+def test_pilot_doctor_ignores_broken_demoted_bfcl_cli(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_pilot_host(monkeypatch, present={"harbor"})
     report = run_pilot_doctor()
-    bfcl = next(c for c in report.checks if c.name == "bfcl_eval")
-    assert bfcl.status == "fail"
-    assert "soundfile" in bfcl.message
-    assert report.ok is False
+    assert all(c.name != "bfcl_eval" for c in report.checks)
+    assert report.ok is True
 
 
-def test_pilot_doctor_missing_mini_extra(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_pilot_host(monkeypatch, present={"harbor", "bfcl"})
+def test_pilot_doctor_ignores_demoted_swe_dependency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_pilot_host(monkeypatch, present={"harbor"})
     report = run_pilot_doctor()
-    mini = next(c for c in report.checks if c.name == "mini_extra")
-    assert mini.status == "fail"
-    assert report.ok is False
+    assert all(c.name != "mini_extra" for c in report.checks)
+    assert report.ok is True
 
 
 def test_pilot_doctor_missing_harbor(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_pilot_host(monkeypatch, present={"bfcl", "mini-extra"})
+    _patch_pilot_host(monkeypatch, present=set())
     report = run_pilot_doctor()
     harbor = next(c for c in report.checks if c.name == "harbor_cli")
     assert harbor.status == "fail"
@@ -125,21 +124,37 @@ def test_pilot_doctor_version_probe_failure_still_pass(monkeypatch: pytest.Monke
     # On PATH but --version unavailable must not be a failure (lenient gate).
     _patch_pilot_host(monkeypatch, versions={})
     report = run_pilot_doctor()
-    bfcl = next(c for c in report.checks if c.name == "bfcl_eval")
-    assert bfcl.status == "pass"
-    assert "available" in bfcl.message
+    harbor = next(c for c in report.checks if c.name == "harbor_cli")
+    assert harbor.status == "pass"
+    assert "PATH" in harbor.message
     assert report.ok is True
 
 
-def test_pilot_doctor_model_credentials_pass(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_pilot_doctor_bytellm_route_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_pilot_host(monkeypatch)
-    monkeypatch.setenv("OPENAI_API_KEY", "super-secret-value")
-    report = run_pilot_doctor(model_id="openai/gpt-test")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.setenv("BYTELLM_API_KEY", "sk-test")
+    report = run_pilot_doctor(model_id="glm-5.2")
     cred = next(c for c in report.checks if c.name == "provider_credentials")
     assert cred.status == "pass"
-    assert "OPENAI_API_KEY" in cred.message
-    assert "super-secret-value" not in cred.message
+    assert "BYTELLM_API_KEY" in cred.message
+    assert "sk-test" not in cred.message
     assert report.ok is True
+
+
+def test_pilot_doctor_bytellm_route_missing_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_pilot_host(monkeypatch)
+    monkeypatch.delenv("BYTELLM_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    report = run_pilot_doctor(model_id="glm-5.2")
+    cred = next(c for c in report.checks if c.name == "provider_credentials")
+    assert cred.status == "fail"
+    assert "BYTELLM_API_KEY" in cred.message
+    assert report.ok is False
 
 
 def test_pilot_doctor_model_credentials_fail(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -151,35 +166,40 @@ def test_pilot_doctor_model_credentials_fail(monkeypatch: pytest.MonkeyPatch) ->
     assert report.ok is False
 
 
-def test_pilot_doctor_mockllm_needs_no_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_pilot_doctor_requires_provider_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_pilot_host(monkeypatch)
-    report = run_pilot_doctor(model_id="mockllm/model")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    report = run_pilot_doctor(model_id="kimi-k2.7-code")
     cred = next(c for c in report.checks if c.name == "provider_credentials")
-    assert cred.status == "pass"
-    assert report.ok is True
+    assert cred.status == "fail"
+    assert report.ok is False
 
 
 def test_cli_doctor_profile_pilot_json(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_pilot_host(
         monkeypatch,
-        versions={"harbor": "0.9.0", "bfcl": "2025.8.6.2", "mini-extra": "1.2.0"},
+        versions={"harbor": "0.9.0"},
     )
+    monkeypatch.setenv("BYTELLM_API_KEY", "sk-test")
     buf = StringIO()
     with redirect_stdout(buf):
-        code = main(["doctor", "--profile", "pilot", "--model", "mockllm/model"])
+        code = main(["doctor", "--profile", "pilot", "--model", "kimi-k2.7-code"])
     assert code == 0
     payload = json.loads(buf.getvalue())
     assert payload["backend"] == PILOT_DOCTOR_BACKEND
     assert payload["ok"] is True
     names = [c["name"] for c in payload["checks"]]
-    assert names == ["harbor_cli", "docker", "bfcl_eval", "mini_extra", "provider_credentials"]
+    assert names == ["harbor_cli", "docker", "provider_credentials"]
 
 
 def test_cli_doctor_pilot_requires_no_backend(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_pilot_host(monkeypatch)
+    monkeypatch.setenv("BYTELLM_API_KEY", "sk-test")
     buf = StringIO()
     with redirect_stdout(buf):
-        code = main(["doctor", "--profile", "pilot"])
+        code = main(["doctor", "--profile", "pilot", "--model", "kimi-k2.7-code"])
     assert code in (0, 1)
     payload = json.loads(buf.getvalue())
     assert payload["backend"] == PILOT_DOCTOR_BACKEND
@@ -188,7 +208,7 @@ def test_cli_doctor_pilot_requires_no_backend(monkeypatch: pytest.MonkeyPatch) -
 def test_cli_doctor_requires_backend_without_pilot() -> None:
     buf = StringIO()
     with redirect_stderr(buf):
-        code = main(["doctor", "--model", "mockllm/model"])
+        code = main(["doctor", "--model", "kimi-k2.7-code"])
     assert code == 2
     assert "--backend" in buf.getvalue()
 
@@ -198,8 +218,8 @@ def test_run_doctor_provider_check_unchanged_after_refactor(
 ) -> None:
     monkeypatch.setattr("bencheval.doctor._try_import_inspect_ai", lambda: ("0.3.0", None))
     monkeypatch.setattr("bencheval.doctor.docker_available", lambda: True)
-    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
-    report = run_doctor("inspect", model_id="openai/gpt-test")
+    monkeypatch.setenv("BYTELLM_API_KEY", "sk-test")
+    report = run_doctor("inspect", model_id="kimi-k2.7-code")
     cred = next(c for c in report.checks if c.name == "provider_credentials")
     assert cred.status == "pass"
     assert report.backend == "inspect"

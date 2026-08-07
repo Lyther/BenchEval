@@ -4,7 +4,12 @@ slice:
   benchmark_id: "terminal-bench"
   purpose: "adapter_smoke"
   selection_policy: "fixed_instance_ids"
-  instances_source: "terminal-bench-smoke-5.txt"
+  instances:
+    - fix-git
+    - overfull-hbox
+    - cobol-modernization
+    - modernize-scientific-stack
+    - log-summary-date-ranges
   valid_for: ["adapter_smoke", "runtime_comparison"]
   invalid_for: ["benchmark_native_claim"]
 budget:

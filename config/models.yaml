@@ -1,2 +1,144 @@
-﻿# Model registry and non-secret defaults. Secrets stay in .env only.
-models: []
+# Model registry and non-secret defaults. Secrets stay in .env only.
+# Source: ByteLLM /v1/models on dev-box-cpu:4000, refreshed 2026-07-14.
+schema_version: 1
+models:
+  - id: Minimax-M2.1
+    family: minimax
+    display_name: Minimax M2.1
+    provider_route: bytellm
+  - id: Minimax-M2.5
+    family: minimax
+    display_name: Minimax M2.5
+    provider_route: bytellm
+  - id: Minimax-M2.7
+    family: minimax
+    display_name: Minimax M2.7
+    provider_route: bytellm
+  - id: Minimax-M3
+    family: minimax
+    display_name: Minimax M3
+    provider_route: bytellm
+  - id: azure-grok-4
+    family: xai
+    display_name: Azure Grok 4
+    provider_route: bytellm
+  - id: azure-grok-4-fast-reasoning
+    family: xai
+    display_name: Azure Grok 4 Fast Reasoning
+    provider_route: bytellm
+  - id: doubao-1.6
+    family: bytedance
+    display_name: Doubao 1.6
+    provider_route: bytellm
+  - id: gemini-2.5-pro
+    family: google
+    display_name: Gemini 2.5 Pro
+    provider_route: bytellm
+  - id: gemini-3-flash-preview
+    family: google
+    display_name: Gemini 3 Flash Preview
+    provider_route: bytellm
+  - id: gemini-3-pro-preview-new-priority
+    family: google
+    display_name: Gemini 3 Pro Preview New Priority
+    provider_route: bytellm
+  - id: glm-4.6
+    family: zhipu
+    display_name: GLM 4.6
+    provider_route: bytellm
+  - id: glm-4.7
+    family: zhipu
+    display_name: GLM 4.7
+    provider_route: bytellm
+  - id: glm-5
+    family: zhipu
+    display_name: GLM 5
+    provider_route: bytellm
+  - id: glm-5.1
+    family: zhipu
+    display_name: GLM 5.1
+    provider_route: bytellm
+  - id: glm-5.2
+    family: zhipu
+    display_name: GLM 5.2
+    provider_route: bytellm
+  - id: gpt-5-2025-08-07
+    family: openai
+    display_name: GPT 5 2025-08-07
+    provider_route: bytellm
+  - id: gpt-5-codex-2025-09-15
+    family: openai
+    display_name: GPT 5 Codex 2025-09-15
+    provider_route: bytellm
+  - id: gpt-5.1-2025-11-13
+    family: openai
+    display_name: GPT 5.1 2025-11-13
+    provider_route: bytellm
+  - id: gpt-5.1-codex-max-20251204
+    family: openai
+    display_name: GPT 5.1 Codex Max 20251204
+    provider_route: bytellm
+  - id: gpt-5.2-2025-12-11
+    family: openai
+    display_name: GPT 5.2 2025-12-11
+    provider_route: bytellm
+  - id: gpt-5.3-chat-2026-03-03
+    family: openai
+    display_name: GPT 5.3 Chat 2026-03-03
+    provider_route: bytellm
+  - id: gpt-5.3-codex-2026-02-24
+    family: openai
+    display_name: GPT 5.3 Codex 2026-02-24
+    provider_route: bytellm
+  - id: gpt-5.4-2026-03-05
+    family: openai
+    display_name: GPT 5.4 2026-03-05
+    provider_route: bytellm
+  - id: gpt-5.5-2026-04-24
+    family: openai
+    display_name: GPT 5.5 2026-04-24
+    provider_route: bytellm
+  - id: grok-code
+    family: xai
+    display_name: Grok Code
+    provider_route: bytellm
+  - id: kimi-k2.5
+    family: moonshot
+    display_name: Kimi K2.5
+    provider_route: bytellm
+  - id: kimi-k2.7-code
+    family: moonshot
+    display_name: Kimi K2.7 Code
+    provider_route: bytellm
+  - id: minimax-m2
+    family: minimax
+    display_name: Minimax M2
+    provider_route: bytellm
+  - id: ministral-8b
+    family: mistral
+    display_name: Ministral 8B
+    provider_route: bytellm
+  - id: openai_qwen3-max-preview
+    family: qwen
+    display_name: OpenAI Qwen3 Max Preview
+    provider_route: bytellm
+  - id: openai_qwen3-next-80b-a3b-instruct
+    family: qwen
+    display_name: OpenAI Qwen3 Next 80B A3B Instruct
+    provider_route: bytellm
+  - id: openai_qwen3.5-plus
+    family: qwen
+    display_name: OpenAI Qwen3.5 Plus
+    provider_route: bytellm
+  - id: openai_qwen3.6-plus
+    family: qwen
+    display_name: OpenAI Qwen3.6 Plus
+    provider_route: bytellm
+  - id: qwen3.6-35b-uncensored
+    family: qwen
+    display_name: Qwen3.6 35B Uncensored
+    provider_route: bytellm
+  - id: text-embedding-3-large
+    family: openai
+    display_name: Text Embedding 3 Large
+    provider_route: bytellm

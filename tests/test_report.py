@@ -41,4 +41,5 @@ def test_report_contains_pass_rate_cost_failure_labels_and_warning() -> None:
     assert "| wrong_solution | 1 |" in md
     assert "| be-core-c1-small-logic-patch |" in md
     assert "| local |" in md
-    assert "directional regression signals" in md
+    assert "Core-8" not in md
+    assert "Core-16" not in md

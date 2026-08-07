@@ -19,13 +19,17 @@ if ! command -v rsync >/dev/null 2>&1; then
   exit 1
 fi
 
-mkdir -p "${DEST}/config/runtimes" "${DEST}/config/slices" "${DEST}/config/manifests"
+mkdir -p \
+  "${DEST}/config/runtimes" \
+  "${DEST}/config/agents" \
+  "${DEST}/config/providers" \
+  "${DEST}/config/slices"
 rsync -a \
   "${REPO_ROOT}/config/benchmarks.yaml" \
   "${REPO_ROOT}/config/models.yaml" \
-  "${REPO_ROOT}/config/suites.yaml" \
   "${DEST}/config/"
 rsync -a "${REPO_ROOT}/config/runtimes/" "${DEST}/config/runtimes/"
+rsync -a "${REPO_ROOT}/config/agents/" "${DEST}/config/agents/"
+rsync -a "${REPO_ROOT}/config/providers/" "${DEST}/config/providers/"
 rsync -a "${REPO_ROOT}/config/slices/" "${DEST}/config/slices/"
-rsync -a "${REPO_ROOT}/config/manifests/" "${DEST}/config/manifests/"
 printf 'Bundle written to %s\n' "${DEST}"

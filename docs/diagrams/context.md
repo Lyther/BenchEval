@@ -1,6 +1,6 @@
 # System Context (C4 L1)
 
-What this shows: BenchEval as one system box, who uses it, and which external systems it depends on — with why each link exists.
+What this shows: BenchEval as one system box, who uses it, and which external systems it depends on.
 
 ```mermaid
 flowchart TB
@@ -13,25 +13,22 @@ flowchart TB
 
     Harbor["Harbor CLI"]
     Docker["Docker Engine<br/>harness-owned"]
-    Inspect["Inspect AI / inspect-evals"]
-    SWE["SWE-bench tooling"]
-    BFCL["BFCL / Gorilla harness"]
-    Provider["LLM providers<br/>Anthropic · OpenAI · ByteLLM · …"]
-    OpProfile["Operator run profile + run-root<br/>external-command YAML"]
-    Catalog["Public benchmark catalogs<br/>TB · SWE · BFCL · …"]
+    Inspect["Inspect Evals<br/>GPQA"]
+    HLE["CAIS HLE scripts"]
+    Provider["LLM providers<br/>ByteLLM · Ollama Cloud · …"]
+    AgentCLI["External agent CLI<br/>e.g. momo"]
+    Catalog["Executable benchmarks<br/>TB · GPQA · HLE"]
 
-    Op -->|discovers · plans · runs · compares| BE
+    Op -->|list · catalog · run · compare| BE
     CI -->|Tier 0 gates · unit/integration tests| BE
     BE -->|invokes for Terminal-Bench| Harbor
     Harbor -->|runs agent tasks in| Docker
-    BE -->|optional eval extra E0/E1| Inspect
-    BE -->|native adapter subprocess| SWE
-    BE -->|native adapter subprocess| BFCL
-    BE -->|model_id binding; never stores secrets| Provider
-    Op -->|supplies profile + private assets| OpProfile
-    OpProfile -->|bencheval run --config| BE
-    Catalog -->|metadata in config/benchmarks.yaml| BE
+    BE -->|model-only Inspect path| Inspect
+    BE -->|model-only HLE path| HLE
+    BE -->|model via provider_route; never stores secrets| Provider
+    BE -->|optional --agent| AgentCLI
+    Catalog -->|config/benchmarks.yaml| BE
     BE -->|EvidenceRecord + reports| Op
 ```
 
-Notes: No public HTTP API ([`docs/api/internal-contracts.md`](../api/internal-contracts.md)). Secrets stay in `.env`; `config/models.yaml` is non-secret metadata. External-command profiles are **operator artifacts**, not shipped CyBench product assets.
+Notes: No public HTTP API ([`docs/api/internal-contracts.md`](../api/internal-contracts.md)). Secrets stay in `.env`; `config/models.yaml` is non-secret metadata. Product spine: `benchmark → (runtime | agent)? → model via provider → evidence`.

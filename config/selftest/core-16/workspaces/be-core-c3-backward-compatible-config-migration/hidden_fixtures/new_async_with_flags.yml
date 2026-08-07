@@ -1,3 +1,0 @@
-enable_async: true
-feature_flags:
-  other: true

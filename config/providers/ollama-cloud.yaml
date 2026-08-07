@@ -1,0 +1,10 @@
+schema_version: "0.1"
+provider:
+  id: ollama-cloud
+  display_name: Ollama Cloud
+  kind: ollama
+  base_url_env: OLLAMA_HOST
+  default_base_url: http://127.0.0.1:11434
+  api_key_env: OLLAMA_API_KEY
+  notes: Ollama host; secrets stay in .env.
+admission: admitted

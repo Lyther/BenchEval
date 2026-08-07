@@ -8,7 +8,6 @@ erDiagram
     BENCHMARK_ENTRY {
         string id PK
         string adapter_id
-        string harness_kind
         bool executable
         string adapter_status
         string tier
@@ -17,7 +16,7 @@ erDiagram
         string id PK
         string benchmark_id FK
         string purpose
-        string instances_source
+        string instances
         int max_instances
     }
     RUNTIME_PROFILE {

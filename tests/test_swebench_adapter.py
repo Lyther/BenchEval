@@ -1,14 +1,15 @@
-"""SWE-bench adapter unit tests (injected process runner)."""
+"""SWE-bench adapter unit tests (parse/build; execute demoted until evaluate)."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
+import pytest
+
 from bencheval.benchmark_plan import plan_control_plane
 from bencheval.control_plane_executor import execute_control_plane_run
-from bencheval.evidence import read_evidence_jsonl
-from bencheval.exceptions import AdapterFailureError
+from bencheval.exceptions import BenchEvalError
 from bencheval.swebench_adapter import (
     SWEBENCH_ADAPTER_ID,
     SwebenchCliResult,
@@ -17,13 +18,23 @@ from bencheval.swebench_adapter import (
     run_swebench_instance,
 )
 
+# SUBSTITUTE_JUSTIFICATION
+# - substitute: injected mini-SWE runner and disposable result files in
+#   test_run_instance_single
+# - replaces: live mini-SWE generation and official SWE-Bench evaluation
+# - necessity: deterministic local failure/result parsing is required while the official
+#   evaluate path is deliberately absent and the adapter is non-executable
+# - real-option: official generation plus evaluation must be implemented first
+# - proof-limit: diagnostic parser coverage only; cannot qualify SWE-Bench execution
+# - real-proof: BLOCKED until the official evaluate path is implemented and run live
+
 
 def test_build_swebench_run_command() -> None:
     plan = plan_control_plane(
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
-        runtime_id="mini-swe-agent",
-        model_id="openai/gpt-test",
+        runtime_id="claude-code",
+        model_id="kimi-k2.7-code",
     )
     cmd = build_swebench_run_command(
         plan=plan,
@@ -32,7 +43,7 @@ def test_build_swebench_run_command() -> None:
     )
     assert cmd[:2] == ("mini-extra", "swebench")
     assert "django__django-11099" in cmd
-    assert "--model" in cmd and "openai/gpt-test" in cmd
+    assert plan.model_binding == "runtime_configured"
 
 
 def test_parse_verifier_and_diff(tmp_path: Path) -> None:
@@ -43,7 +54,7 @@ def test_parse_verifier_and_diff(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     (art / "workspace.diff").write_text("diff --git a/foo b/foo\n", encoding="utf-8")
-    cli = SwebenchCliResult(0, "ok", "", 1.0, ("mini-swe-agent", "run"))
+    cli = SwebenchCliResult(0, "ok", "", 1.0, ("claude-code", "run"))
     out = parse_swebench_instance_outcome(
         instance_id="django__django-11099",
         cli=cli,
@@ -57,52 +68,29 @@ def test_parse_verifier_and_diff(tmp_path: Path) -> None:
     assert out.native_score.get("resolved") is True
 
 
-def test_execute_swebench_smoke_writes_evidence(tmp_path: Path) -> None:
+def test_execute_swebench_refuses_until_evaluate_wired(tmp_path: Path) -> None:
     plan = plan_control_plane(
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
-        runtime_id="mini-swe-agent",
-        model_id="openai/gpt-test",
+        runtime_id="claude-code",
+        model_id="kimi-k2.7-code",
     )
     assert plan.adapter_id == SWEBENCH_ADAPTER_ID
-    evidence_path = tmp_path / "evidence.jsonl"
-
-    def fake_runner(command, *, cwd: Path | None, timeout_sec: int) -> SwebenchCliResult:
-        out_dir = Path(command[command.index("--output-dir") + 1])
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "verifier.json").write_text(
-            json.dumps({"resolved": True}),
-            encoding="utf-8",
+    with pytest.raises(BenchEvalError, match="executable_adapter"):
+        execute_control_plane_run(
+            plan=plan,
+            output_path=tmp_path / "evidence.jsonl",
+            artifacts_dir=tmp_path / "artifacts",
+            run_id="test-run-swe",
         )
-        (out_dir / "workspace.diff").write_text("patch\n", encoding="utf-8")
-        return SwebenchCliResult(0, "", "", 0.5, tuple(command))
-
-    summary = execute_control_plane_run(
-        plan=plan,
-        output_path=evidence_path,
-        artifacts_dir=tmp_path / "artifacts",
-        swebench_process_runner=fake_runner,
-        run_id="test-run-swe",
-    )
-    assert summary.instance_count == 10
-    assert summary.passed_count == 10
-    rows = read_evidence_jsonl(evidence_path)
-    assert len(rows) == 10
-    first = rows[0]
-    assert first.benchmark_id == "swe-bench-verified"
-    assert first.interpretation_label == "contaminated_or_legacy"
-    assert first.contamination_label == "public_possible"
-    assert first.adapter_id == SWEBENCH_ADAPTER_ID
-    assert first.harness_kind == "swebench-native"
-    assert any("workspace.diff" in p or "verifier" in p for p in first.artifact_paths)
 
 
 def test_run_instance_single(tmp_path: Path) -> None:
     plan = plan_control_plane(
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
-        runtime_id="mini-swe-agent",
-        model_id="openai/gpt-test",
+        runtime_id="claude-code",
+        model_id="kimi-k2.7-code",
     )
 
     def fake_runner(command, *, cwd, timeout_sec):
@@ -125,7 +113,7 @@ def test_run_instance_single(tmp_path: Path) -> None:
 def test_parse_missing_verifier_on_success_rc_fails(tmp_path: Path) -> None:
     art = tmp_path / "empty"
     art.mkdir()
-    cli = SwebenchCliResult(0, "", "", 0.1, ("mini-swe-agent",))
+    cli = SwebenchCliResult(0, "", "", 0.1, ("claude-code",))
     out = parse_swebench_instance_outcome(
         instance_id="x",
         cli=cli,
@@ -135,28 +123,3 @@ def test_parse_missing_verifier_on_success_rc_fails(tmp_path: Path) -> None:
     )
     assert out.primary_pass is False
     assert out.failure_class == "harness_failure"
-
-
-def test_swebench_adapter_failure_record_labels(tmp_path: Path) -> None:
-    plan = plan_control_plane(
-        benchmark_id="swe-bench-verified",
-        slice_id="swe-bench-verified-smoke-10",
-        runtime_id="mini-swe-agent",
-        model_id="openai/gpt-test",
-    )
-    evidence_path = tmp_path / "evidence.jsonl"
-
-    def fail_runner(command, *, cwd, timeout_sec):
-        raise AdapterFailureError("boom", failure_label="harness_failure")
-
-    execute_control_plane_run(
-        plan=plan,
-        output_path=evidence_path,
-        artifacts_dir=tmp_path / "art",
-        swebench_process_runner=fail_runner,
-        run_id="fail-run",
-    )
-    row = read_evidence_jsonl(evidence_path)[0]
-    assert row.backend == "inspect"
-    assert row.interpretation_label == "contaminated_or_legacy"
-    assert row.contamination_label == "public_possible"

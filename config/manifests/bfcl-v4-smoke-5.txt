@@ -1,5 +1,0 @@
-simple
-irrelevance
-parallel
-multiple
-parallel_multiple

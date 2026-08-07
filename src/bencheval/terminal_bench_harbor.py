@@ -1,10 +1,11 @@
-"""Terminal-Bench 2.0 adapter via Harbor CLI (control-plane P2)."""
+"""Terminal-Bench 2.1 adapter via Harbor CLI (control-plane)."""
 
 from __future__ import annotations
 
 import json
 import os
 import subprocess
+import tempfile
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -16,13 +17,15 @@ from bencheval.domain import FailureLabel, RunPlan
 from bencheval.exceptions import AdapterFailureError, BenchEvalError
 from bencheval.path_safety import validate_control_plane_instance_id
 
-HARBOR_DATASET = "terminal-bench@2.0"
+# Harbor Hub dataset id for Terminal-Bench 2.1 (host pulls tasks/images).
+HARBOR_DATASET = "terminal-bench/terminal-bench-2-1"
+# Concrete release identity stamped on evidence (replaces provisional plan labels).
+TERMINAL_BENCH_RELEASE_VERSION = "terminal-bench@2.1"
 TERMINAL_BENCH_ADAPTER_ID = "terminal-bench-harbor"
 CLAUDE_CODE_NPM_IMPORT_PATH = "bencheval.harbor_claude_code_npm:ClaudeCodeNpmInstall"
 
 _RUNTIME_TO_HARBOR_AGENT: dict[str, str] = {
     "codex-cli": "codex",
-    "harbor-agent": "openhands",
 }
 _PROXY_FORWARD_FLAG = "BENCHEVAL_HARBOR_FORWARD_PROXY"
 _PROXY_ENV_NAMES = (
@@ -37,6 +40,10 @@ _CODEX_PROVIDER_ID = "bytellm"
 _CODEX_CONFIG_TARGET = "/logs/agent/config.toml"
 _CLI_AGENT_SETUP_TIMEOUT_MULTIPLIER = "8"
 _CLAUDE_CODE_ALLOWED_TOOLS_ENV = "BENCHEVAL_CLAUDE_CODE_ALLOWED_TOOLS"
+
+
+def _as_bool_verdict(value: object) -> bool | None:
+    return value if isinstance(value, bool) else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,33 +92,38 @@ def harbor_agent_for_runtime(runtime_id: str) -> str:
     return agent
 
 
-def _write_proxy_env_file(artifacts_dir: Path) -> Path | None:
+def write_harbor_proxy_env_file(*, network_policy: str) -> Path | None:
+    # Plan policy wins over the operator opt-in flag: deny never forwards host
+    # proxy into the Harbor task env (even when BENCHEVAL_HARBOR_FORWARD_PROXY=1).
+    if network_policy == "deny":
+        return None
+    if network_policy not in ("allow", "benchmark_required"):
+        return None
+    if os.environ.get(_PROXY_FORWARD_FLAG) != "1":
+        return None
+
     lines: list[str] = []
-    if os.environ.get(_PROXY_FORWARD_FLAG) == "1":
-        for name in _PROXY_ENV_NAMES:
-            value = os.environ.get(name)
-            if not value or "\n" in value:
-                continue
-            lines.append(f"{name}={value}")
+    for name in _PROXY_ENV_NAMES:
+        value = os.environ.get(name)
+        if not value or "\n" in value:
+            continue
+        lines.append(f"{name}={value}")
     if not lines:
         return None
 
-    env_file = artifacts_dir / ".bencheval-harbor-proxy.env"
-    env_file.parent.mkdir(parents=True, exist_ok=True)
-    env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    env_file.chmod(0o600)
+    # Outside the evidence/raw tree so private bundles cannot archive credentials.
+    fd, name = tempfile.mkstemp(prefix="bencheval-harbor-proxy-", suffix=".env")
+    env_file = Path(name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write("\n".join(lines) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        env_file.chmod(0o600)
+    except OSError:
+        env_file.unlink(missing_ok=True)
+        raise
     return env_file
-
-
-def _agent_proxy_args() -> list[str]:
-    args: list[str] = []
-    if os.environ.get(_PROXY_FORWARD_FLAG) != "1":
-        return args
-    for name in _PROXY_ENV_NAMES:
-        value = os.environ.get(name)
-        if value and "\n" not in value:
-            args.extend(["--agent-env", f"{name}={value}"])
-    return args
 
 
 def _toml_string(value: str) -> str:
@@ -166,8 +178,18 @@ def build_harbor_run_command(
     plan: RunPlan,
     instance_id: str,
     artifacts_dir: Path,
+    dataset: str = HARBOR_DATASET,
+    proxy_env_file: Path | None = None,
 ) -> tuple[str, ...]:
     validate_control_plane_instance_id(instance_id)
+    if plan.runtime_id is None:
+        raise BenchEvalError("Harbor adapter requires runtime_id (use --runtime)")
+    # Harbor cannot disable container egress; deny is an unenforceable claim.
+    if plan.network_policy == "deny":
+        raise BenchEvalError(
+            "Harbor adapter cannot enforce network_policy=deny "
+            "(no container network isolation); use benchmark_required or allow",
+        )
     agent = harbor_agent_for_runtime(plan.runtime_id)
     model = plan.model_id
     cmd: list[str] = [
@@ -175,10 +197,10 @@ def build_harbor_run_command(
         "run",
         "--yes",
     ]
-    env_file = _write_proxy_env_file(artifacts_dir)
-    if env_file is not None:
-        cmd.extend(["--env-file", str(env_file.resolve())])
-    cmd.extend(_agent_proxy_args())
+    # Caller owns lifecycle (create via write_harbor_proxy_env_file + finally unlink).
+    if proxy_env_file is not None:
+        # Proxy credentials stay in the mode-0600 env file only — never argv.
+        cmd.extend(["--env-file", str(proxy_env_file.resolve())])
     if plan.runtime_id == "claude-code":
         cmd.extend(["--agent-import-path", CLAUDE_CODE_NPM_IMPORT_PATH])
         allowed_tools = os.environ.get(_CLAUDE_CODE_ALLOWED_TOOLS_ENV)
@@ -200,7 +222,7 @@ def build_harbor_run_command(
     cmd.extend(
         [
             "--dataset",
-            HARBOR_DATASET,
+            dataset,
             "--task-name",
             instance_id,
             "--jobs-dir",
@@ -212,6 +234,27 @@ def build_harbor_run_command(
     if model != "runtime-default":
         cmd.extend(["--model", model])
     return tuple(cmd)
+
+
+def _sanitized_command_for_metadata(command: Sequence[str]) -> str:
+    """Render a harbor argv for evidence metadata with secret values removed.
+
+    Proxy secrets are forwarded via ``--env-file`` (not argv). Keep defense-in-depth
+    redaction for any residual ``--agent-env NAME=value`` tokens so credentialed
+    values never reach evidence (public bundles serialize ``adapter_metadata``).
+    """
+    parts: list[str] = []
+    redact_next = False
+    for arg in command:
+        if redact_next:
+            redact_next = False
+            name, sep, _ = arg.partition("=")
+            parts.append(f"{name}=[redacted]" if sep else "[redacted]")
+            continue
+        parts.append(arg)
+        if arg == "--agent-env":
+            redact_next = True
+    return " ".join(parts)
 
 
 def _default_process_runner(
@@ -236,7 +279,7 @@ def _default_process_runner(
             f"harbor CLI timed out after {timeout_sec}s",
             failure_label="runtime_budget_exceeded",
             latency_sec=elapsed,
-            adapter_metadata={"harbor_command": " ".join(command)},
+            adapter_metadata={"harbor_command": _sanitized_command_for_metadata(command)},
         ) from e
     except OSError as e:
         elapsed = time.monotonic() - start
@@ -244,7 +287,7 @@ def _default_process_runner(
             f"harbor CLI launch failed: {e}",
             failure_label="runtime_launch_failure",
             latency_sec=elapsed,
-            adapter_metadata={"harbor_command": " ".join(command)},
+            adapter_metadata={"harbor_command": _sanitized_command_for_metadata(command)},
         ) from e
     return HarborCliResult(
         returncode=proc.returncode,
@@ -311,6 +354,7 @@ def parse_harbor_instance_outcome(
     artifacts_dir: Path,
     repo_root: Path,
     harness_version: str | None,
+    network_policy: str = "",
 ) -> TerminalBenchInstanceOutcome:
     stdout_file = artifacts_dir / "stdout.log"
     stderr_file = artifacts_dir / "stderr.log"
@@ -345,19 +389,46 @@ def parse_harbor_instance_outcome(
                     partial_score = 0.0
                     failure_class = "harness_failure"
                 elif "resolved" in parsed:
-                    primary_pass = bool(parsed["resolved"])
-                    partial_score = 1.0 if primary_pass else 0.0
+                    verdict = _as_bool_verdict(parsed["resolved"])
+                    if verdict is None:
+                        failure_class = "runtime_output_unparseable"
+                        primary_pass = False
+                        partial_score = 0.0
+                    else:
+                        primary_pass = verdict
+                        partial_score = 1.0 if primary_pass else 0.0
                 elif "success" in parsed:
-                    primary_pass = bool(parsed["success"])
-                    partial_score = 1.0 if primary_pass else 0.0
+                    verdict = _as_bool_verdict(parsed["success"])
+                    if verdict is None:
+                        failure_class = "runtime_output_unparseable"
+                        primary_pass = False
+                        partial_score = 0.0
+                    else:
+                        primary_pass = verdict
+                        partial_score = 1.0 if primary_pass else 0.0
+                else:
+                    failure_class = "runtime_output_unparseable"
+                    primary_pass = False
+                    partial_score = 0.0
                 if "cost_usd" in parsed and isinstance(parsed["cost_usd"], (int, float)):
                     cost_usd = float(parsed["cost_usd"])
+            else:
+                failure_class = "runtime_output_unparseable"
+                primary_pass = False
+                partial_score = 0.0
     elif cli.returncode != 0:
         failure_class = "harness_failure"
     elif cli.returncode == 0:
         failure_class = "harness_failure"
         primary_pass = False
         partial_score = 0.0
+
+    # Process failure dominates: artifact verdicts are diagnostic only when rc != 0.
+    if cli.returncode != 0:
+        primary_pass = False
+        partial_score = 0.0
+        if failure_class is None:
+            failure_class = "harness_failure"
 
     if not primary_pass and failure_class is None:
         failure_class = "model_wrong_solution"
@@ -371,7 +442,9 @@ def parse_harbor_instance_outcome(
     metadata = {
         "adapter_id": TERMINAL_BENCH_ADAPTER_ID,
         "harbor_dataset": HARBOR_DATASET,
-        "harbor_command": " ".join(cli.command),
+        "harbor_command": _sanitized_command_for_metadata(cli.command),
+        "network_policy": network_policy,
+        "proxy_forwarded": "1" if "--env-file" in cli.command else "0",
     }
     if harness_version:
         metadata["harness_version"] = harness_version
@@ -391,18 +464,20 @@ def parse_harbor_instance_outcome(
     )
 
 
-def run_terminal_bench_instance(
+def run_harbor_dataset_instance(
     *,
     plan: RunPlan,
     instance_id: str,
     artifacts_dir: Path,
     repo_root: Path,
+    dataset: str,
+    expected_adapter_id: str,
     process_runner: HarborProcessRunner | None = None,
     timeout_sec: int | None = None,
 ) -> TerminalBenchInstanceOutcome:
-    if plan.adapter_id != TERMINAL_BENCH_ADAPTER_ID:
+    if plan.adapter_id != expected_adapter_id:
         raise BenchEvalError(
-            f"terminal_bench_harbor adapter cannot run adapter_id={plan.adapter_id!r}",
+            f"Harbor adapter {expected_adapter_id!r} cannot run adapter_id={plan.adapter_id!r}",
         )
     revision = harbor_revision()
     if revision is None and process_runner is None:
@@ -412,44 +487,74 @@ def run_terminal_bench_instance(
         )
 
     validate_control_plane_instance_id(instance_id)
-    instance_dir = artifacts_dir / instance_id
-    instance_dir.mkdir(parents=True, exist_ok=True)
-    command = build_harbor_run_command(
+    from bencheval.run_isolation import prepare_instance_artifacts_dir
+
+    instance_dir = prepare_instance_artifacts_dir(artifacts_dir / instance_id)
+    proxy_env = write_harbor_proxy_env_file(network_policy=plan.network_policy)
+    try:
+        command = build_harbor_run_command(
+            plan=plan,
+            instance_id=instance_id,
+            artifacts_dir=instance_dir,
+            dataset=dataset,
+            proxy_env_file=proxy_env,
+        )
+        if timeout_sec is not None:
+            wall = timeout_sec
+        else:
+            n = max(len(plan.instances), 1)
+            wall = max(1, plan.max_wall_clock_sec // n)
+        runner = process_runner or _default_process_runner
+        start = time.monotonic()
+        try:
+            cli = runner(command, cwd=repo_root, timeout_sec=wall)
+        except subprocess.TimeoutExpired as e:
+            elapsed = time.monotonic() - start
+            raise AdapterFailureError(
+                f"harbor CLI timed out after {wall}s",
+                failure_label="runtime_budget_exceeded",
+                latency_sec=elapsed,
+                adapter_metadata={"harbor_command": _sanitized_command_for_metadata(command)},
+            ) from e
+        except OSError as e:
+            elapsed = time.monotonic() - start
+            raise AdapterFailureError(
+                f"harbor CLI launch failed: {e}",
+                failure_label="runtime_launch_failure",
+                latency_sec=elapsed,
+                adapter_metadata={"harbor_command": _sanitized_command_for_metadata(command)},
+            ) from e
+        return parse_harbor_instance_outcome(
+            instance_id=instance_id,
+            cli=cli,
+            artifacts_dir=instance_dir,
+            repo_root=repo_root,
+            harness_version=revision,
+            network_policy=plan.network_policy,
+        )
+    finally:
+        if proxy_env is not None:
+            proxy_env.unlink(missing_ok=True)
+
+
+def run_terminal_bench_instance(
+    *,
+    plan: RunPlan,
+    instance_id: str,
+    artifacts_dir: Path,
+    repo_root: Path,
+    process_runner: HarborProcessRunner | None = None,
+    timeout_sec: int | None = None,
+) -> TerminalBenchInstanceOutcome:
+    return run_harbor_dataset_instance(
         plan=plan,
         instance_id=instance_id,
-        artifacts_dir=instance_dir,
-    )
-    if timeout_sec is not None:
-        wall = timeout_sec
-    else:
-        n = max(len(plan.instances), 1)
-        wall = max(plan.max_wall_clock_sec // n, 60)
-    runner = process_runner or _default_process_runner
-    start = time.monotonic()
-    try:
-        cli = runner(command, cwd=repo_root, timeout_sec=wall)
-    except subprocess.TimeoutExpired as e:
-        elapsed = time.monotonic() - start
-        raise AdapterFailureError(
-            f"harbor CLI timed out after {wall}s",
-            failure_label="runtime_budget_exceeded",
-            latency_sec=elapsed,
-            adapter_metadata={"harbor_command": " ".join(command)},
-        ) from e
-    except OSError as e:
-        elapsed = time.monotonic() - start
-        raise AdapterFailureError(
-            f"harbor CLI launch failed: {e}",
-            failure_label="runtime_launch_failure",
-            latency_sec=elapsed,
-            adapter_metadata={"harbor_command": " ".join(command)},
-        ) from e
-    return parse_harbor_instance_outcome(
-        instance_id=instance_id,
-        cli=cli,
-        artifacts_dir=instance_dir,
+        artifacts_dir=artifacts_dir,
         repo_root=repo_root,
-        harness_version=revision,
+        dataset=HARBOR_DATASET,
+        expected_adapter_id=TERMINAL_BENCH_ADAPTER_ID,
+        process_runner=process_runner,
+        timeout_sec=timeout_sec,
     )
 
 
@@ -462,5 +567,7 @@ __all__ = [
     "build_harbor_run_command",
     "harbor_agent_for_runtime",
     "parse_harbor_instance_outcome",
+    "run_harbor_dataset_instance",
     "run_terminal_bench_instance",
+    "write_harbor_proxy_env_file",
 ]

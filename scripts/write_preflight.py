@@ -15,7 +15,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=str, required=True)
     parser.add_argument("--benchmark", required=True)
     parser.add_argument("--slice", required=True)
-    parser.add_argument("--runtime", required=True)
+    parser.add_argument("--runtime", default="")
     parser.add_argument("--model", required=True)
     parser.add_argument("--ok", choices=("true", "false"), required=True)
     parser.add_argument("--doctor-backend", default=None)

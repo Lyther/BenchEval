@@ -22,13 +22,13 @@ jobs:
       # astral-sh/setup-uv@v5
       - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081
         with:
-          version: "0.9.18"
+          version: "0.11.25"
 
       - name: Python
         run: uv python install 3.12
 
       - name: Sync
-        run: uv sync --dev
+        run: uv sync --dev --extra eval --extra analytics
 
       - name: Ruff (lint)
         run: uv run ruff check src tests scripts/
@@ -42,6 +42,9 @@ jobs:
           sudo apt-get install -y shellcheck
           shellcheck scripts/*.sh
           bash -n scripts/*.sh
+
+      - name: Dependency advisory scan (locked)
+        run: uv audit --preview-features audit-command
 
       - name: Production v1 gate
         run: make check-production-v1

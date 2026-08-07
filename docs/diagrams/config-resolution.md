@@ -14,7 +14,7 @@ flowchart TD
     Wheel -->|yes| Bundled["Wheel package data<br/>one-click uv tool install"]
     Wheel -->|no| Fail["BenchEvalError<br/>no config bundle"]
 
-    Home --> Need["Required: benchmarks.yaml,<br/>runtimes/, slices/, manifests/"]
+    Home --> Need["Required: benchmarks.yaml,<br/>runtimes/, providers/, agents/, slices/"]
     Checkout --> Need
     Bundled --> Need
 ```

@@ -4,17 +4,50 @@ from __future__ import annotations
 
 import argparse
 import json
-from collections.abc import Mapping
+import os
+import threading
+from collections.abc import Mapping, Sequence
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urljoin
-from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from bencheval.exceptions import BenchEvalError
 
 JsonObject = dict[str, Any]
+
+_DEFAULT_ALLOWED_PATHS: frozenset[str] = frozenset(
+    {
+        "/v1/messages",
+        "/v1/chat/completions",
+        "/v1/responses",
+        "/v1/completions",
+    },
+)
+_DEFAULT_MAX_BODY_BYTES = 16 * 1024 * 1024
+_DEFAULT_MAX_INFLIGHT = 32
+_INBOUND_HEADER = "x-bencheval-shim-token"
+_ALLOWED_UPSTREAM_SCHEMES = frozenset({"http", "https"})
+
+
+class _NoRedirect(HTTPRedirectHandler):
+    """Never follow redirects: credentialed hops must stay on the configured origin."""
+
+    def redirect_request(
+        self,
+        req: Request,
+        fp: object,
+        code: int,
+        msg: str,
+        headers: Mapping[str, str],
+        newurl: str,
+    ) -> Request | None:
+        return None
+
+
+_UPSTREAM_OPENER = build_opener(_NoRedirect)
 
 _HOP_BY_HOP_HEADERS = {
     "connection",
@@ -28,7 +61,13 @@ _HOP_BY_HOP_HEADERS = {
     "transfer-encoding",
     "upgrade",
 }
-_REQUEST_DROP_HEADERS = _HOP_BY_HOP_HEADERS | {"accept-encoding", "host"}
+_REQUEST_DROP_HEADERS = _HOP_BY_HOP_HEADERS | {
+    "accept-encoding",
+    "host",
+    _INBOUND_HEADER,
+    "authorization",
+    "x-api-key",
+}
 
 
 def _content_to_system_text(content: object) -> str:
@@ -73,10 +112,48 @@ def normalize_anthropic_payload(payload: JsonObject) -> JsonObject:
     return normalized
 
 
+def _validated_request_path(raw_target: str, allowed_paths: frozenset[str]) -> str | None:
+    """Return an allowlisted path, or None if the request target is unsafe / unknown."""
+    if not raw_target:
+        return None
+    # Reject encoding tricks and Windows-style separators before any parsing.
+    if "%" in raw_target or "\\" in raw_target:
+        return None
+    if raw_target.startswith("//") or "://" in raw_target:
+        return None
+    parts = urlsplit(raw_target)
+    if parts.scheme or parts.netloc or parts.query or parts.fragment:
+        return None
+    path = parts.path
+    if not path.startswith("/") or "@" in path:
+        return None
+    segments = path.split("/")
+    if any(segment in (".", "..") for segment in segments):
+        return None
+    if path not in allowed_paths:
+        return None
+    return path
+
+
+def _normalize_upstream(upstream: str) -> str:
+    parts = urlsplit(upstream.strip())
+    if parts.scheme not in _ALLOWED_UPSTREAM_SCHEMES or not parts.netloc:
+        raise ValueError(
+            f"upstream must be an absolute http(s) URL with a host (got {upstream!r})",
+        )
+    if parts.username or parts.password:
+        raise ValueError("upstream URL must not embed userinfo credentials")
+    return upstream.rstrip("/") + "/"
+
+
 class _ShimServer(ThreadingHTTPServer):
     upstream: str
     timeout_sec: float
     auth_token_env: str | None
+    inbound_token_env: str | None
+    allowed_paths: frozenset[str]
+    max_body_bytes: int
+    inflight: threading.Semaphore
 
     def __init__(
         self,
@@ -86,11 +163,24 @@ class _ShimServer(ThreadingHTTPServer):
         upstream: str,
         timeout_sec: float,
         auth_token_env: str | None,
+        inbound_token_env: str | None = None,
+        allowed_paths: set[str] | frozenset[str] | None = None,
+        max_body_bytes: int = _DEFAULT_MAX_BODY_BYTES,
+        max_inflight: int = _DEFAULT_MAX_INFLIGHT,
     ) -> None:
         super().__init__(server_address, request_handler_class)
-        self.upstream = upstream.rstrip("/") + "/"
+        self.upstream = _normalize_upstream(upstream)
         self.timeout_sec = timeout_sec
         self.auth_token_env = auth_token_env
+        self.inbound_token_env = inbound_token_env
+        if allowed_paths is None:
+            self.allowed_paths = _DEFAULT_ALLOWED_PATHS
+        else:
+            self.allowed_paths = frozenset(allowed_paths)
+        if max_body_bytes < 1:
+            raise ValueError("max_body_bytes must be >= 1")
+        self.max_body_bytes = max_body_bytes
+        self.inflight = threading.Semaphore(max_inflight)
 
 
 def _forward_headers(
@@ -98,11 +188,12 @@ def _forward_headers(
     *,
     auth_token: str | None,
 ) -> dict[str, str]:
-    headers = {
-        key: value
-        for key, value in source_headers.items()
-        if key.lower() not in _REQUEST_DROP_HEADERS
-    }
+    headers: dict[str, str] = {}
+    for key, value in source_headers.items():
+        lowered = key.lower()
+        if lowered in _REQUEST_DROP_HEADERS or lowered.startswith("x-bencheval-"):
+            continue
+        headers[key] = value
     headers["content-type"] = "application/json"
     headers["accept-encoding"] = "identity"
     if auth_token:
@@ -124,14 +215,55 @@ class _AnthropicRoleShimHandler(BaseHTTPRequestHandler):
         self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
     def do_POST(self) -> None:
+        if not self.server.inflight.acquire(blocking=False):
+            self._send_json(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                {"type": "busy_error", "message": "too many in-flight requests"},
+            )
+            return
         try:
-            body = self._read_body()
-            payload = json.loads(body.decode("utf-8"))
+            self._handle_post()
+        finally:
+            self.server.inflight.release()
+
+    def _handle_post(self) -> None:
+        if not self._inbound_authorized():
+            self._send_json(
+                HTTPStatus.UNAUTHORIZED,
+                {
+                    "type": "authentication_error",
+                    "message": "missing or invalid inbound shim capability token",
+                },
+            )
+            return
+        validated_path = _validated_request_path(self.path, self.server.allowed_paths)
+        if validated_path is None:
+            self._send_json(
+                HTTPStatus.BAD_REQUEST,
+                {
+                    "type": "invalid_request_error",
+                    "message": "request target is not an allowlisted relative path",
+                },
+            )
+            return
+        try:
+            content_length = self._declared_content_length()
+            if content_length > self.server.max_body_bytes:
+                self._send_json(
+                    HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                    {
+                        "type": "invalid_request_error",
+                        "message": "request body exceeds max-body-bytes",
+                    },
+                )
+                return
+            body = self.rfile.read(content_length) if content_length else b""
+            payload = json.loads(body.decode("utf-8")) if body else {}
             if not isinstance(payload, dict):
                 raise ValueError("expected JSON object")
             normalized = normalize_anthropic_payload(payload)
             upstream_body = json.dumps(normalized).encode("utf-8")
-            self._forward(upstream_body)
+            self._forward(validated_path, upstream_body)
         except (ValueError, UnicodeDecodeError) as exc:
             self._send_json(
                 HTTPStatus.BAD_REQUEST,
@@ -143,27 +275,61 @@ class _AnthropicRoleShimHandler(BaseHTTPRequestHandler):
                 {"type": "upstream_error", "message": str(exc)},
             )
 
-    def _read_body(self) -> bytes:
+    def _inbound_authorized(self) -> bool:
+        """Require per-run capability before attaching upstream provider credentials."""
+        if self.server.inbound_token_env is None:
+            # Fail closed when upstream credential injection is configured.
+            return self.server.auth_token_env is None
+        expected = os.environ.get(self.server.inbound_token_env)
+        if not expected:
+            return False
+        presented = self.headers.get(_INBOUND_HEADER)
+        if presented == expected:
+            return True
+        auth = self.headers.get("Authorization", "")
+        if auth == f"Bearer {expected}":
+            return True
+        return self.headers.get("x-api-key") == expected
+
+    def _declared_content_length(self) -> int:
         content_length = self.headers.get("content-length")
         if content_length is None:
-            return b""
+            return 0
         try:
-            n = int(content_length)
+            length = int(content_length)
         except ValueError as exc:
             raise ValueError("invalid content-length") from exc
-        return self.rfile.read(n)
+        if length < 0:
+            raise ValueError("invalid content-length")
+        return length
 
-    def _forward(self, body: bytes) -> None:
-        target = urljoin(self.server.upstream, self.path.lstrip("/"))
+    def _forward(self, path: str, body: bytes) -> None:
+        # Retain the configured upstream origin unconditionally: never let any
+        # residue of the client-supplied request target redirect credentials.
+        origin = self.server.upstream.rstrip("/")
+        target = origin + path
+        configured = urlsplit(origin)
+        final = urlsplit(target)
+        if (final.scheme, final.netloc) != (configured.scheme, configured.netloc):
+            raise BenchEvalError("refusing to forward off the configured upstream origin")
         auth_token = None
         if self.server.auth_token_env is not None:
-            import os
-
             auth_token = os.environ.get(self.server.auth_token_env)
-        headers = _forward_headers(self.headers, auth_token=auth_token)
+        # Never forward the caller's inbound capability/auth headers upstream.
+        headers = _forward_headers(self.headers, auth_token=None)
+        for key in list(headers):
+            lowered = key.lower()
+            if lowered in {"authorization", "x-api-key", _INBOUND_HEADER} or lowered.startswith(
+                "x-bencheval-"
+            ):
+                headers.pop(key, None)
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
+            headers["x-api-key"] = auth_token
         request = Request(target, data=body, headers=headers, method="POST")
         try:
-            with urlopen(request, timeout=self.server.timeout_sec) as response:
+            # Redirects are disabled: a cross-origin 302 must not receive credentials.
+            with _UPSTREAM_OPENER.open(request, timeout=self.server.timeout_sec) as response:
                 self.send_response(response.status)
                 for key, value in response.headers.items():
                     if key.lower() not in _HOP_BY_HOP_HEADERS:
@@ -171,6 +337,19 @@ class _AnthropicRoleShimHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self._stream_response(response)
         except HTTPError as exc:
+            # Never reflect redirects. API callers commonly preserve custom auth
+            # headers (including x-api-key) across cross-origin redirects; exposing
+            # Location would disclose the per-run shim capability and let its holder
+            # invoke provider-credentialed forwarding.
+            if 300 <= exc.code < 400:
+                self._send_json(
+                    HTTPStatus.BAD_GATEWAY,
+                    {
+                        "type": "upstream_error",
+                        "message": "upstream redirects are not permitted",
+                    },
+                )
+                return
             self.send_response(exc.code)
             for key, value in exc.headers.items():
                 if key.lower() not in _HOP_BY_HOP_HEADERS:
@@ -207,13 +386,27 @@ def run_server(
     upstream: str,
     timeout_sec: float,
     auth_token_env: str | None = None,
+    inbound_token_env: str | None = None,
+    allowed_paths: Sequence[str] | None = None,
+    max_body_bytes: int = _DEFAULT_MAX_BODY_BYTES,
 ) -> None:
+    paths: set[str] | None = None
+    if allowed_paths is not None:
+        paths = set(_DEFAULT_ALLOWED_PATHS)
+        paths.update(allowed_paths)
+    if auth_token_env and not inbound_token_env:
+        raise BenchEvalError(
+            "inbound-token-env is required when auth-token-env injects upstream credentials",
+        )
     server = _ShimServer(
         (host, port),
         _AnthropicRoleShimHandler,
         upstream=upstream,
         timeout_sec=timeout_sec,
         auth_token_env=auth_token_env,
+        inbound_token_env=inbound_token_env,
+        allowed_paths=paths,
+        max_body_bytes=max_body_bytes,
     )
     try:
         server.serve_forever()
@@ -234,6 +427,27 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
         help="Environment variable whose value is injected as bearer and x-api-key auth upstream",
     )
+    parser.add_argument(
+        "--inbound-token-env",
+        default=None,
+        help=(
+            "Env var holding the per-run inbound capability token. Callers must present it "
+            f"via Authorization Bearer, x-api-key, or {_INBOUND_HEADER}. Required with "
+            "--auth-token-env."
+        ),
+    )
+    parser.add_argument(
+        "--allow-path",
+        action="append",
+        default=[],
+        help="Additional allowlisted POST path (repeatable; defaults always included)",
+    )
+    parser.add_argument(
+        "--max-body-bytes",
+        type=int,
+        default=_DEFAULT_MAX_BODY_BYTES,
+        help="Reject Content-Length above this size with 413 before reading the body",
+    )
     return parser
 
 
@@ -245,6 +459,9 @@ def main() -> None:
         upstream=args.upstream,
         timeout_sec=args.timeout_sec,
         auth_token_env=args.auth_token_env,
+        inbound_token_env=args.inbound_token_env,
+        allowed_paths=args.allow_path or None,
+        max_body_bytes=args.max_body_bytes,
     )
 
 

@@ -81,7 +81,6 @@ class TestExitCodes:
         try:
             return main(argv)
         except SystemExit as e:
-            # argparse calls parser.exit(2) for invalid choices / missing required args.
             code = e.code
             return code if isinstance(code, int) else 2
 
@@ -98,51 +97,47 @@ class TestExitCodes:
         err = capsys.readouterr().err
         assert "error" in err.lower() or "invalid choice" in err.lower()
 
-    def test_partial_four_axis_returns_2(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_run_missing_target_returns_2(self, capsys: pytest.CaptureFixture[str]) -> None:
+        rc = self._run_cli(["run", "--model", "kimi-k2.7-code", "--dry-run"])
+        assert rc == 2
+        err = capsys.readouterr().err
+        assert "error" in err.lower() or "required" in err.lower()
+
+    def test_harbor_without_runtime_returns_1(self, capsys: pytest.CaptureFixture[str]) -> None:
         rc = self._run_cli(
             [
                 "run",
+                "terminal-bench/smoke-5",
+                "--model",
+                "kimi-k2.7-code",
                 "--dry-run",
-                "--benchmark",
-                "terminal-bench",
-                "--slice",
-                "smoke-5",
-                "--model",
-                "runtime-default",
             ],
         )
-        assert rc == 2
+        assert rc == 1
         err = capsys.readouterr().err
-        assert "error" in err.lower()
+        assert "--runtime is required" in err
 
-    def test_conflicting_selection_returns_2(self, capsys: pytest.CaptureFixture[str]) -> None:
-        # --task and --suite together -> usage error -> exit 2 (dry-run path).
-        rc = self._run_cli(["run", "--dry-run", "--task", "t1", "--suite", "smoke", "--model", "m"])
-        assert rc == 2
-        err = capsys.readouterr().err
-        assert "error" in err.lower()
-
-    def test_missing_output_returns_2(self, capsys: pytest.CaptureFixture[str]) -> None:
-        # non-dry-run without --output -> exit 2.
-        rc = self._run_cli(
-            ["run", "--task", "be-core-t1-single-structured-call", "--model", "local/harness"],
-        )
-        assert rc == 2
-
-    def test_business_failure_returns_nonzero(self, capsys: pytest.CaptureFixture[str]) -> None:
-        # local backend with a non-harness model -> nonzero (model mismatch or preflight).
+    def test_runtime_and_agent_conflict_returns_1(self, capsys: pytest.CaptureFixture[str]) -> None:
         rc = self._run_cli(
             [
                 "run",
-                "--task",
-                "be-core-t1-single-structured-call",
+                "bfcl-v4/smoke-5",
                 "--model",
-                "openai/gpt-bogus",
-                "--backend",
-                "local",
-                "--output",
-                "/tmp/bencheval-contract-test.jsonl",
+                "m",
+                "--runtime",
+                "claude-code",
+                "--agent",
+                "momo",
+                "--dry-run",
             ],
+        )
+        assert rc == 1
+        err = capsys.readouterr().err
+        assert "mutually exclusive" in err
+
+    def test_unknown_benchmark_returns_nonzero(self, capsys: pytest.CaptureFixture[str]) -> None:
+        rc = self._run_cli(
+            ["run", "no-such-bench/smoke-5", "--model", "m", "--dry-run"],
         )
         assert rc != 0
 
@@ -168,7 +163,7 @@ class TestJsonOutputShapes:
     def test_benchmark_show_json_is_entry_dict(self, capsys: pytest.CaptureFixture[str]) -> None:
         from bencheval.cli import main
 
-        rc = main(["benchmark", "show", "terminal-bench", "--format", "json"])
+        rc = main(["benchmark", "show", "terminal-bench"])
         assert rc == 0
         payload = json.loads(capsys.readouterr().out)
         assert payload["id"] == "terminal-bench"
@@ -176,7 +171,7 @@ class TestJsonOutputShapes:
     def test_runtime_list_json_has_runtimes_key(self, capsys: pytest.CaptureFixture[str]) -> None:
         from bencheval.cli import main
 
-        rc = main(["runtime", "list", "--format", "json"])
+        rc = main(["catalog", "runtime", "list", "--format", "json"])
         assert rc == 0
         payload = json.loads(capsys.readouterr().out)
         assert isinstance(payload["runtimes"], list)

@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 
 from bencheval.benchmark_plan import plan_control_plane
-from bencheval.control_plane_executor import execute_control_plane_run
 from bencheval.evidence import JsonlEvidenceSink, eligible_for_pass_at_k
 from bencheval.evidence_compare import compare_evidence_runs
 from bencheval.exceptions import BenchEvalError, ComparisonError
@@ -141,17 +140,11 @@ def test_eligible_for_pass_at_k_defaults() -> None:
     assert eligible_for_pass_at_k(invalid) is False
 
 
-def test_execute_rejects_metadata_only_benchmark(tmp_path: Path) -> None:
-    plan = plan_control_plane(
-        benchmark_id="swe-rebench",
-        slice_id="swe-rebench-smoke-10",
-        runtime_id="native-api",
-        model_id="openai/gpt-test",
-    )
-    assert any(c.startswith("execution_support:metadata_only") for c in plan.caveats)
-    with pytest.raises(BenchEvalError, match="execution_support='metadata_only'"):
-        execute_control_plane_run(
-            plan=plan,
-            output_path=tmp_path / "out.jsonl",
-            artifacts_dir=tmp_path / "art",
+def test_execute_rejects_unknown_benchmark() -> None:
+    with pytest.raises(BenchEvalError, match="benchmark not found"):
+        plan_control_plane(
+            benchmark_id="no-such-benchmark",
+            slice_id="smoke-5",
+            runtime_id=None,
+            model_id="kimi-k2.7-code",
         )

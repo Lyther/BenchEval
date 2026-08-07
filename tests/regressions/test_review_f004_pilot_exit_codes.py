@@ -18,7 +18,7 @@ def test_live_pilot_exits_nonzero_without_proof() -> None:
         env={
             **__import__("os").environ,
             "PATH": "/usr/bin:/bin",
-            "BENCHEVAL_PILOT_MODEL": "openai/gpt-test",
+            "BENCHEVAL_PILOT_MODEL": "kimi-k2.7-code",
         },
     )
     assert proc.returncode != 0
@@ -41,21 +41,29 @@ def test_live_pilot_exports_failed_terminal_bench_evidence() -> None:
     content = script.read_text(encoding="utf-8")
 
     assert 'emit_artifacts "${tag}" "${evidence}" "${raw}" || true' in content
-    assert "require_evidence_records" in content
+    # H3: row-count-only admission was replaced by live_proof lane qualification
+    # (eligible native-harness rows + provenance + artifacts). A scored model
+    # failure makes `bencheval run` nonzero but remains a valid native attempt.
+    assert "require_qualified_lane" in content
+    assert "python -m bencheval.live_proof qualify-lane" in content
     assert "checking evidence completeness" in content
+    assert "lane disqualified (live proof requires a clean run)" not in content
     assert "BENCHEVAL_PILOT_TB_EXPECTED_INSTANCES" in content
 
 
-def test_live_pilot_preflights_unsupported_bfcl_model() -> None:
+def test_live_pilot_does_not_invoke_demoted_bfcl_or_swe() -> None:
+    """F001/F002/F017: demoted lanes must not run in the minimum-proof matrix."""
     repo_root = Path(__file__).resolve().parents[2]
     script = repo_root / "scripts" / "run-live-pilot-matrix.sh"
 
     content = script.read_text(encoding="utf-8")
 
-    assert "bfcl_model_supported" in content
-    assert "bfcl models" in content
-    assert "BENCHEVAL_PILOT_BFCL_MODEL" in content
-    assert "bfcl model is not supported" in content
+    assert "run_bfcl" not in content
+    assert "run_swe" not in content
+    assert "BENCHEVAL_PILOT_BFCL_MODEL" not in content
+    assert "bfcl_model_supported" not in content
+    assert "demoted (non-executable)" in content
+    assert "need TB claude-code + codex-cli evidence and compare" in content
 
 
 def test_live_pilot_can_enable_anthropic_role_shim() -> None:

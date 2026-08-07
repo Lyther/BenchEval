@@ -5,11 +5,13 @@ What this shows: where BenchEval runs vs where harness sandboxes live — Tier 0
 ```mermaid
 flowchart TB
     subgraph Laptop["Developer laptop — Tier 0"]
-        Dev["uv sync / uv tool install"]
+        Dev["Contributor setup<br/>uv sync --dev --extra eval --extra analytics"]
+        Installed["Installed-user setup<br/>uv tool install bencheval"]
         Unit["pytest · ruff · make check-production-v1"]
-        PlanOnly["bencheval plan · benchmark list\nno Docker required"]
+        PlanOnly["bencheval list · catalog … · run --dry-run\nno Docker required"]
         Dev --> Unit
         Dev --> PlanOnly
+        Installed --> PlanOnly
     end
 
     subgraph DevBox["dev-box-cpu / operator host — Tier 1 live proof"]
@@ -18,7 +20,7 @@ flowchart TB
         Eval["uv sync --extra eval optional"]
         Harbor["Harbor CLI"]
         Dock["Docker Engine"]
-        Native["SWE / BFCL native tools"]
+        Native["Inspect / HLE host tools"]
         Disk[(results/ evidence + raw)]
 
         BE --> Creds

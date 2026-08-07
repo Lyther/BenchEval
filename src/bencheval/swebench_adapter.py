@@ -16,7 +16,10 @@ from bencheval.exceptions import AdapterFailureError, BenchEvalError
 from bencheval.path_safety import validate_control_plane_instance_id
 
 SWEBENCH_ADAPTER_ID = "swebench"
-_HARNESS_VERSION_FALLBACK = "swebench-native-smoke"
+
+
+def _as_bool_verdict(value: object) -> bool | None:
+    return value if isinstance(value, bool) else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,9 +65,10 @@ def build_swebench_run_command(
 ) -> tuple[str, ...]:
     """Command shape for ``mini-extra swebench`` (mini-SWE-agent SWE-bench helper)."""
     validate_control_plane_instance_id(instance_id)
-    if plan.runtime_id != "mini-swe-agent":
+    admitted = ("claude-code", "codex-cli")
+    if plan.runtime_id not in admitted:
         raise BenchEvalError(
-            f"swebench adapter expects runtime_id='mini-swe-agent', got {plan.runtime_id!r}",
+            f"swebench adapter expects runtime_id in {admitted}, got {plan.runtime_id!r}",
         )
     cmd: list[str] = [
         "mini-extra",
@@ -168,20 +172,41 @@ def parse_swebench_instance_outcome(
         else:
             if isinstance(parsed, dict):
                 native = {**native, **parsed}
+                verdict: bool | None = None
                 if "resolved" in parsed:
-                    primary_pass = bool(parsed["resolved"])
-                    partial_score = 1.0 if primary_pass else 0.0
+                    verdict = _as_bool_verdict(parsed["resolved"])
                 elif "tests_passed" in parsed:
-                    primary_pass = bool(parsed["tests_passed"])
-                    partial_score = 1.0 if primary_pass else 0.0
+                    verdict = _as_bool_verdict(parsed["tests_passed"])
+                if "resolved" in parsed or "tests_passed" in parsed:
+                    if verdict is None:
+                        failure_class = "runtime_output_unparseable"
+                        primary_pass = False
+                        partial_score = 0.0
+                    else:
+                        primary_pass = verdict
+                        partial_score = 1.0 if primary_pass else 0.0
+                else:
+                    failure_class = "runtime_output_unparseable"
+                    primary_pass = False
+                    partial_score = 0.0
                 if "cost_usd" in parsed and isinstance(parsed["cost_usd"], (int, float)):
                     cost_usd = float(parsed["cost_usd"])
+            else:
+                failure_class = "runtime_output_unparseable"
+                primary_pass = False
+                partial_score = 0.0
     elif cli.returncode != 0:
         failure_class = "harness_failure"
     elif cli.returncode == 0:
         failure_class = "harness_failure"
         primary_pass = False
         partial_score = 0.0
+
+    if cli.returncode != 0:
+        primary_pass = False
+        partial_score = 0.0
+        if failure_class is None:
+            failure_class = "harness_failure"
 
     diff_file = artifacts_dir / "workspace.diff"
     if diff_file.is_file():
@@ -194,8 +219,9 @@ def parse_swebench_instance_outcome(
         "adapter_id": SWEBENCH_ADAPTER_ID,
         "harness_kind": "swebench-native",
         "swebench_command": " ".join(cli.command),
-        "harness_version": harness_version or _HARNESS_VERSION_FALLBACK,
     }
+    if harness_version:
+        metadata["harness_version"] = harness_version
 
     return SwebenchInstanceOutcome(
         instance_id=instance_id,
@@ -227,7 +253,9 @@ def run_swebench_instance(
         raise BenchEvalError(f"swebench adapter cannot run adapter_id={plan.adapter_id!r}")
     validate_control_plane_instance_id(instance_id)
     instance_dir = artifacts_dir / instance_id
-    instance_dir.mkdir(parents=True, exist_ok=True)
+    from bencheval.run_isolation import prepare_instance_artifacts_dir
+
+    instance_dir = prepare_instance_artifacts_dir(instance_dir)
     command = build_swebench_run_command(
         plan=plan,
         instance_id=instance_id,
@@ -237,7 +265,7 @@ def run_swebench_instance(
         wall = timeout_sec
     else:
         n = max(len(plan.instances), 1)
-        wall = max(plan.max_wall_clock_sec // n, 60)
+        wall = max(1, plan.max_wall_clock_sec // n)
     runner = process_runner or _default_process_runner
     cli = runner(command, cwd=repo_root, timeout_sec=wall)
     return parse_swebench_instance_outcome(

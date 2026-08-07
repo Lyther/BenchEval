@@ -6,8 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from bencheval.evidence import EvidenceRecord, read_evidence_jsonl
-from bencheval.exceptions import BenchEvalError, TaskContractError
-from bencheval.task_registry import load_task_contract, resolve_task_path
+from bencheval.exceptions import BenchEvalError
 
 
 def _is_control_plane_record(record: EvidenceRecord) -> bool:
@@ -17,11 +16,7 @@ def _is_control_plane_record(record: EvidenceRecord) -> bool:
 def _task_version_for_record(record: EvidenceRecord) -> str:
     if _is_control_plane_record(record):
         return record.benchmark_version or record.harness_version or "control-plane"
-    try:
-        contract = load_task_contract(resolve_task_path(record.task_id))
-    except TaskContractError:
-        return "unknown"
-    return contract.task.version
+    return "unknown"
 
 
 def _require_analytics_deps(*, require_duckdb: bool = False):
@@ -63,6 +58,9 @@ def _table_schemas(pa):
                 ("slice_id", pa.string()),
                 ("adapter_id", pa.string()),
                 ("runtime_id", pa.string()),
+                ("provider_id", pa.string()),
+                ("provider_config_hash", pa.string()),
+                ("judge_model_id", pa.string()),
                 ("instance_id", pa.string()),
                 ("interpretation_label", pa.string()),
                 ("harness_version", pa.string()),
@@ -135,6 +133,9 @@ def _attempt_rows(records: list[EvidenceRecord]) -> list[dict[str, object]]:
                 "slice_id": record.slice_id,
                 "adapter_id": record.adapter_id,
                 "runtime_id": record.runtime_id,
+                "provider_id": record.provider_id,
+                "provider_config_hash": record.provider_config_hash,
+                "judge_model_id": record.judge_model_id,
                 "instance_id": record.instance_id,
                 "interpretation_label": record.interpretation_label,
                 "harness_version": record.harness_version,

@@ -1,10 +1,9 @@
 """Typed slice manifest manager.
 
-A :class:`~bencheval.domain.SliceManifest` wraps a plain-text instance manifest
-(``config/manifests/*.txt``) with budget, purpose, and caveat labels. The instance
-list itself is still read by :func:`bencheval.manifest.read_manifest_task_ids`;
-this module adds the typed envelope and validates that the declared instance count
-fits the budget.
+A :class:`~bencheval.domain.SliceManifest` wraps benchmark slice metadata with an
+ordered instance list. Product slices keep the ids inline in the slice YAML. The
+legacy ``instances_source`` path remains supported for large or generated
+manifests, and is still parsed by :func:`bencheval.manifest.read_manifest_task_ids`.
 """
 
 from __future__ import annotations
@@ -60,13 +59,26 @@ def _resolve_instances_source(slice_yaml_path: Path, instances_source: str) -> P
     manifests_candidate = (_repo_root() / instances_source).resolve()
     if manifests_candidate.is_file():
         return manifests_candidate
-    # Allow a bare filename resolved under config/manifests.
-    bare = _repo_root() / "config" / "manifests" / Path(instances_source).name
-    if bare.is_file():
-        return bare
     raise BenchEvalError(
         f"slice {slice_yaml_path.name}: instances_source {instances_source!r} not found",
     )
+
+
+def _instance_ids_for_manifest(manifest: SliceManifest, slice_yaml_path: Path) -> tuple[str, ...]:
+    if manifest.slice.selection_policy == "sample_limit":
+        # Planning slots only — not official sample identities claimed by the slice YAML.
+        return tuple(f"limit-{index}" for index in range(1, manifest.budget.max_instances + 1))
+    if manifest.slice.instances:
+        return manifest.slice.instances
+    if manifest.slice.instances_source is None:
+        raise BenchEvalError(
+            f"slice {slice_yaml_path.name}: missing instances or instances_source",
+        )
+    instances_path = _resolve_instances_source(slice_yaml_path, manifest.slice.instances_source)
+    try:
+        return read_manifest_task_ids(instances_path)
+    except BenchEvalError as e:
+        raise BenchEvalError(f"{slice_yaml_path.name}: cannot read instances_source: {e}") from e
 
 
 @lru_cache(maxsize=64)
@@ -84,11 +96,7 @@ def _load_slice_manifest_cached(path_str: str) -> SliceManifest:
         manifest = SliceManifest.model_validate(raw)
     except ValidationError as e:
         raise BenchEvalError(f"{p.name}: {e}") from e
-    instances_path = _resolve_instances_source(p, manifest.slice.instances_source)
-    try:
-        instance_ids = read_manifest_task_ids(instances_path)
-    except BenchEvalError as e:
-        raise BenchEvalError(f"{p.name}: cannot read instances_source: {e}") from e
+    instance_ids = _instance_ids_for_manifest(manifest, p)
     if len(instance_ids) > manifest.budget.max_instances:
         raise BenchEvalError(
             f"{p.name}: instance count {len(instance_ids)} exceeds "
@@ -108,11 +116,7 @@ def load_slice_manifest(path: Path | str) -> SliceManifest:
 
 def slice_instance_ids(manifest: SliceManifest, slice_yaml_path: Path | str) -> tuple[str, ...]:
     """Return the ordered instance ids referenced by a slice manifest."""
-    instances_path = _resolve_instances_source(
-        Path(slice_yaml_path),
-        manifest.slice.instances_source,
-    )
-    return read_manifest_task_ids(instances_path)
+    return _instance_ids_for_manifest(manifest, Path(slice_yaml_path))
 
 
 def resolve_instances_source_path(slice_yaml_path: Path | str, instances_source: str) -> Path:

@@ -23,9 +23,9 @@ Design rules (enforced by Pydantic + ruff, not by hand):
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Literal, NewType
+from typing import Literal, NewType, Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # ---------------------------------------------------------------------------
 # 1. BRANDED IDS (anti-string-law, Python adaptation)
@@ -56,22 +56,21 @@ _SHA256_PATTERN = r"^[0-9a-f]{64}$"
 # control-plane types are self-contained. Existing modules keep their own aliases
 # for backward compatibility; new code imports from here.
 
-# Execution profiles — must match task_contract.ExecutionProfile.
+# Execution profiles (E0–E4).
 ExecutionProfile = Literal["E0", "E1", "E2", "E3", "E4"]
 
-# Budget classes — must match task_contract.BudgetClass.
+# Budget classes (B0–B3).
 BudgetClass = Literal["B0", "B1", "B2", "B3"]
 
-# Existing CLI backend lane — kept ONLY for the selftest/Core compatibility path.
-# NOT runtime identity. New code uses --runtime.
+# Doctor / legacy backend lane — NOT runtime identity. Product path uses --runtime / --agent.
 ExecutionBackend = Literal["local", "inspect", "harbor"]
 
 # Runtime lifecycle shapes.
 RuntimeKind = Literal[
     "cli_agent",  # claude-code, codex-cli
-    "api_client",  # native-api, inspect-api
-    "harness_agent",  # harbor-agent, mini-swe-agent
-    "selftest_local",  # internal selftest lane
+    "api_client",
+    "harness_agent",
+    "selftest_local",
 ]
 RuntimeModelBinding = Literal["runtime_configured", "bencheval_injected", "not_applicable"]
 RuntimeLifecycle = Literal["external_process", "in_process", "containerized"]
@@ -83,8 +82,11 @@ HarnessKindLiteral = Literal[
     "bfcl-native",
     "livecodebench-native",
     "inspect",
+    "inspect-evals",
+    "hle-native",
     "local-harness",
     "cybergym-native",
+    "exploitgym-native",
     "bountybench-native",
     "selftest-local",
 ]
@@ -93,20 +95,21 @@ HarnessKindLiteral = Literal[
 AdapterKindLiteral = Literal[
     "terminal-bench-harbor",
     "swebench",
+    "swebench-pro-harbor",
     "bfcl",
+    "gpqa",
+    "hle",
     "livecodebench",
     "bigcodebench",
     "tau-bench",
     "cybench",
     "cybergym",
+    "exploitgym",
     "bountybench",
     "cyberseceval-defensive",
     "osworld",
     "selftest",
 ]
-
-# Benchmark safety lane (mirrors benchmark_registry.SafetyReview).
-SafetyLane = Literal["standard", "dual_use", "offensive_restricted"]
 
 # Slice purpose — drives interpretation labels and comparison validity.
 SlicePurpose = Literal[
@@ -126,7 +129,6 @@ InterpretationLabel = Literal[
     "model_comparison",
     "contaminated_or_legacy",
     "defensive_security_only",
-    "offensive_restricted",
 ]
 
 # Failure taxonomy — must stay distinct per architecture §10. One evidence row
@@ -218,7 +220,7 @@ class RuntimeVersioning(BaseModel):
 
 
 class RuntimeProfile(BaseModel):
-    """A runtime/scaffold profile (claude-code, codex-cli, inspect-api, ...)."""
+    """A runtime/scaffold profile (claude-code, codex-cli, ...)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -267,7 +269,7 @@ class RuntimeCatalog(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# 4. SLICE MANIFEST (typed wrapper over config/manifests/*.txt) — new in v0.3
+# 4. SLICE MANIFEST (typed slice with inline ids or external generated list) — v0.3
 # ---------------------------------------------------------------------------
 
 
@@ -289,7 +291,7 @@ class SliceLabels(BaseModel):
 
 
 class SliceManifest(BaseModel):
-    """Typed slice over a plain-text instance manifest."""
+    """Typed slice over inline instance ids or an external instance manifest."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
@@ -305,10 +307,30 @@ class SliceManifestSlice(BaseModel):
     id: str = Field(pattern=_ID_PATTERN)
     benchmark_id: str = Field(pattern=_ID_PATTERN)
     purpose: SlicePurpose
-    selection_policy: Literal["fixed_instance_ids", "native_selector_all", "custom"]
-    instances_source: str = Field(min_length=1)
+    selection_policy: Literal[
+        "fixed_instance_ids",
+        "native_selector_all",
+        "custom",
+        "sample_limit",
+    ]
+    instances: tuple[str, ...] = ()
+    instances_source: str | None = Field(default=None, min_length=1)
+    # Evaluator identity for benchmarks whose official scorer calls a judge model.
+    judge_model_id: str | None = Field(default=None, min_length=1)
     valid_for: tuple[SlicePurpose, ...] = Field(min_length=1)
     invalid_for: tuple[SlicePurpose, ...] = ()
+
+    @model_validator(mode="after")
+    def _exactly_one_instance_source(self) -> Self:
+        if self.selection_policy == "sample_limit":
+            if self.instances or self.instances_source is not None:
+                raise ValueError(
+                    "sample_limit slices must not declare fixed instances or instances_source",
+                )
+            return self
+        if bool(self.instances) == bool(self.instances_source):
+            raise ValueError("slice must set exactly one of instances or instances_source")
+        return self
 
 
 SliceManifest.model_rebuild()
@@ -328,11 +350,10 @@ class RunPlanInstance(BaseModel):
 
 
 class RunPlan(BaseModel):
-    """Concrete execution plan from benchmark + slice + model + runtime.
+    """Concrete execution plan from benchmark + slice + model + optional scaffold.
 
-    This is a DTO: it carries the *plan*, not the evidence. No artifact paths,
-    no secrets, no raw model output. Safe to print to stdout or write to a run
-    config file. The executor turns a RunPlan into EvidenceRecord rows.
+    Scaffold is runtime XOR agent (or neither for model-only). No artifact paths,
+    secrets, or raw model output. The executor turns a RunPlan into EvidenceRecord rows.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -343,9 +364,12 @@ class RunPlan(BaseModel):
     slice_id: str = Field(pattern=_ID_PATTERN)
     adapter_id: str = Field(pattern=_ID_PATTERN)
     harness_kind: HarnessKindLiteral
-    runtime_id: str = Field(pattern=_ID_PATTERN)
-    runtime_kind: RuntimeKind
+    runtime_id: str | None = Field(default=None, pattern=_ID_PATTERN)
+    runtime_kind: RuntimeKind | None = None
+    agent_id: str | None = Field(default=None, pattern=_ID_PATTERN)
+    provider_id: str = Field(default="bytellm", pattern=_ID_PATTERN)
     model_id: str = Field(min_length=1)
+    judge_model_id: str | None = Field(default=None, min_length=1)
     model_binding: RuntimeModelBinding
     instances: tuple[RunPlanInstance, ...] = Field(min_length=1)
     budget_class: BudgetClass
@@ -363,6 +387,14 @@ class RunPlan(BaseModel):
         "diagnostic_only",
         "invalid",
     ]
+
+    def model_post_init(self, __context: object) -> None:
+        if self.runtime_id is not None and self.agent_id is not None:
+            raise ValueError("runtime_id and agent_id are mutually exclusive")
+        if self.runtime_id is not None and self.runtime_kind is None:
+            raise ValueError("runtime_kind is required when runtime_id is set")
+        if self.runtime_id is None and self.runtime_kind is not None:
+            raise ValueError("runtime_kind must be null when runtime_id is null")
 
 
 # ---------------------------------------------------------------------------
@@ -463,7 +495,6 @@ __all__ = [
     "RuntimeProfileRuntime",
     "RuntimeSafety",
     "RuntimeVersioning",
-    "SafetyLane",
     "SliceBudget",
     "SliceId",
     "SliceLabels",

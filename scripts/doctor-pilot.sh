@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase B pilot doctor: harbor/docker/bfcl/mini-extra + optional provider creds.
+# Phase B minimum-pilot doctor: Harbor/Docker + optional provider credentials.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -20,7 +20,7 @@ EOF
   exit 1
 }
 
-model="${BENCHEVAL_PILOT_MODEL:-openai/gpt-test}"
+model="${BENCHEVAL_PILOT_MODEL:-kimi-k2.7-code}"
 verify_auth=1
 
 while [[ $# -gt 0 ]]; do

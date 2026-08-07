@@ -1,6 +1,6 @@
 # Adapter Components (C4 L3)
 
-What this shows: adapter families BenchEval ships, which are Production v1 executable, and how they map to harness ownership.
+What this shows: Production v1 executable adapters and harness ownership.
 
 ```mermaid
 flowchart TB
@@ -8,36 +8,33 @@ flowchart TB
 
     subgraph ProdV1["Production v1 executable adapters<br/>config: executable: true"]
         TB["terminal_bench_harbor.py<br/>adapter_id: terminal-bench-harbor<br/>harness: harbor"]
-        SWE["swebench_adapter.py<br/>adapter_id: swebench<br/>harness: swebench-native"]
-        BFCL["bfcl_native_adapter.py<br/>adapter_id: bfcl<br/>harness: bfcl-native"]
+        GPQA["gpqa_adapter.py<br/>adapter_id: gpqa<br/>harness: inspect-evals"]
+        HLE["hle_adapter.py<br/>adapter_id: hle<br/>harness: hle-native"]
+        Agent["external_agent_adapter.py<br/>config/agents/*.yaml command contract"]
     end
 
-    subgraph Other["Other adapter modules present"]
-        Harbor["harbor_adapter.py<br/>generic Harbor invoke helper"]
-        Inspect["inspect_adapter.py<br/>Inspect + mockllm E0 path"]
-        Ext["external_command_adapter.py<br/>run --config lane"]
-        Self["runner.py · executor.py<br/>selftest Core-8/16"]
+    subgraph Demoted["Cataloged but non-executable until official evaluate"]
+        SWE["swebench_adapter.py<br/>adapter_id: swebench"]
+        BFCL["bfcl_native_adapter.py<br/>adapter_id: bfcl"]
     end
 
-    subgraph Outside["Harness / runtime ownership"]
+    subgraph Outside["Harness / runtime / agent ownership"]
         HCLI["Harbor CLI + Docker"]
-        SN["SWE-bench native tooling"]
-        BN["BFCL native / Gorilla"]
-        IA["inspect_ai optional"]
-        Op["Operator solver process"]
+        Inspect["Inspect Evals"]
+        HLEH["CAIS HLE scripts"]
+        ExtAgent["External agent CLI e.g. momo"]
     end
 
-    CPE -->|adapter_id match| TB & SWE & BFCL
-    TB --> Harbor
-    Harbor --> HCLI
-    SWE --> SN
-    BFCL --> BN
-    Self --> Inspect
-    Inspect --> IA
-    Ext --> Op
+    CPE -->|adapter_id match| TB & GPQA & HLE
+    CPE -->|agent_id set| Agent
+    TB --> HCLI
+    GPQA --> Inspect
+    HLE --> HLEH
+    Agent --> ExtAgent
 
-    Cat["config/benchmarks.yaml<br/>adapter_id · harness_kind · executable"]
+    Cat["config/benchmarks.yaml<br/>adapter_id · executable"]
     Cat -.->|declares executability| ProdV1
+    Cat -.->|executable: false| Demoted
 ```
 
-Notes: Executable set is **config-declared**, not hard-coded in Python ([`production-readiness.md`](../context/production-readiness.md) Tier 0 gate: exactly `terminal-bench`, `swe-bench-verified`, `bfcl-v4`). LiveCodeBench/BigCodeBench may carry `adapter_id` metadata while remaining non-executable until admitted. Metadata-only benchmarks (e.g. CyBench) fail before subprocess dispatch on four-axis `run`.
+Notes: Research candidates stay in docs (`external-benchmark-catalog.md`), not product YAML. `harness_kind` is adapter-declared run-plan/evidence metadata, not a benchmark YAML knob. SWE/BFCL modules remain in-tree for future evaluate wiring but are refused by execute/CLI today.

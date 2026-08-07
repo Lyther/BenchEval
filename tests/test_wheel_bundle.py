@@ -15,9 +15,9 @@ from bencheval.paths import repo_root, validate_config_bundle
 
 
 def _copy_control_plane_bundle(src_repo: Path, dest: Path) -> None:
-    for sub in ("runtimes", "slices", "manifests"):
+    for sub in ("runtimes", "providers", "agents", "slices"):
         shutil.copytree(src_repo / "config" / sub, dest / "config" / sub, dirs_exist_ok=True)
-    for name in ("benchmarks.yaml", "models.yaml", "suites.yaml"):
+    for name in ("benchmarks.yaml", "models.yaml"):
         src = src_repo / "config" / name
         if src.is_file():
             shutil.copy2(src, dest / "config" / name)
@@ -52,8 +52,8 @@ def test_bencheval_home_supports_dry_run_planner(tmp_path: Path) -> None:
     _copy_control_plane_bundle(repo, bundle)
     dry_run_cmd = (
         "from bencheval.cli import main; "
-        "raise SystemExit(main(['run', '--benchmark', 'bfcl-v4', '--slice', 'smoke-5', "
-        "'--runtime', 'native-api', '--model', 'openai/gpt-test', '--dry-run']))"
+        "raise SystemExit(main(['run', 'gpqa-diamond/smoke', "
+        "'--model', 'kimi-k2.7-code', '--dry-run']))"
     )
     proc = subprocess.run(
         [sys.executable, "-c", dry_run_cmd],
@@ -118,4 +118,4 @@ def test_wheel_install_is_self_contained_without_bencheval_home(tmp_path: Path) 
     ids = {b["id"] for b in payload["benchmarks"]}
     assert ids  # non-empty: the bundled catalog resolved
     assert all(b["execution_support"] == "executable_adapter" for b in payload["benchmarks"])
-    assert {"terminal-bench", "swe-bench-verified", "bfcl-v4"} <= ids
+    assert {"terminal-bench", "gpqa-diamond", "hle"} <= ids

@@ -14,7 +14,10 @@ run() {
   "$@"
 }
 
-run uv run --no-sync pytest -q
+# Analytics export is a product path. Fail instead of silently skipping its real
+# PyArrow/DuckDB round trips when the optional production-gate extra is absent.
+run uv run --no-sync python -c 'import duckdb, pyarrow'
+run ./scripts/check-domain-coverage.sh
 run uv run --no-sync ruff check src tests scripts/
 run uv run --no-sync ruff format --check src tests scripts/
 run shellcheck scripts/*.sh
@@ -28,19 +31,18 @@ if [[ ${count} != "3" ]]; then
   exit 1
 fi
 
-cybench_err="$(mktemp)"
-trap 'rm -f "${cybench_err}"' EXIT
+unknown_err="$(mktemp)"
+trap 'rm -f "${unknown_err}"' EXIT
 if uv run --no-sync bencheval run \
-  --benchmark cybench \
-  --slice cybench-smoke-5 \
-  --runtime native-api \
-  --model openai/gpt-test \
-  --output /tmp/bencheval-cybench-nope.jsonl 2>"${cybench_err}"; then
-  printf 'error: cybench run should fail before execute\n' >&2
+  no-such-benchmark/smoke-5 \
+  --runtime claude-code \
+  --model kimi-k2.7-code \
+  --dry-run 2>"${unknown_err}"; then
+  printf 'error: unknown benchmark run should fail before execute\n' >&2
   exit 1
 fi
-if ! grep -qiE 'metadata_only|execution_support' "${cybench_err}"; then
-  printf 'error: cybench stderr missing execution_support hint:\n%s\n' "$(cat "${cybench_err}")" >&2
+if ! grep -qiE 'benchmark not found|unknown' "${unknown_err}"; then
+  printf 'error: unknown-benchmark stderr missing not-found hint:\n%s\n' "$(cat "${unknown_err}")" >&2
   exit 1
 fi
 

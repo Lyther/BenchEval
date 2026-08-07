@@ -5,7 +5,8 @@ runtime:
   display_name: "Codex CLI"
   lifecycle: "external_process"
   supported_platforms: ["macos", "linux"]
-  supported_harnesses: ["harbor", "local-harness", "selftest-local"]
+  supported_harnesses:
+    ["harbor", "swebench-native", "cybergym-native", "exploitgym-native"]
   model_binding: "runtime_configured"
 launch:
   command_template: ["codex", "exec", "--json"]
@@ -23,7 +24,8 @@ capabilities:
   supports_noninteractive: true
   supports_json_output: "partial"
 safety:
-  network_default: "deny"
+  # Provider egress via controlled host proxy is required for Harbor TB runs.
+  network_default: "benchmark_required"
   workspace_boundary: "ephemeral_only"
   requires_user_approval: false
   forbidden_features_for_eval:
@@ -32,4 +34,4 @@ safety:
 versioning:
   version_command: ["codex", "--version"]
   config_hash_inputs: [".codex"]
-admission: "draft"
+admission: "admitted"

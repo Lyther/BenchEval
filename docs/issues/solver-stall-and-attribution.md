@@ -1,26 +1,17 @@
 # External-command solver stalls + model attribution — problem brief
 
-**Status:** RESOLVED (design landed) · **Component:** external-command run lane (`src/bencheval/external_command_adapter.py`) + run profiles · **Type:** actionable defect brief
+**Status:** SUPERSEDED (2026-07 product-spine prune) · **Component:** historical external-command lane (removed) · **Type:** archived defect brief
 
-> **Resolution (current design).** The problem statement below describes the state
-> *before* this work; it is retained for context. What shipped:
+> **Supersession.** `src/bencheval/external_command_adapter.py`, `bencheval run --config`, and the
+> generic external-command profile lane are **removed** from the admitted product spine. Do not
+> treat the "design landed" claims below as current implementation. Live product path is
+> `benchmark → (runtime | agent)? → model via provider → evidence` (see README / architecture).
+> This file is retained only as historical problem context.
 >
-> - **Progress-aware stall handling + honest classification** — `ExternalDeadlineConfig.no_progress_sec`
->   detects a wedged solver by lack of output and classifies it `runtime_no_progress_stall`
->   (invalid, excluded from pass@k), distinct from a task-difficulty fail. `wall_clock_sec`
->   is an operator-supplied ceiling (`--wall-clock-sec`), never a committed guess.
-> - **Container-safe termination** — process-group SIGTERM→grace→SIGKILL reaps native
->   children. Because `killpg` cannot reach dockerd-managed containers, container removal
->   is a **first-class BenchEval step** (`ExternalCleanupConfig`, run after every attempt),
->   *not* a per-profile shell `trap`. This satisfies acceptance item 3's "supported pattern
->   without per-profile workarounds": the profile only declares the launch command; BenchEval
->   owns termination, cleanup, and classification.
-> - **First-class model provenance** — evidence carries `configured_model_id`,
->   `served_model_id`, and `model_attribution` (`authoritative` / `mixed_model` /
->   `attribution_not_captured`); an uncaptured stream is never silently attributed to the request.
->
-> **Remaining limitation:** a solver descendant that double-forks into its own session
-> (`setsid`) escapes the group kill; the container case is covered by first-class cleanup.
+> **Historical resolution note (pre-prune).** The problem statement described the state *before*
+> external-command stall/attribution work. That lane previously shipped progress-aware stall
+> handling, container-safe cleanup, and model provenance fields — then the whole external-command
+> product surface was pruned. Re-admit only via a deliberate new adapter design if needed.
 
 ## Summary
 

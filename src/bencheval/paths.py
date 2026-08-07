@@ -9,12 +9,13 @@ from bencheval.exceptions import BenchEvalError
 
 _BENCHEVAL_HOME_ENV = "BENCHEVAL_HOME"
 _CONFIG_MARKER = Path("config") / "benchmarks.yaml"
+_BUNDLE_REQUIRED_FILES: tuple[Path, ...] = (Path("config") / "models.yaml",)
 
 # Minimum tree for v0.3 control-plane CLI (catalog, planner, dry-run).
 _BUNDLE_REQUIRED_DIRS: tuple[Path, ...] = (
     Path("config") / "runtimes",
+    Path("config") / "providers",
     Path("config") / "slices",
-    Path("config") / "manifests",
 )
 
 
@@ -39,10 +40,17 @@ def validate_config_bundle(root: Path) -> None:
             raise BenchEvalError(
                 f"config bundle {rel.as_posix()} must contain at least one runtime profile",
             )
+        if rel == Path("config") / "providers" and not yaml_files:
+            raise BenchEvalError(
+                f"config bundle {rel.as_posix()} must contain at least one provider profile",
+            )
         if rel == Path("config") / "slices" and not yaml_files:
             raise BenchEvalError(
                 f"config bundle {rel.as_posix()} must contain at least one slice manifest",
             )
+    for rel in _BUNDLE_REQUIRED_FILES:
+        if not (resolved / rel).is_file():
+            raise BenchEvalError(f"config bundle missing required file {rel.as_posix()}")
 
 
 def _walk_up_for_config(start: Path) -> Path | None:

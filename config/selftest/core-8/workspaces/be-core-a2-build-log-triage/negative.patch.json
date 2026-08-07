@@ -1,8 +1,0 @@
-{
-  "diagnosis": {
-    "cause_id": "missing-greet-export"
-  },
-  "files": {
-    "repo/src/greeter.py": "def greet(name: str) -> str:\n    return f\"Hi, {name}!\"\n"
-  }
-}

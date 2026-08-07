@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Callable
 from decimal import Decimal
 
 from bencheval.evidence import EvidenceRecord
@@ -12,10 +13,49 @@ from bencheval.runtime_compare import (
     render_runtime_comparison_markdown,
 )
 
-_SMALL_N_WARNING = (
-    "Core-8 and Core-16 scores are directional regression signals with small-N "
-    "fragility; do not treat pass-rate deltas as statistically significant."
-)
+
+def _fmt_optional(value: str | None) -> str:
+    return f"`{value}`" if value is not None else "`n/a`"
+
+
+def _aggregate_axis(
+    records: list[EvidenceRecord],
+    getter: Callable[[EvidenceRecord], str | None],
+) -> str:
+    """Singleton -> display value; mixed -> ``mixed`` plus sorted unique values."""
+    values = {getter(r) for r in records}
+    if len(values) == 1:
+        return _fmt_optional(next(iter(values)))
+    ordered = sorted(values, key=lambda v: (v is not None, v or ""))
+    rendered = ", ".join(_fmt_optional(v) for v in ordered)
+    return f"mixed ({rendered})"
+
+
+def _control_plane_axes_section(records: list[EvidenceRecord]) -> list[str]:
+    """Expose interpretation / axes / versions / integrity aggregated across rows."""
+    if not records:
+        return []
+    lines = [
+        "## Control-plane axes",
+        "",
+        f"- Interpretation: {_aggregate_axis(records, lambda r: r.interpretation_label)}",
+        f"- Benchmark: {_aggregate_axis(records, lambda r: r.benchmark_id)}",
+        f"- Benchmark version: {_aggregate_axis(records, lambda r: r.benchmark_version)}",
+        f"- Slice: {_aggregate_axis(records, lambda r: r.slice_id)}",
+        f"- Adapter: {_aggregate_axis(records, lambda r: r.adapter_id)}",
+        f"- Harness: {_aggregate_axis(records, lambda r: r.harness_kind)}",
+        f"- Harness version: {_aggregate_axis(records, lambda r: r.harness_version)}",
+        f"- Runtime: {_aggregate_axis(records, lambda r: r.runtime_id)}",
+        f"- Runtime version: {_aggregate_axis(records, lambda r: r.runtime_version)}",
+        f"- Provider: {_aggregate_axis(records, lambda r: r.provider_id)}",
+        f"- Provider config hash: {_aggregate_axis(records, lambda r: r.provider_config_hash)}",
+        f"- Judge model: {_aggregate_axis(records, lambda r: r.judge_model_id)}",
+        f"- Contamination: {_aggregate_axis(records, lambda r: r.contamination_label)}",
+        f"- Reward-hack risk: {_aggregate_axis(records, lambda r: r.reward_hack_risk_label)}",
+        f"- Verifier integrity: {_aggregate_axis(records, lambda r: r.verifier_integrity_label)}",
+        "",
+    ]
+    return lines
 
 
 def generate_evidence_report(records: list[EvidenceRecord]) -> str:
@@ -25,8 +65,6 @@ def generate_evidence_report(records: list[EvidenceRecord]) -> str:
                 "# BenchEval Evidence Report",
                 "",
                 "No evidence records.",
-                "",
-                f"> {_SMALL_N_WARNING}",
                 "",
             ],
         )
@@ -57,11 +95,16 @@ def generate_evidence_report(records: list[EvidenceRecord]) -> str:
         f"- Total cost (USD): {total_cost:.4f}",
         f"- Total latency (sec): {total_latency:.2f}",
         "",
-        "## Attempts",
-        "",
-        "| Task | Model | Backend | Pass | Partial | Cost (USD) | Latency (s) | Verifier log |",
-        "| --- | --- | --- | ---: | ---: | ---: | ---: | --- |",
     ]
+    lines.extend(_control_plane_axes_section(records))
+    lines.extend(
+        [
+            "## Attempts",
+            "",
+            "| Task | Model | Backend | Pass | Partial | Cost (USD) | Latency (s) | Verifier log |",
+            "| --- | --- | --- | ---: | ---: | ---: | ---: | --- |",
+        ],
+    )
 
     for record in records:
         verifier = record.verifier_log_path or ""
@@ -81,7 +124,7 @@ def generate_evidence_report(records: list[EvidenceRecord]) -> str:
     else:
         lines.append("No failure labels recorded.")
 
-    lines.extend(["", "## Interpretation", "", f"> {_SMALL_N_WARNING}", ""])
+    lines.append("")
     return "\n".join(lines)
 
 

@@ -97,12 +97,13 @@ class TestEvidenceRecordBackwardCompat:
         with pytest.raises(ValidationError):
             EvidenceRecord(**{**V02_BASE, "partial_score": 1.5})
 
-    def test_v02_evidence_record_is_permissive_on_extras(self) -> None:
-        # The v0.2 EvidenceRecord has no extra="forbid" config (frozen contract);
-        # it must keep accepting rows carrying keys it does not know about, so
-        # historical JSONL with extra adapter_metadata siblings still loads.
-        rec = EvidenceRecord(**{**V02_BASE, "future_field": 1})
-        assert rec.run_id == "r1"
+    def test_v02_evidence_record_rejects_unknown_fields(self) -> None:
+        # Provenance typos must not be silently discarded; v0.2 rows without
+        # unknown keys continue to parse.
+        parsed = EvidenceRecord(**V02_BASE)
+        assert parsed.run_id == "r1"
+        with pytest.raises(ValidationError):
+            EvidenceRecord(**{**V02_BASE, "future_field": 1})
 
     def test_new_domain_models_forbid_extras(self) -> None:
         # New v0.3 domain models ARE strict: extra keys are a validation error.
@@ -120,14 +121,14 @@ class TestRuntimeRegistry:
         cat = load_runtime_catalog()
         assert isinstance(cat, RuntimeCatalog)
         ids = {rp.runtime.id for rp in cat.runtimes}
-        assert {"claude-code", "codex-cli", "native-api"} <= ids
+        assert ids == {"claude-code", "codex-cli"}
 
     def test_load_single_profile(self) -> None:
         rp = load_runtime_profile(Path("config/runtimes/claude-code.yaml"))
         assert isinstance(rp, RuntimeProfile)
         assert rp.runtime.id == "claude-code"
         assert rp.runtime.kind == "cli_agent"
-        assert rp.safety.network_default == "deny"
+        assert rp.safety.network_default == "benchmark_required"
 
     def test_duplicate_ids_rejected(self, tmp_path: Path) -> None:
         (tmp_path / "a.yaml").write_text(
@@ -155,8 +156,8 @@ class TestRuntimeRegistry:
 
     def test_catalog_by_id(self) -> None:
         cat = load_runtime_catalog()
-        rp = cat.by_id("native-api")
-        assert rp.runtime.kind == "api_client"
+        rp = cat.by_id("claude-code")
+        assert rp.runtime.kind == "cli_agent"
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +195,20 @@ class TestSliceManifest:
         text = (
             Path("config/slices/swe-bench-verified-smoke-10.yaml")
             .read_text()
-            .replace("swebench-verified-smoke-10.txt", "does-not-exist.txt")
+            .replace(
+                "  instances:\n"
+                "    - django__django-11099\n"
+                "    - sympy__sympy-18087\n"
+                "    - matplotlib__matplotlib-25498\n"
+                "    - scikit-learn__scikit-learn-25973\n"
+                "    - astropy__astropy-14182\n"
+                "    - pylint-dev__pylint-6900\n"
+                "    - pytest-dev__pytest-10356\n"
+                "    - psf__requests-2317\n"
+                "    - django__django-15916\n"
+                "    - sphinx-doc__sphinx-8721\n",
+                '  instances_source: "does-not-exist.txt"\n',
+            )
         )
         (tmp_path / "s.yaml").write_text(text, encoding="utf-8")
         from bencheval.exceptions import BenchEvalError

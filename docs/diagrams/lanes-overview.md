@@ -1,35 +1,20 @@
-# Execution Lanes Overview
+# Product Spine
 
-What this shows: three coexisting lanes — public control plane, internal selftest, and operator external-command — and what each may claim.
+What this shows: the only product route after the hard-minimal prune. Research catalog is docs-only discovery, not CLI breadth.
 
 ```mermaid
-flowchart LR
-    subgraph ControlPlane["Lane A — Control plane four-axis"]
-        A1["bencheval plan|run<br/>benchmark/slice × runtime × model"]
-        A2["Executable adapters only<br/>TB · SWE-Verified · BFCL"]
-        A3["EvidenceRecord + interpretation labels"]
-        A1 --> A2 --> A3
+flowchart TB
+    subgraph Product["Product spine"]
+        P1["bencheval list | run | catalog<br/>benchmark/slice × (runtime XOR agent)? × model via provider"]
+        P2["Executable adapters only<br/>TB · GPQA · HLE"]
+        P3["EvidenceRecord + interpretation labels"]
+        P1 --> P2 --> P3
     end
 
-    subgraph Selftest["Lane B — Selftest / Core"]
-        B1["bencheval task · run --task/--suite<br/>--backend local|inspect|harbor"]
-        B2["config/selftest core-8/16"]
-        B3["Proves plumbing; never weighted<br/>into public benchmark totals"]
-        B1 --> B2 --> B3
-    end
+    Catalog["Research catalog<br/>docs/context/external-benchmark-catalog.md"]
+    Catalog -.->|"docs only"| P1
 
-    subgraph External["Lane C — External command"]
-        C1["bencheval run --config profile.yaml"]
-        C2["Operator assets + official scorer"]
-        C3["events.jsonl + EvidenceRecord<br/>no Production v1 adapter required"]
-        C1 --> C2 --> C3
-    end
-
-    Claim["Claim discipline"]
-    A3 --> Claim
-    B3 --> Claim
-    C3 --> Claim
-    Claim -->|"adapter_smoke ≠ benchmark_native_claim"| Reports["report / compare"]
+    P3 --> Reports["report / compare / export"]
 ```
 
-Notes: Architecture §1 demotes Core to selftest. Architecture §11 interpretation labels gate what reports may assert. Metadata-only catalog entries cannot enter Lane A live execution.
+Notes: Runtime and agent are mutually exclusive. Omit both for model-only (GPQA/HLE). Do not treat research-catalog row count as product breadth.
