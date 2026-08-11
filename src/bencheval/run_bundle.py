@@ -88,6 +88,80 @@ def _write_evidence_copy(
     dest.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
 
 
+def _bundle_local_artifact_path(
+    value: str,
+    *,
+    raw_root: Path,
+    capture_root: Path,
+) -> str:
+    """Map an absolute run-owned artifact path to its location in the bundle."""
+    path = Path(value)
+    if not path.is_absolute():
+        return value
+    # Collapse lexical ``..`` segments without following symlinks so an
+    # untrusted evidence string cannot become a bundle-relative traversal.
+    path = Path(os.path.abspath(path))
+    for source, destination in ((raw_root, Path("raw")), (capture_root, Path("capture"))):
+        try:
+            relative = path.relative_to(source)
+        except ValueError:
+            continue
+        return (destination / relative).as_posix()
+    return value
+
+
+def _relocate_private_artifact_paths(
+    records: list[EvidenceRecord],
+    *,
+    raw_root: Path,
+    capture_root: Path,
+) -> list[EvidenceRecord]:
+    """Return private-bundle rows whose copied artifacts use portable paths."""
+    relocated: list[EvidenceRecord] = []
+    for record in records:
+        verifier_log_path = record.verifier_log_path
+        if verifier_log_path is not None:
+            verifier_log_path = _bundle_local_artifact_path(
+                verifier_log_path,
+                raw_root=raw_root,
+                capture_root=capture_root,
+            )
+        relocated.append(
+            record.model_copy(
+                update={
+                    "artifact_paths": [
+                        _bundle_local_artifact_path(
+                            path,
+                            raw_root=raw_root,
+                            capture_root=capture_root,
+                        )
+                        for path in record.artifact_paths
+                    ],
+                    "verifier_log_path": verifier_log_path,
+                },
+            ),
+        )
+    return relocated
+
+
+def _records_reference_root(records: list[EvidenceRecord], root: Path) -> bool:
+    """Whether any evidence artifact path is lexically contained by ``root``."""
+    for record in records:
+        values = [*record.artifact_paths]
+        if record.verifier_log_path is not None:
+            values.append(record.verifier_log_path)
+        for value in values:
+            path = Path(value)
+            if not path.is_absolute():
+                continue
+            try:
+                Path(os.path.abspath(path)).relative_to(root)
+            except ValueError:
+                continue
+            return True
+    return False
+
+
 def _run_axes(records: list[EvidenceRecord]) -> dict[str, str | None]:
     if not records:
         return {}
@@ -193,10 +267,22 @@ def export_run_bundle(
     records = read_evidence_jsonl(evidence_path)
     public_secrets = _env_secret_values() if redaction == "public" else ()
     bundle_root = output_dir.resolve()
-    if raw_dir is not None and _paths_nest_or_equal(raw_dir.resolve(), bundle_root):
+    raw_src = raw_dir.resolve() if raw_dir is not None else None
+    capture_src = raw_src.parent / f"{raw_src.name}.capture" if raw_src is not None else None
+    include_capture = (
+        redaction == "private"
+        and capture_src is not None
+        and _records_reference_root(records, capture_src)
+    )
+    if raw_src is not None and _paths_nest_or_equal(raw_src, bundle_root):
         raise BenchEvalError(
             "bundle output_dir must not equal or nest under/inside raw_dir "
-            f"(raw_dir={raw_dir.resolve()}, output_dir={bundle_root})",
+            f"(raw_dir={raw_src}, output_dir={bundle_root})",
+        )
+    if include_capture and _paths_nest_or_equal(capture_src, bundle_root):
+        raise BenchEvalError(
+            "bundle output_dir must not equal or nest under/inside the agent capture tree "
+            f"(capture_dir={capture_src}, output_dir={bundle_root})",
         )
     if bundle_root.exists():
         if not bundle_root.is_dir():
@@ -220,15 +306,23 @@ def export_run_bundle(
             f"cannot create bundle output directory {bundle_root}: {e}",
         ) from e
 
+    bundle_records = records
+    if redaction == "private" and raw_src is not None and capture_src is not None:
+        bundle_records = _relocate_private_artifact_paths(
+            records,
+            raw_root=raw_src,
+            capture_root=capture_src,
+        )
+
     evidence_copy = bundle_root / "evidence.jsonl"
     _write_evidence_copy(
-        records,
+        bundle_records,
         evidence_copy,
         redaction=redaction,
         extra_secrets=public_secrets,
     )
 
-    report_md = generate_evidence_report_with_runtime_panel(records)
+    report_md = generate_evidence_report_with_runtime_panel(bundle_records)
     if redaction == "public":
         report_md = _redact_compare_markdown(report_md, extra_secrets=public_secrets)
     (bundle_root / "report.md").write_text(report_md, encoding="utf-8")
@@ -243,7 +337,7 @@ def export_run_bundle(
         f"- Generated: {datetime.now(tz=UTC).isoformat()}",
         "",
     ]
-    axes = _run_axes(records)
+    axes = _run_axes(bundle_records)
     if redaction == "public":
         axes = {
             key: (
@@ -258,7 +352,7 @@ def export_run_bundle(
             summary_lines.append(f"- {key}: `{val}`")
         summary_lines.append("")
 
-    if raw_dir is not None:
+    if raw_src is not None:
         if redaction == "public":
             summary_lines.append(
                 "- Raw artifacts: omitted in `public` redaction mode "
@@ -266,18 +360,26 @@ def export_run_bundle(
             )
             summary_lines.append("")
         else:
-            src = raw_dir.resolve()
-            if src.is_dir():
-                skipped_raw = _copy_raw_tree(src, bundle_root / "raw")
-                if skipped_raw:
-                    (bundle_root / "raw_skipped.txt").write_text(
-                        "\n".join(skipped_raw) + "\n",
-                        encoding="utf-8",
+            skipped_raw: list[str] = []
+            if raw_src.is_dir():
+                skipped_raw.extend(_copy_raw_tree(raw_src, bundle_root / "raw"))
+            if include_capture and (capture_src.exists() or capture_src.is_symlink()):
+                skipped_raw.extend(
+                    f"capture/{entry}"
+                    for entry in _copy_raw_tree(
+                        capture_src,
+                        bundle_root / "capture",
                     )
-                    summary_lines.append(
-                        f"- Raw artifacts skipped: {len(skipped_raw)} (see `raw_skipped.txt`).",
-                    )
-                    summary_lines.append("")
+                )
+            if skipped_raw:
+                (bundle_root / "raw_skipped.txt").write_text(
+                    "\n".join(skipped_raw) + "\n",
+                    encoding="utf-8",
+                )
+                summary_lines.append(
+                    f"- Raw artifacts skipped: {len(skipped_raw)} (see `raw_skipped.txt`).",
+                )
+                summary_lines.append("")
 
     summary_text = "\n".join(summary_lines) + "\n"
     if redaction == "public":
