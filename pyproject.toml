@@ -30,11 +30,15 @@ bencheval = "bencheval.cli:main"
 eval = [
     # >=0.3.252: first release allowing click>=8.3.3 (GHSA/PYSEC click fix; older
     # inspect-ai caps click<8.2.2, which pins us to a vulnerable click).
-    "inspect-ai>=0.3.252",
-    "inspect-evals",
+    # Bounded: tested resolution is 0.3.x (uv.lock); 0.x minors may break.
+    "inspect-ai>=0.3.252,<0.4.0",
+    # Bounded: tested resolution is 0.8.x (uv.lock); 0.x minors may break.
+    "inspect-evals>=0.8.0,<0.9.0",
     # >=0.5.0: drops the litellm<1.82.7 pin so litellm can move past its GHSA fixes.
-    "inspect-harbor>=0.5.0",
-    "inspect-swe",
+    # Bounded: tested resolution is 0.7.x (uv.lock); 0.x minors may break.
+    "inspect-harbor>=0.5.0,<0.8.0",
+    # Bounded: tested resolution is 0.2.x (uv.lock); 0.x minors may break.
+    "inspect-swe>=0.2.47,<0.3.0",
 ]
 analytics = ["duckdb>=1.2.0", "pyarrow>=18.0.0"]
 
