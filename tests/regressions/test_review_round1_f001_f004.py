@@ -1,5 +1,21 @@
 """Review round 1 regressions: F001–F004 (auth bases, passed status, preflight, artifacts)."""
 
+# SUBSTITUTE_JUSTIFICATION
+# - substitute: `_OkHandler` + local `HTTPServer` on 127.0.0.1 (three
+#   `test_verify_auth_*` tests in this file)
+# - replaces: the real provider/auth HTTP endpoints probed by
+#   `scripts/verify_auth.sh`
+# - necessity: the assertions target the script's routing, key-masking, and
+#   base-URL selection behavior; probing the real provider endpoints is an
+#   outward-facing, credentialed network call that cannot run deterministically
+#   (or safely, with dummy keys) in a test environment
+# - real-option: running verify_auth.sh against the real provider with live
+#   credentials — operator-only, non-deterministic, and would consume quota
+# - proof-limit: proves script routing/masking behavior only; it does not prove
+#   real provider authentication, quota, or reachability
+# - real-proof: BLOCKED — live provider verification on the dev-box pilot
+#   (operator credential provisioning); these passes are diagnostic only
+
 from __future__ import annotations
 
 import os

@@ -24,11 +24,13 @@ SUBSTITUTE_JUSTIFICATION
 
 from __future__ import annotations
 
+import fcntl
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -590,17 +592,28 @@ def _pilot_artifacts() -> set[Path]:
 
 @pytest.fixture
 def pilot_workspace(tmp_path: Path) -> Path:
-    before = _pilot_artifacts()
-    shim_dir = tmp_path / "shim"
-    real_uv = shutil.which("uv")
-    assert real_uv, "uv must be on PATH to run the pilot regression test"
-    _write_shim_dir(shim_dir, real_uv=real_uv)
-    yield shim_dir
-    for path in _pilot_artifacts() - before:
-        if path.is_dir():
-            shutil.rmtree(path, ignore_errors=True)
-        else:
-            path.unlink(missing_ok=True)
+    # These tests run the real pilot script against the repository-global
+    # results/ tree; serialize across concurrent pytest processes with an
+    # interprocess lock so same-second pilot stamps cannot collide. The lock
+    # lives outside the checkout — it is coordination, never repository content.
+    lock_path = Path(tempfile.gettempdir()) / "bencheval-pilot-test.lock"
+    lock_fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o644)
+    fcntl.flock(lock_fd, fcntl.LOCK_EX)
+    try:
+        before = _pilot_artifacts()
+        shim_dir = tmp_path / "shim"
+        real_uv = shutil.which("uv")
+        assert real_uv, "uv must be on PATH to run the pilot regression test"
+        _write_shim_dir(shim_dir, real_uv=real_uv)
+        yield shim_dir
+        for path in _pilot_artifacts() - before:
+            if path.is_dir():
+                shutil.rmtree(path, ignore_errors=True)
+            else:
+                path.unlink(missing_ok=True)
+    finally:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        os.close(lock_fd)
 
 
 def _run_pilot(shim_dir: Path, *, scenario: str) -> subprocess.CompletedProcess[str]:

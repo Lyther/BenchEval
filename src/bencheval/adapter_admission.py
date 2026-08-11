@@ -62,7 +62,11 @@ def assess_terminal_bench_harbor_admission(
     *,
     repo_root: Path | None = None,
 ) -> AdapterAdmissionReport:
-    """Evidence-backed admission for P2 Harbor adapter (smoke slice + manifest)."""
+    """Tier-0 software wiring for the Harbor adapter (catalog + slice + modules).
+
+    ``passed`` means catalog wiring, slice, and module files exist — not native
+    CLI availability, score parsing, or a live evidence row. Not Tier-1 admission.
+    """
     root = repo_root or _repo_root()
     catalog = load_benchmark_catalog()
     benchmark = next((b for b in catalog.benchmarks if b.id == "terminal-bench"), None)
@@ -78,6 +82,13 @@ def assess_terminal_bench_harbor_admission(
             "catalog_adapter_status",
             benchmark.adapter_status == "manifest_available",
             f"status={benchmark.adapter_status} (flip YAML after artifact gates pass)",
+        ),
+    )
+    checks.append(
+        (
+            "catalog_executable",
+            bool(benchmark.executable),
+            f"executable={benchmark.executable}",
         ),
     )
 
@@ -105,6 +116,8 @@ def assess_terminal_bench_harbor_admission(
     )
 
     artifact_checks = (
+        "catalog_adapter_status",
+        "catalog_executable",
         "typed_slice_smoke_5",
         "harbor_adapter_module",
         "control_plane_executor",
@@ -129,7 +142,11 @@ def assess_swebench_verified_admission(
     *,
     repo_root: Path | None = None,
 ) -> AdapterAdmissionReport:
-    """Evidence-backed admission for P4 native SWE adapter (smoke slice + module)."""
+    """Tier-0 software wiring for the native SWE adapter (catalog + slice + modules).
+
+    ``passed`` requires ``executable: true`` in the catalog — demoted adapters
+    fail closed. Not Tier-1 admission.
+    """
     root = repo_root or _repo_root()
     catalog = load_benchmark_catalog()
     benchmark = next((b for b in catalog.benchmarks if b.id == "swe-bench-verified"), None)
@@ -145,6 +162,13 @@ def assess_swebench_verified_admission(
             "catalog_adapter_status",
             benchmark.adapter_status == "manifest_available",
             f"status={benchmark.adapter_status}",
+        ),
+    )
+    checks.append(
+        (
+            "catalog_executable",
+            bool(benchmark.executable),
+            f"executable={benchmark.executable}",
         ),
     )
 
@@ -175,6 +199,8 @@ def assess_swebench_verified_admission(
     )
 
     artifact_checks = (
+        "catalog_adapter_status",
+        "catalog_executable",
         "typed_slice_smoke_10",
         "swebench_adapter_module",
         "control_plane_executor",
@@ -199,7 +225,11 @@ def assess_bfcl_v4_admission(
     *,
     repo_root: Path | None = None,
 ) -> AdapterAdmissionReport:
-    """Evidence-backed admission for P5.1 BFCL adapter (smoke slice + module)."""
+    """Tier-0 software wiring for the BFCL adapter (catalog + slice + modules).
+
+    ``passed`` requires ``executable: true`` in the catalog — demoted adapters
+    fail closed. Not Tier-1 admission.
+    """
     root = repo_root or _repo_root()
     catalog = load_benchmark_catalog()
     benchmark = next((b for b in catalog.benchmarks if b.id == "bfcl-v4"), None)
@@ -215,6 +245,13 @@ def assess_bfcl_v4_admission(
             "catalog_adapter_status",
             benchmark.adapter_status == "manifest_available",
             f"status={benchmark.adapter_status} (flip YAML after artifact gates)",
+        ),
+    )
+    checks.append(
+        (
+            "catalog_executable",
+            bool(benchmark.executable),
+            f"executable={benchmark.executable}",
         ),
     )
 
@@ -242,6 +279,8 @@ def assess_bfcl_v4_admission(
     )
 
     artifact_checks = (
+        "catalog_adapter_status",
+        "catalog_executable",
         "typed_slice_smoke_5",
         "bfcl_adapter_module",
         "control_plane_executor",

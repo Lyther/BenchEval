@@ -9,6 +9,7 @@ construction-time guard rejects any field whose value looks like a credential.
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -109,14 +110,22 @@ def default_runs_manifest_path() -> Path:
 def append_live_run(path: Path | str, record: LiveRunRecord) -> Path:
     """Append ``record`` as one JSON line to ``path`` (single-threaded).
 
-    Creates parent directories as needed. Returns the resolved target path.
+    The leaf is opened with ``O_NOFOLLOW`` so a swapped symlink cannot
+    redirect the append; the lexical (unresolved) path is used on purpose,
+    since resolving would follow that symlink. Within the documented
+    single-threaded scope this keeps the registry bound to its own file.
     """
-    target = Path(path).resolve()
+    target = Path(os.path.abspath(Path(path).expanduser()))
     if target.exists() and not target.is_file():
         raise LiveRunManifestError(f"path exists but is not a regular file: {target}")
     target.parent.mkdir(parents=True, exist_ok=True)
     line = record.model_dump_json() + "\n"
-    with target.open("a", encoding="utf-8") as handle:
+    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(target, flags, 0o600)
+    except OSError as e:
+        raise LiveRunManifestError(f"cannot append runs manifest {target}: {e}") from e
+    with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
         handle.write(line)
     return target
 

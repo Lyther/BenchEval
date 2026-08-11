@@ -146,7 +146,7 @@ def run_cybergym_instance(
         instance_id=instance_id,
         artifacts_dir=instance_dir,
     )
-    wall = timeout_sec if timeout_sec is not None else max(plan.max_wall_clock_sec, 60)
+    wall = timeout_sec if timeout_sec is not None else max(1, plan.max_wall_clock_sec_per_instance)
     root = _cybergym_root()
     has_pkg = (root / "src" / "cybergym").is_dir() or (root / "cybergym").is_dir()
     cwd = root if has_pkg else repo_root
@@ -163,7 +163,10 @@ def run_cybergym_instance(
         try:
             parsed = json.loads(verdict.read_text(encoding="utf-8"))
             if isinstance(parsed, dict) and "primary_pass" in parsed:
-                primary_pass = bool(parsed["primary_pass"])
+                value = parsed["primary_pass"]
+                # Fail closed: only an actual JSON boolean is scoring authority;
+                # strings like "false" must never coerce to a pass.
+                primary_pass = value if isinstance(value, bool) else False
         except json.JSONDecodeError:
             primary_pass = False
     if cli.returncode != 0:

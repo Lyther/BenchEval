@@ -20,6 +20,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ok", choices=("true", "false"), required=True)
     parser.add_argument("--doctor-backend", default=None)
     parser.add_argument("--reason", action="append", default=[])
+    parser.add_argument("--visibility", choices=("private", "public"), default="private")
     args = parser.parse_args(argv)
     path = write_preflight_report(
         output_path=Path(args.output),
@@ -30,6 +31,7 @@ def main(argv: list[str] | None = None) -> int:
         ok=args.ok == "true",
         doctor_backend=args.doctor_backend,
         reasons=list(args.reason),
+        visibility=args.visibility,
     )
     sys.stdout.write(f"{path}\n")
     return 0

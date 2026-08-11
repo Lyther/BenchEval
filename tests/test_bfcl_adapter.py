@@ -19,9 +19,12 @@ from bencheval.control_plane_executor import execute_control_plane_run
 from bencheval.exceptions import BenchEvalError
 
 
-def test_bfcl_admission_passes() -> None:
+def test_bfcl_admission_fails_closed_while_demoted() -> None:
+    # Round-1 F008 contract: BFCL is demoted (executable: false) until official
+    # evaluate is wired, so the Tier-0 wiring gate must not report passed.
     report = assess_bfcl_v4_admission()
-    assert report.passed is True
+    assert report.passed is False
+    assert {name: ok for name, ok, _ in report.checks}.get("catalog_executable") is False
 
 
 def test_build_bfcl_run_command() -> None:

@@ -18,6 +18,11 @@ from bencheval.domain import FailureLabel, RunPlan
 from bencheval.exceptions import AdapterFailureError, BenchEvalError
 from bencheval.path_safety import validate_control_plane_instance_id
 from bencheval.provider_registry import resolve_openai_compatible_launch
+from bencheval.run_isolation import (
+    dir_identity_error,
+    open_owned_dir_fd,
+    write_text_at_exclusive,
+)
 
 GPQA_ADAPTER_ID = "gpqa"
 _INSPECT_TASK = "inspect_evals/gpqa_diamond"
@@ -459,142 +464,175 @@ def run_gpqa_slice(
         validate_control_plane_instance_id(inst.instance_id)
     log_dir = artifacts_dir / "inspect-logs"
     log_dir.mkdir(parents=True, exist_ok=True)
-    command = build_gpqa_run_command(
-        plan=plan,
-        sample_limit=len(plan.instances),
-        log_dir=log_dir,
-    )
-    effective_model = command[command.index("--model") + 1]
-    launch = resolve_openai_compatible_launch(
-        plan.provider_id,
-        require_api_key=process_runner is None,
-    )
-    wall = timeout_sec if timeout_sec is not None else max(1, plan.max_wall_clock_sec)
-    runner = process_runner or _default_process_runner
-    cli = runner(command, cwd=repo_root, timeout_sec=wall, env=launch.environment)
+    # Pin the artifacts directory inode before launching Inspect: every
+    # BenchEval-owned write below is anchored to this descriptor, and the
+    # post-run identity check proves the path still names the pinned inode.
+    artifacts_fd = open_owned_dir_fd(artifacts_dir, role="gpqa artifacts directory")
+    try:
+        command = build_gpqa_run_command(
+            plan=plan,
+            sample_limit=len(plan.instances),
+            log_dir=log_dir,
+        )
+        effective_model = command[command.index("--model") + 1]
+        launch = resolve_openai_compatible_launch(
+            plan.provider_id,
+            require_api_key=process_runner is None,
+        )
+        # Aggregate harness: one Inspect eval covers every sample in a single
+        # subprocess, so the run-total envelope is the only honest bound; no
+        # per-instance limit is enforceable inside the aggregate process.
+        wall = timeout_sec if timeout_sec is not None else max(1, plan.max_wall_clock_sec)
+        runner = process_runner or _default_process_runner
+        cli = runner(command, cwd=repo_root, timeout_sec=wall, env=launch.environment)
 
-    stdout_file = artifacts_dir / "stdout.log"
-    stderr_file = artifacts_dir / "stderr.log"
-    stdout_file.write_text(cli.stdout, encoding="utf-8")
-    stderr_file.write_text(cli.stderr, encoding="utf-8")
-    summary_path = artifacts_dir / "gpqa_summary.json"
+        artifacts_identity_error = dir_identity_error(
+            artifacts_fd,
+            artifacts_dir,
+            role="gpqa artifacts directory",
+        )
+        if artifacts_identity_error is not None:
+            # The launched subprocess (handed --log-dir under this tree)
+            # swapped the approved directory mid-run; fail closed instead of
+            # publishing attacker-controlled content.
+            raise AdapterFailureError(
+                artifacts_identity_error,
+                failure_label="evidence_corrupt",
+                latency_sec=cli.latency_sec,
+                adapter_metadata={"gpqa_command": " ".join(cli.command)},
+            )
 
-    official = (
-        parse_gpqa_official_score(
-            log_dir,
-            expected_model=effective_model,
-            stdout=cli.stdout,
-            stderr=cli.stderr,
+        stdout_file = artifacts_dir / "stdout.log"
+        stderr_file = artifacts_dir / "stderr.log"
+        # Anchored, no-follow, exclusive recreates: a symlink or hard link
+        # planted at these paths by the subprocess is unlinked (never opened,
+        # truncated, or followed) and replaced by a fresh regular file.
+        write_text_at_exclusive(artifacts_fd, "stdout.log", cli.stdout)
+        write_text_at_exclusive(artifacts_fd, "stderr.log", cli.stderr)
+
+        official = (
+            parse_gpqa_official_score(
+                log_dir,
+                expected_model=effective_model,
+                stdout=cli.stdout,
+                stderr=cli.stderr,
+            )
+            if cli.returncode == 0
+            else None
         )
-        if cli.returncode == 0
-        else None
-    )
-    if cli.returncode != 0:
-        primary_pass = False
-        partial_score = 0.0
-        counts = False
-        failure: FailureLabel | None = "harness_failure"
-    elif official is None:
-        primary_pass = False
-        partial_score = 0.0
-        counts = False
-        failure = "runtime_output_unparseable"
-    else:
-        partial_score = official.accuracy
-        requested = len(plan.instances)
-        complete = (
-            official.total is not None
-            and official.correct is not None
-            and official.total == requested
-            and official.correct <= official.total
-        )
-        primary_pass = bool(
-            complete and official.accuracy >= 1.0 and official.correct == official.total,
-        )
-        counts = complete
-        if not complete:
-            failure = "runtime_output_unparseable"
+        if cli.returncode != 0:
             primary_pass = False
+            partial_score = 0.0
+            counts = False
+            failure: FailureLabel | None = "harness_failure"
+        elif official is None:
+            primary_pass = False
+            partial_score = 0.0
+            counts = False
+            failure = "runtime_output_unparseable"
         else:
-            failure = None if primary_pass else "model_wrong_solution"
+            partial_score = official.accuracy
+            requested = len(plan.instances)
+            complete = (
+                official.total is not None
+                and official.correct is not None
+                and official.total == requested
+                and official.correct <= official.total
+            )
+            primary_pass = bool(
+                complete and official.accuracy >= 1.0 and official.correct == official.total,
+            )
+            counts = complete
+            if not complete:
+                failure = "runtime_output_unparseable"
+                primary_pass = False
+            else:
+                failure = None if primary_pass else "model_wrong_solution"
 
-    summary_path.write_text(
-        json.dumps(
-            {
-                "returncode": cli.returncode,
-                "limit": len(plan.instances),
-                "official_score": (
-                    None
-                    if official is None
-                    else {
-                        "accuracy": official.accuracy,
-                        "correct": official.correct,
-                        "total": official.total,
-                        "source": official.source,
-                    }
-                ),
-                "primary_pass": primary_pass,
-                "partial_score": partial_score,
-                "counts_toward_pass_at_k": counts,
-            },
-            indent=2,
+        write_text_at_exclusive(
+            artifacts_fd,
+            "gpqa_summary.json",
+            json.dumps(
+                {
+                    "returncode": cli.returncode,
+                    "limit": len(plan.instances),
+                    "official_score": (
+                        None
+                        if official is None
+                        else {
+                            "accuracy": official.accuracy,
+                            "correct": official.correct,
+                            "total": official.total,
+                            "source": official.source,
+                        }
+                    ),
+                    "primary_pass": primary_pass,
+                    "partial_score": partial_score,
+                    "counts_toward_pass_at_k": counts,
+                },
+                indent=2,
+            )
+            + "\n",
         )
-        + "\n",
-        encoding="utf-8",
-    )
-    harness_version = _inspect_evals_harness_version()
-    meta = {
-        "adapter_id": GPQA_ADAPTER_ID,
-        "harness_kind": "inspect-evals",
-        "gpqa_command": " ".join(cli.command),
-        "interpretation": "adapter_smoke",
-        "score_source": official.source if official is not None else "missing",
-        "evidence_shape": "aggregate_slice",
-        "effective_model_id": effective_model,
-        "provider_config_hash": launch.config_hash,
-    }
-    if harness_version is not None:
-        meta["harness_version"] = harness_version
-    shared_native: dict[str, object] = {
-        "returncode": cli.returncode,
-        "inspect_task": _INSPECT_TASK,
-        "effective_model_id": effective_model,
-        "planned_sample_slots": len(plan.instances),
-    }
-    if official is not None:
-        shared_native.update(
-            {
-                "accuracy": official.accuracy,
-                "correct": official.correct,
-                "total": official.total,
-                "score_source": official.source,
-            },
-        )
-    # Aggregate official metrics only: one evidence row (not N fake per-sample passes).
-    aggregate_id = f"{plan.benchmark_id}-{plan.slice_id}-aggregate"
-    validate_control_plane_instance_id(aggregate_id)
-    # Summary alone is not a native verifier artifact — only Inspect log paths stamp.
-    verifier_path = official.source if official is not None else None
-    return [
-        GpqaInstanceOutcome(
-            instance_id=aggregate_id,
-            primary_pass=primary_pass,
-            partial_score=partial_score,
-            cost_usd=0.0,
-            latency_sec=cli.latency_sec,
-            native_score=shared_native,
-            failure_class=failure,
-            stdout_path=str(stdout_file.resolve()),
-            stderr_path=str(stderr_file.resolve()),
-            verifier_log_path=verifier_path,
-            adapter_metadata={
-                **meta,
-                "cost_cap": "unenforced_estimate",
-                "reported_cost_usd": "unavailable",
-            },
-            counts_toward_pass_at_k=counts,
-        ),
-    ]
+        harness_version = _inspect_evals_harness_version()
+        meta = {
+            "adapter_id": GPQA_ADAPTER_ID,
+            "harness_kind": "inspect-evals",
+            "gpqa_command": " ".join(cli.command),
+            "interpretation": "adapter_smoke",
+            "score_source": official.source if official is not None else "missing",
+            "evidence_shape": "aggregate_slice",
+            "effective_model_id": effective_model,
+            "provider_config_hash": launch.config_hash,
+            # One aggregate subprocess: per-instance wall is not enforceable.
+            "per_instance_wall_enforcement": "unavailable_aggregate_harness",
+        }
+        if harness_version is not None:
+            meta["harness_version"] = harness_version
+        shared_native: dict[str, object] = {
+            "returncode": cli.returncode,
+            "inspect_task": _INSPECT_TASK,
+            "effective_model_id": effective_model,
+            "planned_sample_slots": len(plan.instances),
+        }
+        if official is not None:
+            shared_native.update(
+                {
+                    "accuracy": official.accuracy,
+                    "correct": official.correct,
+                    "total": official.total,
+                    "score_source": official.source,
+                },
+            )
+        # Aggregate official metrics only: one evidence row (not N fake per-sample passes).
+        # cost_usd=0.0 below means "no provider metering captured", not zero spend.
+        shared_native["cost_basis"] = "unmeasured_no_provider_metering"
+        aggregate_id = f"{plan.benchmark_id}-{plan.slice_id}-aggregate"
+        validate_control_plane_instance_id(aggregate_id)
+        # Summary alone is not a native verifier artifact — only Inspect log paths stamp.
+        verifier_path = official.source if official is not None else None
+        return [
+            GpqaInstanceOutcome(
+                instance_id=aggregate_id,
+                primary_pass=primary_pass,
+                partial_score=partial_score,
+                cost_usd=0.0,
+                latency_sec=cli.latency_sec,
+                native_score=shared_native,
+                failure_class=failure,
+                stdout_path=str(stdout_file.resolve()),
+                stderr_path=str(stderr_file.resolve()),
+                verifier_log_path=verifier_path,
+                adapter_metadata={
+                    **meta,
+                    "cost_cap": "unenforced_estimate",
+                    "reported_cost_usd": "unavailable",
+                },
+                counts_toward_pass_at_k=counts,
+            ),
+        ]
+    finally:
+        os.close(artifacts_fd)
 
 
 __all__ = [

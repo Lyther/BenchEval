@@ -39,8 +39,7 @@ for diagnostics only and are not part of the minimum proof.
 | Provider env vars | live model calls | `verify_auth.sh` (below) |
 
 ```bash
-uv sync
-uv sync --extra eval          # inspect_ai / harbor extras
+uv sync --dev --extra eval --extra analytics  # Tier-0 gate + live harness dependencies
 ```
 
 Demoted BFCL/SWE diagnostic tooling is not a prerequisite for the minimum pilot.
@@ -159,8 +158,11 @@ What it does, per step:
 - `terminal-bench` lanes (`claude-code`, `codex-cli`): `bencheval doctor
   --backend harbor --model <m> --profile E2` then `bencheval run
   terminal-bench/smoke-5 --runtime <rt> -y`. On doctor fail
-  → preflight record + step fails. On run fail → artifacts emitted, step
-  fails.
+  → preflight record + step fails. On run fail → artifacts emitted and the
+  lane's evidence is still qualified: a nonzero benchmark exit (e.g. a scored
+  model-wrong-solution result) does not fail the step when complete eligible
+  native evidence was produced; the step fails only when the evidence does
+  not qualify.
 - Demoted catalog lanes (`bfcl-v4`, `swe-bench-verified`) are **not** invoked by
   the matrix; CLI `run` refuses them until official evaluate paths are wired.
 - Compare: only when **both** TB lanes produced evidence, runs

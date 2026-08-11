@@ -502,8 +502,7 @@ def run_harbor_dataset_instance(
         if timeout_sec is not None:
             wall = timeout_sec
         else:
-            n = max(len(plan.instances), 1)
-            wall = max(1, plan.max_wall_clock_sec // n)
+            wall = max(1, plan.max_wall_clock_sec_per_instance)
         runner = process_runner or _default_process_runner
         start = time.monotonic()
         try:

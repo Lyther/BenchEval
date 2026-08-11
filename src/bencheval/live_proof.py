@@ -29,7 +29,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from bencheval.domain import VerifierIntegrityLabel
-from bencheval.evidence import EvidenceRecord, eligible_for_pass_at_k, read_evidence_jsonl
+from bencheval.evidence import (
+    INFRASTRUCTURE_FAILURE_CLASSES,
+    EvidenceRecord,
+    eligible_for_pass_at_k,
+    read_evidence_jsonl,
+)
 from bencheval.exceptions import BenchEvalError
 from bencheval.paths import repo_root as default_repo_root
 from bencheval.provenance_gates import (
@@ -38,36 +43,8 @@ from bencheval.provenance_gates import (
     is_provisional_benchmark_version,
 )
 
-# Failure classes that prove the attempt never produced a native harness/scorer
-# result: launch/setup/auth/permission failures, infra stalls and timeouts,
-# adapter/harness errors, and policy interruptions (see the FailureLabel
-# taxonomy in domain.py). They never count as native-harness success.
-INFRASTRUCTURE_FAILURE_CLASSES: frozenset[str] = frozenset(
-    {
-        "harness_failure",
-        "runtime_launch_failure",
-        "runtime_auth_failure",
-        "runtime_permission_block",
-        "runtime_output_unparseable",
-        "runtime_context_overflow",
-        "runtime_tool_failure",
-        "runtime_config_drift",
-        "runtime_budget_exceeded",
-        "runtime_output_cap_reached",
-        "runtime_no_progress_stall",
-        "runtime_wall_clock_timeout",
-        "materialization_failure",
-        "adapter_error",
-        "budget_exceeded",
-        "operator_interrupted",
-        "interrupted_by_harness",
-        "config_failed",
-        "remote_infra_failure",
-        "evidence_corrupt",
-        "duplicate_launch",
-    }
-)
-
+# Canonical eligibility taxonomy lives in bencheval.evidence (single source of
+# truth); it is re-exported here for live-proof callers.
 # VerifierIntegrityLabel values that prove an official/native scorer judged the
 # attempt. Domain currently defines native | bencheval | unknown; only "native"
 # counts for live proof (there is no separate "official" label).

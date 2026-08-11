@@ -147,8 +147,8 @@ slice:
   instances:
     - django__django-11099
     - sympy__sympy-18087
-  valid_for: ["adapter_validation", "rough_regression"]
-  invalid_for: ["frontier_model_promotion"]
+  valid_for: ["adapter_smoke", "rough_regression"]
+  invalid_for: ["model_comparison"]
 budget:
   max_instances: 10
   max_wall_clock_sec_per_instance: 900
@@ -224,18 +224,36 @@ Deferred / not product: Inspect-as-runtime wrappers. Compatibility shims must be
 
 ## 9. Budget Classes
 
-| Class | Max cost | Max wall time | Max steps | Notes |
-|-------|---------:|--------------:|----------:|-------|
-| B0 | $0.05 | 60s | 4 | E0 structured/tool tasks |
-| B1 | $0.25 | 180s | 10 | Simple coding |
-| B2 | $2.00 | 300s | 20 | Agentic / defensive Core upper bound |
-| B3 | explicit | explicit | explicit | Stretch only |
+| Class | Max cost (run total) | Max wall time (per instance) | Notes |
+|-------|---------:|--------------:|-------|
+| B0 | $0.05 | 60s | E0 structured/tool tasks |
+| B1 | $0.25 | 180s | Simple coding |
+| B2 | $2.00 | 300s | Agentic / defensive Core upper bound |
+| B3 | explicit | explicit | Stretch only |
 
-Exceeding envelope → failure label `budget_exceeded` (distinct from `wrong_solution`).
+Class values are classification ceilings, and the slice's own envelope is always
+the effective cap (bands mirror the class defaults, so a slice never classifies
+into a class whose ceiling it exceeds; B3's zero defaults declare no standard
+envelope). Per-instance wall-clock and run-total wall-clock are **separate
+`RunPlan` fields**: `max_wall_clock_sec_per_instance` bounds each attempt and
+`max_wall_clock_sec` bounds the whole run (`per-instance × instances`); adapters
+must never derive one from the other. Serialized schema-"0.3" plans written
+before the per-instance field existed derive it from the run total on load (the
+pre-field contract allowed one attempt to consume the whole envelope). The
+aggregate model-only harnesses (GPQA, HLE) execute every sample in one
+subprocess chain and are therefore bounded by the **run-total** envelope;
+per-instance wall is not enforceable inside an aggregate process and evidence
+records this as `per_instance_wall_enforcement=unavailable_aggregate_harness`.
+Observed steps are recorded retrospectively
+in evidence only — no max-step envelope is claimed or enforced. For the aggregate
+model-only adapters (GPQA, HLE, BFCL) no provider metering is captured: the cost
+envelope is an unenforced planning estimate and `cost_usd=0.0` in evidence means
+*unmeasured*, not zero spend. Exceeding an enforced envelope → failure label
+`budget_exceeded` (distinct from `wrong_solution`).
 
 ## 10. Failure Taxonomy (must be distinguishable)
 
-`harness_failure` · `runtime_launch_failure` · `runtime_auth_failure` · `runtime_permission_block` · `runtime_output_unparseable` · `runtime_context_overflow` · `runtime_tool_failure` · `runtime_config_drift` · `runtime_budget_exceeded` · `materialization_failure` · `model_wrong_solution` · `adapter_error` · `model_output_invalid` · `budget_exceeded`.
+`harness_failure` · `runtime_launch_failure` · `runtime_auth_failure` · `runtime_permission_block` · `runtime_output_unparseable` · `runtime_context_overflow` · `runtime_tool_failure` · `runtime_config_drift` · `runtime_budget_exceeded` · `runtime_output_cap_reached` · `runtime_no_progress_stall` · `runtime_wall_clock_timeout` · `materialization_failure` · `model_wrong_solution` · `model_output_invalid` · `adapter_error` · `budget_exceeded` · `wrong_solution` · `operator_interrupted` · `interrupted_by_harness` · `config_failed` · `remote_infra_failure` · `evidence_corrupt` · `duplicate_launch`. (Canonical source: `FailureLabel` in `domain.py`.)
 
 Preflight/infrastructure failures **abort without evidence**. Post-preflight adapter failures write `EvidenceRecord` with `primary_pass=false` and the relevant failure label. Verifier remains scoring authority when a candidate artifact exists.
 
@@ -312,6 +330,8 @@ A report cannot claim model/runtime superiority unless: benchmark id identical; 
 | Runtime / agent / provider | `runtime_registry.py`, `agent_registry.py`, `provider_registry.py` | Admitted YAML under `config/{runtimes,agents,providers}/`. |
 | Plan (phase 1) | `benchmark_plan.py` | `RunPlan`; runtime XOR agent; provider default `bytellm`. |
 | Doctor | `doctor.py` | Preflight; never prints secrets. |
+| Structured preflight | `preflight_report.py`, `scripts/write_preflight.py` | `preflight_v1` artifacts; `private`/`public` visibility modes. |
+| Redaction | `redaction.py` | Shared fail-closed scrub pipeline (strings, JSON values/keys, env secrets) used by public bundles and public preflight. |
 | Execute (phase 2) | `control_plane_executor.py` | Dispatches to product adapters. |
 | Adapters | `terminal_bench_harbor.py`, `gpqa_adapter.py`, `hle_adapter.py`, `external_agent_adapter.py` | Executable TB/GPQA/HLE paths; SWE/BFCL diagnostic modules are retained but demoted. |
 | Evidence | `evidence.py` | Additive agent, provider launch, and judge-model provenance. |

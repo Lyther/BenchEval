@@ -6,10 +6,12 @@ import json
 import socket
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 from pydantic import JsonValue
 
 from bencheval.exceptions import BenchEvalError
+from bencheval.redaction import env_secret_values, redact_string, sanitize_json_value
 
 
 def write_preflight_report(
@@ -23,24 +25,52 @@ def write_preflight_report(
     doctor_backend: str | None = None,
     reasons: list[str] | None = None,
     extra: dict[str, JsonValue] | None = None,
+    visibility: Literal["private", "public"] = "private",
 ) -> Path:
-    """Write JSON preflight artifact (pass or blocked)."""
+    """Write JSON preflight artifact (pass or blocked).
+
+    ``visibility="private"`` (default) keeps local diagnostic detail, including
+    the hostname; treat the file as operator-local. ``visibility="public"``
+    omits the hostname and scrubs every string-bearing field — top-level
+    identifiers, ``reasons``, and ``extra`` values *and* mapping keys — with
+    the same fail-closed pipeline as public run bundles, so the artifact is
+    safe to share.
+    """
     output_path = output_path.resolve()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise BenchEvalError(
+            f"cannot create preflight report parent {output_path.parent}: {e}",
+        ) from e
+    secrets = env_secret_values()
+    public = visibility == "public"
+    if visibility not in ("private", "public"):
+        raise BenchEvalError(f"unknown preflight visibility: {visibility!r}")
+
+    def scrub(text: str) -> str:
+        return redact_string(text, extra_secrets=secrets) if public else text
+
+    payload: dict[str, JsonValue] = {
         "schema_version": "preflight_v1",
         "generated_at": datetime.now(tz=UTC).isoformat(),
-        "host": socket.gethostname(),
-        "benchmark_id": benchmark_id,
-        "slice_id": slice_id,
-        "runtime_id": runtime_id,
-        "model_id": model_id,
+        "visibility": visibility,
+        "benchmark_id": scrub(benchmark_id),
+        "slice_id": scrub(slice_id),
+        "runtime_id": scrub(runtime_id),
+        "model_id": scrub(model_id),
         "ok": ok,
-        "doctor_backend": doctor_backend,
-        "reasons": list(reasons or []),
-        "extra": extra or {},
+        "doctor_backend": scrub(doctor_backend) if doctor_backend is not None else None,
+        "reasons": [redact_string(r, extra_secrets=secrets) for r in (reasons or [])],
+        "extra": sanitize_json_value(extra or {}, extra_secrets=secrets, sanitize_keys=True),
     }
-    output_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    if not public:
+        # Operator-local diagnostics only; the key is absent in public mode.
+        payload["host"] = socket.gethostname()
+    try:
+        output_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    except OSError as e:
+        raise BenchEvalError(f"cannot write preflight report {output_path}: {e}") from e
     return output_path
 
 

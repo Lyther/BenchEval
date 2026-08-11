@@ -17,8 +17,15 @@ useDefault = true
 description = "Fake secret-shaped values used only as redaction test fixtures."
 regexTarget = "match"
 regexes = [
-  # tests/test_replay.py — redaction test secret marker (_SECRET_MARKER)
+  # tests/test_replay.py — redaction test secret marker (_SECRET_MARKER);
+  # the file exists in git history and gitleaks scans history, keep this entry
   '''sk-abcd1234567890efgh''',
   # tests/test_live_run_manifest.py — redaction fixtures (`token=sk-...`, `x-sk-...y`)
   '''sk-abcdef123456''',
+  # tests/specs/test_pre_live_correctness_contracts.py — preflight redaction fixture
+  '''sk-abcd1234efgh5678''',
+  # tests/regressions/test_review_h3_pilot_proof.py — dummy provider key fixture
+  '''bencheval-h3-test-dummy-key''',
+  # tests/regressions/test_review_h1_public_redaction.py — truncated fake RSA fixture
+  '''MIIBogIBAAJBAK7plusmaterial''',
 ]

@@ -301,11 +301,7 @@ def run_bfcl_instance(
         instance_id=instance_id,
         artifacts_dir=instance_dir,
     )
-    if timeout_sec is not None:
-        wall = timeout_sec
-    else:
-        n = max(len(plan.instances), 1)
-        wall = max(1, plan.max_wall_clock_sec // n)
+    wall = timeout_sec if timeout_sec is not None else max(1, plan.max_wall_clock_sec_per_instance)
     runner = process_runner or _default_process_runner
     cli = runner(command, cwd=repo_root, timeout_sec=wall)
     return parse_bfcl_instance_outcome(

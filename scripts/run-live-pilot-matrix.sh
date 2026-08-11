@@ -98,6 +98,11 @@ start_anthropic_role_shim() {
     uv run --no-sync python -m bencheval.anthropic_role_shim
     --host "${host}" --port "${port}" --upstream "${upstream}"
   )
+  if [[ ${host} != "127.0.0.1" && ${host} != "localhost" && ${host} != "::1" ]]; then
+    # Deliberate remote bind (Docker host gateway) so benchmark containers can
+    # reach the shim; the shim refuses non-loopback binds without this opt-in.
+    shim_cmd+=(--allow-remote-bind)
+  fi
   if [[ -n ${BENCHEVAL_SHIM_AUTH_TOKEN_ENV:-} ]]; then
     if [[ -z ${BENCHEVAL_SHIM_INBOUND_TOKEN:-} ]]; then
       BENCHEVAL_SHIM_INBOUND_TOKEN="$(openssl rand -hex 24)"

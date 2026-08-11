@@ -13,14 +13,15 @@ SUBSTITUTE_JUSTIFICATION
 - real-proof: BLOCKED on the provisioned dev-box pilot with sanitized effective-launch manifests
 
 SUBSTITUTE_JUSTIFICATION
-- substitute: launch-boundary observers in the SWE-bench, BFCL, and HLE timeout tests
+- substitute: launch-boundary observers in the SWE-bench, BFCL, GPQA, and HLE timeout tests
 - replaces: the external harness process after BenchEval computes its timeout
 - necessity: the contract is the exact timeout supplied to the real subprocess boundary, and the
   observer must stop before executing a benchmark or incurring provider cost
 - real-option: the real harnesses cannot safely guarantee a one- or seven-second budget and would
   add unrelated Docker, dataset, and credential failures after the boundary under test
-- proof-limit: proves BenchEval never grants the harness more wall time than the one-instance plan;
-  it does not prove OS-level termination or cleanup of a hostile real process
+- proof-limit: proves the launch boundary receives the intended envelope (per-instance for the
+  per-instance SWE/BFCL harnesses, run-total for the aggregate GPQA/HLE harnesses); it does not
+  prove OS-level termination or cleanup of a hostile real process
 - real-proof: BLOCKED on disposable dev-box timeout pilots for each official harness
 """
 
@@ -34,6 +35,7 @@ from bencheval.benchmark_plan import plan_control_plane
 from bencheval.bfcl_native_adapter import BfclCliResult, run_bfcl_instance
 from bencheval.control_plane_executor import execute_control_plane_run
 from bencheval.evidence import read_evidence_jsonl
+from bencheval.gpqa_adapter import GpqaCliResult, run_gpqa_slice
 from bencheval.hle_adapter import HleCliResult, run_hle_slice
 from bencheval.swebench_adapter import SwebenchCliResult, run_swebench_instance
 from bencheval.terminal_bench_harbor import HarborCliResult
@@ -131,7 +133,11 @@ def test_swebench_launch_timeout_does_not_exceed_one_instance_budget(
         model_id=_MODEL,
     )
     plan = base_plan.model_copy(
-        update={"instances": base_plan.instances[:1], "max_wall_clock_sec": budget_sec},
+        update={
+            "instances": base_plan.instances[:1],
+            # F005 contract: per-instance budget drives the launch timeout.
+            "max_wall_clock_sec_per_instance": budget_sec,
+        },
     )
     observed: list[int] = []
 
@@ -168,7 +174,11 @@ def test_bfcl_launch_timeout_does_not_exceed_one_instance_budget(
         model_id=_MODEL,
     )
     plan = base_plan.model_copy(
-        update={"instances": base_plan.instances[:1], "max_wall_clock_sec": budget_sec},
+        update={
+            "instances": base_plan.instances[:1],
+            # F005 contract: per-instance budget drives the launch timeout.
+            "max_wall_clock_sec_per_instance": budget_sec,
+        },
     )
     observed: list[int] = []
 
@@ -194,7 +204,7 @@ def test_bfcl_launch_timeout_does_not_exceed_one_instance_budget(
 
 
 @pytest.mark.parametrize("budget_sec", [1, 7])
-def test_hle_launch_timeout_does_not_exceed_one_instance_budget(
+def test_hle_launch_timeout_uses_the_run_total_envelope(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     budget_sec: int,
@@ -213,7 +223,14 @@ def test_hle_launch_timeout_does_not_exceed_one_instance_budget(
         model_id=_MODEL,
     )
     plan = base_plan.model_copy(
-        update={"instances": base_plan.instances[:1], "max_wall_clock_sec": budget_sec},
+        update={
+            "instances": base_plan.instances[:1],
+            # Round-3 F005 contract: the aggregate HLE harness runs prediction
+            # and judging for every sample in one subprocess chain, bounded by
+            # the run-total envelope; no per-instance limit is enforceable
+            # inside the aggregate process.
+            "max_wall_clock_sec": budget_sec,
+        },
     )
     observed: list[int] = []
 
@@ -234,6 +251,48 @@ def test_hle_launch_timeout_does_not_exceed_one_instance_budget(
             repo_root=tmp_path,
             process_runner=observe_launch,
             run_id=f"hle-budget-{budget_sec}",
+        )
+
+    assert observed == [budget_sec]
+
+
+@pytest.mark.parametrize("budget_sec", [1, 7])
+def test_gpqa_launch_timeout_uses_the_run_total_envelope(
+    tmp_path: Path,
+    budget_sec: int,
+) -> None:
+    base_plan = plan_control_plane(
+        benchmark_id="gpqa-diamond",
+        slice_id="smoke",
+        runtime_id=None,
+        model_id=_MODEL,
+    )
+    plan = base_plan.model_copy(
+        update={
+            "instances": base_plan.instances[:1],
+            # Round-3 F005 contract: one Inspect eval covers every sample in a
+            # single aggregate subprocess, bounded by the run-total envelope.
+            "max_wall_clock_sec": budget_sec,
+        },
+    )
+    observed: list[int] = []
+
+    def observe_launch(
+        command: tuple[str, ...],
+        *,
+        cwd: Path | None,
+        timeout_sec: int,
+        env=None,
+    ) -> GpqaCliResult:
+        observed.append(timeout_sec)
+        raise _LaunchObserved
+
+    with pytest.raises(_LaunchObserved):
+        run_gpqa_slice(
+            plan=plan,
+            artifacts_dir=tmp_path / "artifacts",
+            repo_root=tmp_path,
+            process_runner=observe_launch,
         )
 
     assert observed == [budget_sec]
