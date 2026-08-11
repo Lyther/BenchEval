@@ -375,6 +375,21 @@ class RunPlan(BaseModel):
     budget_class: BudgetClass
     max_cost_usd: float = Field(ge=0.0)
     max_wall_clock_sec: int = Field(gt=0)
+    max_wall_clock_sec_per_instance: int = Field(gt=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_per_instance_wall(cls, data: object) -> object:
+        # Backward compatibility within schema "0.3": payloads written before
+        # the per-instance field existed carry only the run-total envelope.
+        # Derive per-instance = run total, matching the pre-field contract
+        # where one attempt could consume the whole envelope.
+        if isinstance(data, dict) and "max_wall_clock_sec_per_instance" not in data:
+            total = data.get("max_wall_clock_sec")
+            if isinstance(total, int) and not isinstance(total, bool) and total > 0:
+                data = {**data, "max_wall_clock_sec_per_instance": total}
+        return data
+
     requires_harbor: bool
     requires_sandbox: bool
     network_policy: Literal["deny", "allow", "benchmark_required"]
@@ -384,6 +399,7 @@ class RunPlan(BaseModel):
         "model_comparison",
         "runtime_comparison",
         "adapter_smoke",
+        "rough_regression",
         "diagnostic_only",
         "invalid",
     ]

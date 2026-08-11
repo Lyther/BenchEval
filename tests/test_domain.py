@@ -238,6 +238,7 @@ class TestRunPlanDTO:
             "budget_class": "B2",
             "max_cost_usd": 1.0,
             "max_wall_clock_sec": 300,
+            "max_wall_clock_sec_per_instance": 300,
             "requires_harbor": True,
             "requires_sandbox": True,
             "network_policy": "deny",

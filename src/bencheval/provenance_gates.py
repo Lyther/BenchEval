@@ -24,12 +24,17 @@ def is_provisional_benchmark_version(version: str | None) -> bool:
 
 
 def is_uncaptured_harness_version(version: str | None) -> bool:
-    """True when a harness_version is a known placeholder, not an installed revision."""
+    """True for a placeholder or mutable identity, not an installed clean revision."""
     if not is_captured_axis(version):
         return False
     assert version is not None
     marker = version.strip()
     if marker in _FALLBACK_HARNESS_VERSIONS:
+        return True
+    if marker.endswith("-dirty"):
+        # A dirty worktree's executed bytes are not identified by the stamped
+        # revision (in-checkout dependencies can differ); dirty checkouts are
+        # diagnostic-only, never native/live proof.
         return True
     return marker.endswith("-smoke") and "native" in marker
 

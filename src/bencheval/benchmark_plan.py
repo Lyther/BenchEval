@@ -37,6 +37,7 @@ ComparisonValidity = Literal[
     "model_comparison",
     "runtime_comparison",
     "adapter_smoke",
+    "rough_regression",
     "diagnostic_only",
     "invalid",
 ]
@@ -192,7 +193,7 @@ def _adapter_for_benchmark(benchmark: BenchmarkEntry) -> str:
 
 
 def _comparison_validity(purpose: SlicePurpose) -> ComparisonValidity:
-    if purpose in ("runtime_comparison", "model_comparison", "adapter_smoke"):
+    if purpose in ("runtime_comparison", "model_comparison", "adapter_smoke", "rough_regression"):
         return purpose
     if purpose == "benchmark_native_claim":
         return "diagnostic_only"
@@ -200,7 +201,10 @@ def _comparison_validity(purpose: SlicePurpose) -> ComparisonValidity:
 
 
 def _budget_class_for_slice(max_cost: Decimal, max_wall_per_instance: int) -> BudgetClass:
+    # Thresholds mirror the BUDGET_CLASS_DEFAULTS envelopes.
     cost_f = float(max_cost)
+    if cost_f <= 0.05 and max_wall_per_instance <= 60:
+        return "B0"
     if cost_f <= 0.25 and max_wall_per_instance <= 180:
         return "B1"
     if cost_f <= 2.0 and max_wall_per_instance <= 300:
@@ -357,11 +361,20 @@ def plan_control_plane(
         slice_manifest.budget.max_wall_clock_sec_per_instance,
     )
     defaults = BUDGET_CLASS_DEFAULTS[budget_class]
-    max_cost = max(float(slice_manifest.budget.max_total_cost_usd), float(defaults["max_cost_usd"]))
-    max_wall = max(
-        slice_manifest.budget.max_wall_clock_sec_per_instance * len(instance_ids),
-        int(defaults["max_wall_clock_sec"]),
+    # Envelope semantics (docs/architecture.md §9): class values are per-instance
+    # wall / run-total cost ceilings used for classification; because the bands
+    # mirror the defaults, the slice's own envelope is always the tighter one and
+    # is preserved verbatim. Per-instance and run-total wall limits are separate
+    # fields — adapters must never derive one from the other by dividing.
+    default_cost = float(defaults["max_cost_usd"])
+    default_wall = int(defaults["max_wall_clock_sec"])
+    slice_cost = float(slice_manifest.budget.max_total_cost_usd)
+    slice_wall_per_instance = slice_manifest.budget.max_wall_clock_sec_per_instance
+    max_cost = min(slice_cost, default_cost) if default_cost > 0 else slice_cost
+    max_wall_per_instance = (
+        min(slice_wall_per_instance, default_wall) if default_wall > 0 else slice_wall_per_instance
     )
+    max_wall_total = max_wall_per_instance * len(instance_ids)
     requires_harbor = harness_kind == "harbor"
     profile = benchmark.recommended_profile
     requires_sandbox = harness_kind in ("harbor", "swebench-native") or profile in ("E3", "E4")
@@ -399,7 +412,8 @@ def plan_control_plane(
         instances=tuple(RunPlanInstance(instance_id=i) for i in instance_ids),
         budget_class=budget_class,
         max_cost_usd=round(max_cost, 6),
-        max_wall_clock_sec=max_wall,
+        max_wall_clock_sec=max_wall_total,
+        max_wall_clock_sec_per_instance=max_wall_per_instance,
         requires_harbor=requires_harbor,
         requires_sandbox=requires_sandbox,
         network_policy=network,

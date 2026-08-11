@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import hmac
+import ipaddress
 import json
 import os
 import threading
@@ -283,13 +285,18 @@ class _AnthropicRoleShimHandler(BaseHTTPRequestHandler):
         expected = os.environ.get(self.server.inbound_token_env)
         if not expected:
             return False
+        expected_bytes = expected.encode()
         presented = self.headers.get(_INBOUND_HEADER)
-        if presented == expected:
+        if presented is not None and hmac.compare_digest(
+            presented.encode(),
+            expected_bytes,
+        ):
             return True
         auth = self.headers.get("Authorization", "")
-        if auth == f"Bearer {expected}":
+        if hmac.compare_digest(auth.encode(), f"Bearer {expected}".encode()):
             return True
-        return self.headers.get("x-api-key") == expected
+        api_key = self.headers.get("x-api-key", "")
+        return hmac.compare_digest(api_key.encode(), expected_bytes)
 
     def _declared_content_length(self) -> int:
         content_length = self.headers.get("content-length")
@@ -379,6 +386,35 @@ class _AnthropicRoleShimHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
+_LOOPBACK_HOSTNAMES = frozenset({"localhost", "localhost.localdomain"})
+
+
+def _validate_bind_host(host: str, *, allow_remote_bind: bool) -> None:
+    """Refuse non-loopback binds unless the operator explicitly opts in.
+
+    The shim injects upstream provider credentials, so binding it beyond
+    loopback must be a deliberate, visible choice (the live pilot binds the
+    Docker host gateway for benchmark containers and passes the flag).
+    """
+    if allow_remote_bind:
+        return
+    normalized = host.strip().lower().strip("[]").rstrip(".")
+    if normalized in _LOOPBACK_HOSTNAMES:
+        return
+    try:
+        addr = ipaddress.ip_address(normalized)
+    except ValueError:
+        addr = None
+    if addr is not None:
+        mapped = addr.ipv4_mapped if isinstance(addr, ipaddress.IPv6Address) else None
+        if addr.is_loopback or (mapped is not None and mapped.is_loopback):
+            return
+    raise BenchEvalError(
+        f"refusing to bind the credential-injecting shim to remote host {host!r} "
+        "without --allow-remote-bind",
+    )
+
+
 def run_server(
     *,
     host: str,
@@ -389,7 +425,9 @@ def run_server(
     inbound_token_env: str | None = None,
     allowed_paths: Sequence[str] | None = None,
     max_body_bytes: int = _DEFAULT_MAX_BODY_BYTES,
+    allow_remote_bind: bool = False,
 ) -> None:
+    _validate_bind_host(host, allow_remote_bind=allow_remote_bind)
     paths: set[str] | None = None
     if allowed_paths is not None:
         paths = set(_DEFAULT_ALLOWED_PATHS)
@@ -448,6 +486,14 @@ def _parser() -> argparse.ArgumentParser:
         default=_DEFAULT_MAX_BODY_BYTES,
         help="Reject Content-Length above this size with 413 before reading the body",
     )
+    parser.add_argument(
+        "--allow-remote-bind",
+        action="store_true",
+        help=(
+            "Permit binding beyond loopback (e.g. the Docker host gateway for benchmark "
+            "containers). Off by default: the shim injects upstream credentials."
+        ),
+    )
     return parser
 
 
@@ -462,6 +508,7 @@ def main() -> None:
         inbound_token_env=args.inbound_token_env,
         allowed_paths=args.allow_path or None,
         max_body_bytes=args.max_body_bytes,
+        allow_remote_bind=args.allow_remote_bind,
     )
 
 

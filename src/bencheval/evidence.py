@@ -21,6 +21,7 @@ from bencheval.domain import (
     VerifierIntegrityLabel,
 )
 from bencheval.exceptions import BenchEvalError, EvidenceValidationError
+from bencheval.run_isolation import append_reserved_evidence
 
 
 class EvidenceRecord(BaseModel):
@@ -97,8 +98,53 @@ class EvidenceRecord(BaseModel):
     runtime_output_cap: int | None = Field(default=None, ge=1)
 
 
+# Failure classes that prove the attempt never produced a native harness/scorer
+# result: launch/setup/auth/permission failures, infra stalls and timeouts,
+# adapter/harness errors, and policy interruptions (see the FailureLabel
+# taxonomy in domain.py). They never enter pass@k denominators or shared-instance
+# accounting, regardless of what the explicit validity fields say.
+INFRASTRUCTURE_FAILURE_CLASSES: frozenset[str] = frozenset(
+    {
+        "harness_failure",
+        "runtime_launch_failure",
+        "runtime_auth_failure",
+        "runtime_permission_block",
+        "runtime_output_unparseable",
+        "runtime_context_overflow",
+        "runtime_tool_failure",
+        "runtime_config_drift",
+        "runtime_budget_exceeded",
+        "runtime_output_cap_reached",
+        "runtime_no_progress_stall",
+        "runtime_wall_clock_timeout",
+        "materialization_failure",
+        "adapter_error",
+        "budget_exceeded",
+        "operator_interrupted",
+        "interrupted_by_harness",
+        "config_failed",
+        "remote_infra_failure",
+        "evidence_corrupt",
+        "duplicate_launch",
+    }
+)
+
+
 def eligible_for_pass_at_k(record: EvidenceRecord) -> bool:
-    """Whether a row should enter pass@k rate / Wilson CI denominators."""
+    """Whether a row should enter pass@k rate / Wilson CI denominators.
+
+    Canonical rule, used by live proof, model/runtime comparison, and reports:
+    an infrastructure-failure row is never eligible. The veto reads both the
+    v0.3 ``failure_class`` and the frozen v0.2 ``failure_labels`` list (legacy
+    rows carry only the latter), applies even when both explicit validity
+    fields are absent, and cannot be overridden by an explicit
+    ``counts_toward_pass_at_k=True`` stamp. Otherwise the explicit stamp wins,
+    then ``attempt_validity``.
+    """
+    if record.failure_class is not None and record.failure_class in INFRASTRUCTURE_FAILURE_CLASSES:
+        return False
+    if any(label in INFRASTRUCTURE_FAILURE_CLASSES for label in record.failure_labels):
+        return False
     if record.counts_toward_pass_at_k is not None:
         return record.counts_toward_pass_at_k
     return record.attempt_validity != "invalid"
@@ -146,10 +192,12 @@ class JsonlEvidenceSink:
     """Append ``EvidenceRecord`` as JSON lines; single-threaded only."""
 
     def append_jsonl(self, path: Path, record: EvidenceRecord) -> None:
+        line = record.model_dump_json() + "\n"
+        if append_reserved_evidence(path, line.encode("utf-8")):
+            return
         target = path.resolve()
         if target.exists() and not target.is_file():
             raise BenchEvalError(f"path exists but is not a regular file: {target}")
         target.parent.mkdir(parents=True, exist_ok=True)
-        line = record.model_dump_json() + "\n"
         with target.open("a", encoding="utf-8") as f:
             f.write(line)

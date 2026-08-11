@@ -182,6 +182,7 @@ def test_exploitgym_exit_0_without_verdict_does_not_pass(
         budget_class="B3",
         max_cost_usd=25.0,
         max_wall_clock_sec=3000,
+        max_wall_clock_sec_per_instance=3000,
         requires_harbor=False,
         requires_sandbox=True,
         network_policy="benchmark_required",

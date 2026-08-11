@@ -50,6 +50,9 @@ from bencheval.paths import repo_root as _repo_root
 from bencheval.provider_registry import resolve_openai_compatible_launch
 from bencheval.run_isolation import (
     claim_exclusive_run_outputs,
+    open_owned_dir_fd,
+    release_evidence_reservation,
+    write_text_at_exclusive,
 )
 from bencheval.runtime_registry import load_runtime_catalog
 from bencheval.terminal_bench_harbor import (
@@ -305,7 +308,7 @@ def _interpretation_label(plan: RunPlan) -> InterpretationLabel:
         return "rough_regression"
     if validity == "diagnostic_only":
         return "benchmark_native_claim"
-    if validity in ("model_comparison", "runtime_comparison", "adapter_smoke"):
+    if validity in ("model_comparison", "runtime_comparison", "adapter_smoke", "rough_regression"):
         return validity
     return "adapter_smoke"
 
@@ -409,6 +412,7 @@ def _record_budget_skip(
             "spent_wall_sec": f"{spent_wall_sec:.3f}",
             "max_cost_usd": f"{plan.max_cost_usd:.6f}",
             "max_wall_clock_sec": str(plan.max_wall_clock_sec),
+            "max_wall_clock_sec_per_instance": str(plan.max_wall_clock_sec_per_instance),
         },
         created_at=datetime.now(tz=UTC),
         benchmark_id=plan.benchmark_id,
@@ -470,18 +474,29 @@ def _record_instance_failure(
 ) -> EvidenceRecord:
     failure_log = artifacts_dir / "adapter_failure.json"
     failure_log.parent.mkdir(parents=True, exist_ok=True)
-    failure_log.write_text(
-        json.dumps(
-            {
-                "instance_id": instance_id,
-                "failure_label": error.failure_label,
-                "message": str(error),
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
+    # Anchored, no-follow, exclusive recreate: a symlink or hard link planted
+    # at the failure-log path is unlinked (never opened, truncated, or
+    # followed) and replaced by a fresh regular file.
+    failure_log_fd = open_owned_dir_fd(
+        failure_log.parent,
+        role="instance failure-log directory",
     )
+    try:
+        write_text_at_exclusive(
+            failure_log_fd,
+            failure_log.name,
+            json.dumps(
+                {
+                    "instance_id": instance_id,
+                    "failure_label": error.failure_label,
+                    "message": str(error),
+                },
+                indent=2,
+            )
+            + "\n",
+        )
+    finally:
+        os.close(failure_log_fd)
     root = _repo_root()
     try:
         rel_log = str(failure_log.resolve().relative_to(root))
@@ -746,77 +761,84 @@ def _execute_terminal_bench_harbor(
         rid=rid,
         root=root,
     )
-    if harbor_process_runner is None:
-        require_doctor_ok(run_doctor(HARBOR_BACKEND, model_id=plan.model_id))
-    sink = _evidence_sink(plan)
-    execution_profile = _execution_profile_for_plan(plan)
+    try:
+        if harbor_process_runner is None:
+            require_doctor_ok(run_doctor(HARBOR_BACKEND, model_id=plan.model_id))
+        sink = _evidence_sink(plan)
+        execution_profile = _execution_profile_for_plan(plan)
 
-    passed = 0
-    spent_cost_usd = 0.0
-    spent_wall_sec = 0.0
-    for inst in plan.instances:
-        instance_id = inst.instance_id
-        if _budget_exhausted(plan, spent_cost_usd=spent_cost_usd, spent_wall_sec=spent_wall_sec):
-            record = _record_budget_skip(
-                plan=plan,
-                run_id=rid,
-                instance_id=instance_id,
-                execution_profile=execution_profile,
+        passed = 0
+        spent_cost_usd = 0.0
+        spent_wall_sec = 0.0
+        for inst in plan.instances:
+            instance_id = inst.instance_id
+            if _budget_exhausted(
+                plan,
                 spent_cost_usd=spent_cost_usd,
                 spent_wall_sec=spent_wall_sec,
-            )
+            ):
+                record = _record_budget_skip(
+                    plan=plan,
+                    run_id=rid,
+                    instance_id=instance_id,
+                    execution_profile=execution_profile,
+                    spent_cost_usd=spent_cost_usd,
+                    spent_wall_sec=spent_wall_sec,
+                )
+                sink.append_jsonl(output_path, record)
+                continue
+            instance_artifacts = run_artifacts / instance_id
+            try:
+                outcome = run_terminal_bench_instance(
+                    plan=plan,
+                    instance_id=instance_id,
+                    artifacts_dir=run_artifacts,
+                    repo_root=root,
+                    process_runner=harbor_process_runner,
+                )
+                cleanup_result = _apply_cleanup(
+                    plan=plan,
+                    instance_artifacts=instance_artifacts,
+                    primary_pass=outcome.primary_pass,
+                )
+                record = _evidence_from_outcome(
+                    plan=plan,
+                    run_id=rid,
+                    outcome=outcome,
+                    execution_profile=execution_profile,
+                    cleanup_result=cleanup_result,
+                )
+            except AdapterFailureError as e:
+                cleanup_result = _apply_cleanup(
+                    plan=plan,
+                    instance_artifacts=instance_artifacts,
+                    primary_pass=False,
+                )
+                record = _record_instance_failure(
+                    plan=plan,
+                    run_id=rid,
+                    instance_id=instance_id,
+                    execution_profile=execution_profile,
+                    error=e,
+                    artifacts_dir=instance_artifacts,
+                    cleanup_result=cleanup_result,
+                )
+            spent_cost_usd += record.cost_usd
+            spent_wall_sec += record.latency_sec
+            if record.primary_pass:
+                passed += 1
             sink.append_jsonl(output_path, record)
-            continue
-        instance_artifacts = run_artifacts / instance_id
-        try:
-            outcome = run_terminal_bench_instance(
-                plan=plan,
-                instance_id=instance_id,
-                artifacts_dir=run_artifacts,
-                repo_root=root,
-                process_runner=harbor_process_runner,
-            )
-            cleanup_result = _apply_cleanup(
-                plan=plan,
-                instance_artifacts=instance_artifacts,
-                primary_pass=outcome.primary_pass,
-            )
-            record = _evidence_from_outcome(
-                plan=plan,
-                run_id=rid,
-                outcome=outcome,
-                execution_profile=execution_profile,
-                cleanup_result=cleanup_result,
-            )
-        except AdapterFailureError as e:
-            cleanup_result = _apply_cleanup(
-                plan=plan,
-                instance_artifacts=instance_artifacts,
-                primary_pass=False,
-            )
-            record = _record_instance_failure(
-                plan=plan,
-                run_id=rid,
-                instance_id=instance_id,
-                execution_profile=execution_profile,
-                error=e,
-                artifacts_dir=instance_artifacts,
-                cleanup_result=cleanup_result,
-            )
-        spent_cost_usd += record.cost_usd
-        spent_wall_sec += record.latency_sec
-        if record.primary_pass:
-            passed += 1
-        sink.append_jsonl(output_path, record)
 
-    total = len(plan.instances)
-    return ControlPlaneRunSummary(
-        run_id=rid,
-        instance_count=total,
-        passed_count=passed,
-        failed_count=total - passed,
-        output_path=output_path.resolve(),
-    )
+        total = len(plan.instances)
+        return ControlPlaneRunSummary(
+            run_id=rid,
+            instance_count=total,
+            passed_count=passed,
+            failed_count=total - passed,
+            output_path=output_path.resolve(),
+        )
+    finally:
+        release_evidence_reservation(output_path)
 
 
 def _execute_gpqa(
@@ -837,65 +859,68 @@ def _execute_gpqa(
         rid=rid,
         root=root,
     )
-    sink = _evidence_sink(plan)
-    execution_profile = _execution_profile_for_plan(plan)
     try:
-        outcomes = run_gpqa_slice(
-            plan=plan,
-            artifacts_dir=run_artifacts,
-            repo_root=root,
-            process_runner=gpqa_process_runner,
-        )
-    except AdapterFailureError as e:
+        sink = _evidence_sink(plan)
+        execution_profile = _execution_profile_for_plan(plan)
+        try:
+            outcomes = run_gpqa_slice(
+                plan=plan,
+                artifacts_dir=run_artifacts,
+                repo_root=root,
+                process_runner=gpqa_process_runner,
+            )
+        except AdapterFailureError as e:
+            cleanup_result = _apply_cleanup(
+                plan=plan,
+                instance_artifacts=run_artifacts,
+                primary_pass=False,
+            )
+            for inst in plan.instances:
+                record = _record_instance_failure(
+                    plan=plan,
+                    run_id=rid,
+                    instance_id=inst.instance_id,
+                    execution_profile=execution_profile,
+                    error=e,
+                    artifacts_dir=run_artifacts,
+                    cleanup_result=cleanup_result,
+                )
+                sink.append_jsonl(output_path, record)
+            total = len(plan.instances)
+            return ControlPlaneRunSummary(
+                run_id=rid,
+                instance_count=total,
+                passed_count=0,
+                failed_count=total,
+                output_path=output_path.resolve(),
+            )
         cleanup_result = _apply_cleanup(
             plan=plan,
             instance_artifacts=run_artifacts,
-            primary_pass=False,
+            primary_pass=any(o.primary_pass for o in outcomes),
         )
-        for inst in plan.instances:
-            record = _record_instance_failure(
+        passed = 0
+        for outcome in outcomes:
+            record = _evidence_from_gpqa_outcome(
                 plan=plan,
                 run_id=rid,
-                instance_id=inst.instance_id,
+                outcome=outcome,
                 execution_profile=execution_profile,
-                error=e,
-                artifacts_dir=run_artifacts,
                 cleanup_result=cleanup_result,
             )
+            if record.primary_pass:
+                passed += 1
             sink.append_jsonl(output_path, record)
-        total = len(plan.instances)
+        total = len(outcomes)
         return ControlPlaneRunSummary(
             run_id=rid,
             instance_count=total,
-            passed_count=0,
-            failed_count=total,
+            passed_count=passed,
+            failed_count=total - passed,
             output_path=output_path.resolve(),
         )
-    cleanup_result = _apply_cleanup(
-        plan=plan,
-        instance_artifacts=run_artifacts,
-        primary_pass=any(o.primary_pass for o in outcomes),
-    )
-    passed = 0
-    for outcome in outcomes:
-        record = _evidence_from_gpqa_outcome(
-            plan=plan,
-            run_id=rid,
-            outcome=outcome,
-            execution_profile=execution_profile,
-            cleanup_result=cleanup_result,
-        )
-        if record.primary_pass:
-            passed += 1
-        sink.append_jsonl(output_path, record)
-    total = len(outcomes)
-    return ControlPlaneRunSummary(
-        run_id=rid,
-        instance_count=total,
-        passed_count=passed,
-        failed_count=total - passed,
-        output_path=output_path.resolve(),
-    )
+    finally:
+        release_evidence_reservation(output_path)
 
 
 def _execute_hle(
@@ -914,66 +939,69 @@ def _execute_hle(
         rid=rid,
         root=root,
     )
-    sink = _evidence_sink(plan)
-    execution_profile = _execution_profile_for_plan(plan)
     try:
-        outcomes = run_hle_slice(
-            plan=plan,
-            artifacts_dir=run_artifacts,
-            repo_root=root,
-            process_runner=hle_process_runner,
-            run_id=rid,
-        )
-    except AdapterFailureError as e:
+        sink = _evidence_sink(plan)
+        execution_profile = _execution_profile_for_plan(plan)
+        try:
+            outcomes = run_hle_slice(
+                plan=plan,
+                artifacts_dir=run_artifacts,
+                repo_root=root,
+                process_runner=hle_process_runner,
+                run_id=rid,
+            )
+        except AdapterFailureError as e:
+            cleanup_result = _apply_cleanup(
+                plan=plan,
+                instance_artifacts=run_artifacts,
+                primary_pass=False,
+            )
+            for inst in plan.instances:
+                record = _record_instance_failure(
+                    plan=plan,
+                    run_id=rid,
+                    instance_id=inst.instance_id,
+                    execution_profile=execution_profile,
+                    error=e,
+                    artifacts_dir=run_artifacts,
+                    cleanup_result=cleanup_result,
+                )
+                sink.append_jsonl(output_path, record)
+            total = len(plan.instances)
+            return ControlPlaneRunSummary(
+                run_id=rid,
+                instance_count=total,
+                passed_count=0,
+                failed_count=total,
+                output_path=output_path.resolve(),
+            )
         cleanup_result = _apply_cleanup(
             plan=plan,
             instance_artifacts=run_artifacts,
-            primary_pass=False,
+            primary_pass=any(o.primary_pass for o in outcomes),
         )
-        for inst in plan.instances:
-            record = _record_instance_failure(
+        passed = 0
+        for outcome in outcomes:
+            record = _evidence_from_hle_outcome(
                 plan=plan,
                 run_id=rid,
-                instance_id=inst.instance_id,
+                outcome=outcome,
                 execution_profile=execution_profile,
-                error=e,
-                artifacts_dir=run_artifacts,
                 cleanup_result=cleanup_result,
             )
+            if record.primary_pass:
+                passed += 1
             sink.append_jsonl(output_path, record)
-        total = len(plan.instances)
+        total = len(outcomes)
         return ControlPlaneRunSummary(
             run_id=rid,
             instance_count=total,
-            passed_count=0,
-            failed_count=total,
+            passed_count=passed,
+            failed_count=total - passed,
             output_path=output_path.resolve(),
         )
-    cleanup_result = _apply_cleanup(
-        plan=plan,
-        instance_artifacts=run_artifacts,
-        primary_pass=any(o.primary_pass for o in outcomes),
-    )
-    passed = 0
-    for outcome in outcomes:
-        record = _evidence_from_hle_outcome(
-            plan=plan,
-            run_id=rid,
-            outcome=outcome,
-            execution_profile=execution_profile,
-            cleanup_result=cleanup_result,
-        )
-        if record.primary_pass:
-            passed += 1
-        sink.append_jsonl(output_path, record)
-    total = len(outcomes)
-    return ControlPlaneRunSummary(
-        run_id=rid,
-        instance_count=total,
-        passed_count=passed,
-        failed_count=total - passed,
-        output_path=output_path.resolve(),
-    )
+    finally:
+        release_evidence_reservation(output_path)
 
 
 __all__ = [

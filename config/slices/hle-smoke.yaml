@@ -2,16 +2,19 @@ schema_version: "0.1"
 slice:
   id: "smoke"
   benchmark_id: "hle"
-  # HLE scoring is model-judged. Pin the configured ByteLLM route explicitly so
-  # the authoritative scorer identity is planned, launched, and recorded.
-  judge_model_id: "gpt-5.4-2026-03-05"
+  # HLE scoring is model-judged. Pin a ByteLLM direct-chat route whose live
+  # beta.chat.completions.parse probe preserves structured response_format.
+  judge_model_id: "gpt-5.3-chat-2026-03-03"
   purpose: "adapter_smoke"
   selection_policy: "sample_limit"
   valid_for: ["adapter_smoke", "rough_regression"]
   invalid_for: ["benchmark_native_claim", "model_comparison"]
 budget:
   max_instances: 2
-  max_wall_clock_sec_per_instance: 600
+  # The official harness is aggregate. Two live Kimi predictions exceeded the
+  # former 20-minute run-total envelope on dev-box-cpu; retain the established
+  # 45-minute pilot cap across prediction + judging (2 * 1350s).
+  max_wall_clock_sec_per_instance: 1350
   max_total_cost_usd: 10
 labels:
   contamination_warning: false

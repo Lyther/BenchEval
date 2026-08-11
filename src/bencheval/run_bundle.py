@@ -6,7 +6,6 @@ import hashlib
 import json
 import os
 import platform
-import re
 import shutil
 import socket
 import subprocess
@@ -15,59 +14,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from pydantic import JsonValue
-
 from bencheval.evidence import EvidenceRecord, read_evidence_jsonl
 from bencheval.exceptions import BenchEvalError
+
+# The redaction pipeline lives in bencheval.redaction (shared with preflight and
+# other local-artifact writers); these private aliases preserve this module's
+# historical internal/test surface.
+from bencheval.redaction import env_secret_values as _env_secret_values
+from bencheval.redaction import redact_string as _redact_string
+from bencheval.redaction import sanitize_json_value as _sanitize_json_value
 from bencheval.report import generate_evidence_report_with_runtime_panel
 
 RedactionMode = Literal["public", "private"]
-
-_SECRET_SUBSTRINGS = (
-    "api_key",
-    "api-key",
-    "secret",
-    "token",
-    "password",
-    "authorization",
-    "bearer",
-)
-
-_SK_PATTERN = re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b")
-_ABS_PATH_PATTERN = re.compile(r"(?:^|[\s\"'=])(/[\w./-]+)")
-# Strip URI userinfo (user:pass@host) without touching ordinary public endpoints.
-_URI_USERINFO_PATTERN = re.compile(
-    r"(?P<scheme>[a-zA-Z][a-zA-Z0-9+.-]*://)(?P<userinfo>[^/\s\"'@]+@)",
-)
-# Secret-indicator words only count when not embedded in a larger alphanumeric
-# word, so benign strings like "tokenizer" survive while "api_key" still trips.
-_SECRET_SUBSTRING_PATTERN = re.compile(
-    r"(?<![a-z0-9])(?:" + "|".join(_SECRET_SUBSTRINGS) + r")(?![a-z0-9])",
-    re.IGNORECASE,
-)
-# Query parameters that carry signatures or credentials (URLs and plain k=v).
-_SENSITIVE_QUERY_PATTERN = re.compile(
-    r"\b(x-amz-signature|x-amz-credential|x-amz-security-token|access_token|api_key|apikey"
-    r"|signature|password|secret|token|sig|key)=([^\s&\"']+)",
-    re.IGNORECASE,
-)
-_GITHUB_TOKEN_PATTERN = re.compile(
-    r"\b(?:gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,})\b",
-)
-_AWS_KEY_PATTERN = re.compile(r"\bAKIA[0-9A-Z]{16}\b")
-_SLACK_TOKEN_PATTERN = re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{8,}\b")
-_JWT_PATTERN = re.compile(r"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?\b")
-_PRIVATE_KEY_BLOCK_PATTERN = re.compile(
-    r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----",
-    re.DOTALL,
-)
-_PRIVATE_KEY_MARKER_PATTERN = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
-_ENV_ASSIGNMENT_PATTERN = re.compile(r"(^|[\s\"'])([A-Za-z_][A-Za-z0-9_]*)=([^\s\"']+)")
-_SECRET_NAME_PATTERN = re.compile(
-    r"key|token|secret|password|passwd|credential|proxy",
-    re.IGNORECASE,
-)
-_EXTRA_SECRET_MIN_LEN = 8
 
 
 def _sha256_file(path: Path) -> str:
@@ -100,78 +58,6 @@ def _collect_tool_versions() -> dict[str, str]:
         except (OSError, subprocess.TimeoutExpired):
             continue
     return versions
-
-
-def _redact_env_assignments(value: str) -> str:
-    """Redact ``NAME=value`` pairs whose NAME looks secret-bearing."""
-
-    def repl(match: re.Match[str]) -> str:
-        prefix, name = match.group(1), match.group(2)
-        if _SECRET_NAME_PATTERN.search(name):
-            return f"{prefix}{name}=[redacted]"
-        return match.group(0)
-
-    return _ENV_ASSIGNMENT_PATTERN.sub(repl, value)
-
-
-def _redact_string(value: str, *, extra_secrets: tuple[str, ...] = ()) -> str:
-    """Fail-closed redaction for public export.
-
-    Whole-string rules (sk-*, secret-indicator words, absolute paths) preserve the
-    historical behavior; in-place rules strip URI userinfo, signed/credential query
-    params, common token formats, and secret-looking env assignments while leaving
-    the public remainder of the string intact. ``extra_secrets`` are caller-supplied
-    literal values (e.g. process env secrets) scrubbed wherever they occur.
-    """
-    for secret in extra_secrets:
-        if len(secret) >= _EXTRA_SECRET_MIN_LEN:
-            value = value.replace(secret, "[redacted]")
-    if _SK_PATTERN.search(value):
-        return "[redacted]"
-    if _URI_USERINFO_PATTERN.search(value):
-        value = _URI_USERINFO_PATTERN.sub(r"\g<scheme>", value)
-    if _SECRET_SUBSTRING_PATTERN.search(value):
-        return "[redacted]"
-    if value.startswith("/") or ":\\" in value:
-        return "[redacted-path]"
-    if _ABS_PATH_PATTERN.search(value):
-        return "[redacted-path]"
-    value = _SENSITIVE_QUERY_PATTERN.sub(r"\1=[redacted]", value)
-    value = _GITHUB_TOKEN_PATTERN.sub("[redacted]", value)
-    value = _AWS_KEY_PATTERN.sub("[redacted]", value)
-    value = _SLACK_TOKEN_PATTERN.sub("[redacted]", value)
-    value = _JWT_PATTERN.sub("[redacted]", value)
-    value = _PRIVATE_KEY_BLOCK_PATTERN.sub("[redacted]", value)
-    if _PRIVATE_KEY_MARKER_PATTERN.search(value):
-        # Unterminated key block: ambiguous, fail closed.
-        return "[redacted]"
-    return _redact_env_assignments(value)
-
-
-def _env_secret_values() -> tuple[str, ...]:
-    """Values of process env vars with secret-looking names.
-
-    Deterministic (sorted) and never logged; used so public export scrubs live
-    credential values even when their shape is not a known token format.
-    """
-    values = {
-        value
-        for name, value in os.environ.items()
-        if len(value) >= _EXTRA_SECRET_MIN_LEN and _SECRET_NAME_PATTERN.search(name)
-    }
-    return tuple(sorted(values))
-
-
-def _sanitize_json_value(value: JsonValue, *, extra_secrets: tuple[str, ...] = ()) -> JsonValue:
-    if isinstance(value, str):
-        return _redact_string(value, extra_secrets=extra_secrets)
-    if isinstance(value, dict):
-        return {
-            str(k): _sanitize_json_value(v, extra_secrets=extra_secrets) for k, v in value.items()
-        }
-    if isinstance(value, list):
-        return [_sanitize_json_value(v, extra_secrets=extra_secrets) for v in value]
-    return value
 
 
 def _redact_record(
@@ -312,11 +198,27 @@ def export_run_bundle(
             "bundle output_dir must not equal or nest under/inside raw_dir "
             f"(raw_dir={raw_dir.resolve()}, output_dir={bundle_root})",
         )
-    if bundle_root.exists() and any(bundle_root.iterdir()):
+    if bundle_root.exists():
+        if not bundle_root.is_dir():
+            raise BenchEvalError(
+                f"bundle output path exists but is not a directory: {bundle_root}",
+            )
+        try:
+            occupied = any(bundle_root.iterdir())
+        except OSError as e:
+            raise BenchEvalError(
+                f"cannot inspect bundle output directory {bundle_root}: {e}",
+            ) from e
+        if occupied:
+            raise BenchEvalError(
+                f"bundle output directory must be empty or missing: {bundle_root}",
+            )
+    try:
+        bundle_root.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
         raise BenchEvalError(
-            f"bundle output directory must be empty or missing: {bundle_root}",
-        )
-    bundle_root.mkdir(parents=True, exist_ok=True)
+            f"cannot create bundle output directory {bundle_root}: {e}",
+        ) from e
 
     evidence_copy = bundle_root / "evidence.jsonl"
     _write_evidence_copy(

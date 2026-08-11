@@ -52,22 +52,38 @@ def test_admission_fails_without_adapter_files(tmp_path: Path) -> None:
     assert by_name.get("control_plane_executor") is False
 
 
-def test_bfcl_v4_admission_passes() -> None:
+def test_bfcl_v4_admission_fails_closed_while_demoted() -> None:
+    # Round-1 F008 contract: demoted (executable: false) adapters must not pass
+    # the Tier-0 wiring gate even when slices and module files exist.
+    import pytest
+
+    from bencheval.exceptions import BenchEvalError
+
     report = assess_bfcl_v4_admission()
-    assert report.passed is True
-    assert_bfcl_v4_admitted()
-    catalog = load_benchmark_catalog()
-    entry = next(b for b in catalog.benchmarks if b.id == "bfcl-v4")
-    assert entry.adapter_status == "manifest_available"
+    assert report.passed is False
+    with pytest.raises(BenchEvalError, match="bfcl-v4 admission failed"):
+        assert_bfcl_v4_admitted()
+    by_name = {name: ok for name, ok, _ in report.checks}
+    assert by_name.get("catalog_adapter_status") is True
+    assert by_name.get("catalog_executable") is False
+    assert by_name.get("typed_slice_smoke_5") is True
+    assert by_name.get("bfcl_adapter_module") is True
 
 
-def test_swebench_verified_admission_passes() -> None:
+def test_swebench_verified_admission_fails_closed_while_demoted() -> None:
+    import pytest
+
+    from bencheval.exceptions import BenchEvalError
+
     report = assess_swebench_verified_admission()
-    assert report.passed is True
-    assert_swebench_verified_admitted()
-    catalog = load_benchmark_catalog()
-    entry = next(b for b in catalog.benchmarks if b.id == "swe-bench-verified")
-    assert entry.adapter_status == "manifest_available"
+    assert report.passed is False
+    with pytest.raises(BenchEvalError, match="swe-bench-verified admission failed"):
+        assert_swebench_verified_admitted()
+    by_name = {name: ok for name, ok, _ in report.checks}
+    assert by_name.get("catalog_adapter_status") is True
+    assert by_name.get("catalog_executable") is False
+    assert by_name.get("typed_slice_smoke_10") is True
+    assert by_name.get("swebench_adapter_module") is True
 
 
 def test_new_adapter_admissions_pass() -> None:
