@@ -65,12 +65,15 @@ benchmarks:
       scored only by the official `BFCL_v4_<category>_score.json` JSONL
       artifact (pinned upstream format), with launches gated on
       config/bfcl-v4-supported-models.yaml and the identity pin below.
-      Qualified by live dev-box run run-20260824-040631-228703-4756f857
-      (2026-08-24, dev-box-cpu, 5/5 smoke categories officially scored;
-      evidence archived at
-      results/evidence/run-20260824-040631-228703-4756f857.jsonl).
-      `--diagnostic` is refused for this now-executable row; diagnostic-labeled
-      evidence can never register `passed`.
+      Admission trail (2026-08-24, dev-box-cpu): operator-reviewed lifecycle
+      demonstration run-20260824-040631-228703-4756f857 (diagnostic-labeled,
+      5/5 smoke categories officially scored — never registerable) plus the
+      registered `passed` run run-20260824-045622-854659-a46ae44d
+      (adapter_smoke, same 5/5 official scoring; see results/manifests/runs.jsonl).
+      results/ is machine-local and gitignored, so those evidence paths exist
+      only on the host that ran them. `--diagnostic` is refused for this
+      now-executable row; diagnostic-labeled evidence can never register
+      `passed`.
     adapter_id: bfcl
     executable: true
     default_slice: smoke-5
@@ -157,19 +160,18 @@ benchmarks:
     source_url: https://github.com/centerforaisafety/hle
     notes: >
       Model-only via the official CAIS HLE eval scripts (`cais/hle` host checkout,
-      pinned per-script); the launched dataset is the pinned HF mirror
-      `macabdul9/hle_text_only` bound by the identity block below, not data from
-      the CAIS repo. Requires judge step; smoke uses --max_samples.
+      pinned per-script); the launched dataset defaults to `cais/hle`
+      (BENCHEVAL_HLE_DATASET may override). Dataset identity is currently
+      UNRESOLVED: evidence carries the provisional label `provisional:hle/cais`
+      and never registers `passed` until an identity block is restored. Open
+      product options: (a) pin the official `cais/hle` dataset revision once a
+      verification path exists; (b) register the `macabdul9/hle_text_only`
+      mirror as a separately-named derivative benchmark instead of silently
+      rebinding `hle`. Requires judge step; smoke uses --max_samples.
       See docs/ops/benchmarks/hle.md.
     adapter_id: hle
     executable: true
     default_slice: smoke
-    identity:
-      kind: hf-dataset-snapshot
-      repo: macabdul9/hle_text_only
-      revision: e3e9cb5a550ec7de645fac553b0e2768d30a03ee
-      files:
-        data/test-00000-of-00001.parquet: sha256:7c610e6550a627d45b4c39e57691a9cb9d33a9c411047eeb11af25dd74cb1b66
   - id: cybergym
     name: CyberGym
     aliases:

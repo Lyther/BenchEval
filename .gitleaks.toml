@@ -28,4 +28,7 @@ regexes = [
   '''bencheval-h3-test-dummy-key''',
   # tests/regressions/test_review_h1_public_redaction.py — truncated fake RSA fixture
   '''MIIBogIBAAJBAK7plusmaterial''',
+  # tests/regressions/test_review_round9.py — fake BYTELLM_API_KEY fed to
+  # verify_auth.sh to assert credentials never appear in curl argv
+  '''sk-round9-7f3q9Z''',
 ]

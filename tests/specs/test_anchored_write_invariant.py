@@ -31,13 +31,14 @@ SCANNED_FILES: tuple[str, ...] = (
     "external_agent_adapter.py",
     "momo_agent_adapter.py",
     "control_plane_executor.py",
+    "bfcl_native_adapter.py",
 )
 
-# Latent, not executor-dispatched (deferred F106): exploitgym_adapter.py,
-# cybergym_adapter.py, and bfcl_native_adapter.py still carry raw post-launch
-# writes. They are excluded from this scan ONLY because no executor path can
-# reach them; they must be fixed before admission, at which point they join
-# SCANNED_FILES.
+# Latent, not executor-dispatched (deferred F106): exploitgym_adapter.py and
+# cybergym_adapter.py still carry raw post-launch writes. They are excluded
+# from this scan ONLY because no executor path can reach them; they must be
+# fixed before admission, at which point they join SCANNED_FILES.
+# bfcl_native_adapter.py joined the scan at BFCL admission (2026-08-24).
 ALLOWED_SITES: dict[str, tuple[str, ...]] = {
     "terminal_bench_harbor.py": (
         # fd-based mkstemp proxy env file: the descriptor from mkstemp owns

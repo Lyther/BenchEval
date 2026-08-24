@@ -154,7 +154,7 @@ def _sha256_pin(payload: bytes) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_catalog_exposes_pinned_identities_for_gpqa_hle_bfcl() -> None:
+def test_catalog_exposes_pinned_identities_for_gpqa_and_bfcl() -> None:
     catalog = load_benchmark_catalog()
 
     gpqa = catalog.by_id_or_alias("gpqa-diamond").identity
@@ -166,12 +166,11 @@ def test_catalog_exposes_pinned_identities_for_gpqa_hle_bfcl() -> None:
     assert gpqa.dataset_url == _GPQA_CSV_URL
     assert gpqa.sha256 == _GPQA_CSV_SHA
 
-    hle = catalog.by_id_or_alias("hle").identity
-    assert hle is not None
-    assert hle.kind == "hf-dataset-snapshot"
-    assert hle.repo == _HLE_REPO
-    assert hle.revision == _HLE_REVISION
-    assert hle.files == {_HLE_PARQUET_RELPATH: _HLE_PARQUET_SHA}
+    # HLE carries NO identity block (review F002 revert): the removed mirror
+    # pin silently rebound the benchmark to non-official bytes. The catalog
+    # stays unpinned — and hle evidence stays provisional — until an
+    # official-source pin or a separately-named derivative benchmark is decided.
+    assert catalog.by_id_or_alias("hle").identity is None
 
     bfcl = catalog.by_id_or_alias("bfcl-v4").identity
     assert bfcl is not None
@@ -348,13 +347,14 @@ def test_captured_identity_strings_match_pinned_values() -> None:
     from bencheval.identity_strings import (
         bfcl_benchmark_identity,
         gpqa_benchmark_identity,
-        hle_benchmark_identity,
     )
 
     catalog = load_benchmark_catalog()
     gpqa_entry = catalog.by_id_or_alias("gpqa-diamond")
     assert gpqa_benchmark_identity(gpqa_entry.identity) == _GPQA_IDENTITY
-    assert hle_benchmark_identity(catalog.by_id_or_alias("hle").identity) == _HLE_IDENTITY
+    # HLE is intentionally unpinned (review F002 revert): no identity block, so
+    # no captured string exists to compare.
+    assert catalog.by_id_or_alias("hle").identity is None
     assert bfcl_benchmark_identity(catalog.by_id_or_alias("bfcl-v4").identity) == _BFCL_IDENTITY
 
 
@@ -437,6 +437,57 @@ def test_qualify_lane_still_rejects_provisional_gpqa_identity(tmp_path: Path) ->
         evidence,
         expected_instances=1,
         benchmark_id="gpqa-diamond",
+        slice_id="smoke",
+        require_runtime=False,
+        repo_root=tmp_path,
+    )
+
+    assert not q.ok
+    assert "provisional" in " ".join(q.reasons).lower()
+
+
+def test_qualify_lane_rejects_provisional_hle_identity(tmp_path: Path) -> None:
+    """HLE evidence stays unregistrable while its dataset identity is unresolved.
+
+    Discriminating guard for the F002 revert: with no catalog identity block,
+    hle runs stamp ``provisional:hle/cais`` and the provisional disqualifier
+    must keep blocking ``passed`` registration.
+    """
+    verifier = tmp_path / "hle_summary.json"
+    verifier.write_text('{"accuracy": 1.0}\n', encoding="utf-8")
+    row = EvidenceRecord(
+        run_id="identity-qualify-hle",
+        task_id="hle-aggregate",
+        model_id="kimi-k2.7-code",
+        execution_profile="E3",
+        backend="inspect",
+        primary_pass=True,
+        partial_score=1.0,
+        cost_usd=0.1,
+        latency_sec=1.0,
+        created_at=datetime(2026, 8, 19, tzinfo=UTC),
+        benchmark_id="hle",
+        benchmark_version="provisional:hle/cais",
+        slice_id="smoke",
+        adapter_id="hle",
+        harness_kind="hle-native",
+        harness_version="hle@e3e9cb5",
+        provider_id="bytellm",
+        provider_config_hash="sha256:bytellm-test",
+        instance_id="hle-aggregate",
+        interpretation_label="adapter_smoke",
+        artifact_paths=[str(verifier)],
+        verifier_log_path=str(verifier),
+        verifier_integrity_label="native",
+        counts_toward_pass_at_k=True,
+    )
+    evidence = tmp_path / "evidence.jsonl"
+    JsonlEvidenceSink().append_jsonl(evidence, row)
+
+    q = qualify_lane(
+        evidence,
+        expected_instances=1,
+        benchmark_id="hle",
         slice_id="smoke",
         require_runtime=False,
         repo_root=tmp_path,
@@ -765,10 +816,15 @@ def test_run_gpqa_slice_refuses_mismatched_supplied_identity(tmp_path: Path) -> 
     assert calls == []
 
 
-def test_run_hle_slice_launches_pinned_dataset_and_stamps_identity(
+def test_run_hle_slice_launches_default_dataset_without_catalog_pin(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """With no catalog identity block the launch falls back to ``cais/hle``.
+
+    The planner's ``provisional:hle/cais`` label stays the evidence version:
+    nothing is captured, so the adapter stamps no ``benchmark_version``.
+    """
     home = _plain_hle_home(tmp_path)
     monkeypatch.setenv("BENCHEVAL_HLE_HOME", str(home))
     monkeypatch.delenv("BENCHEVAL_HLE_DATASET", raising=False)
@@ -800,66 +856,101 @@ def test_run_hle_slice_launches_pinned_dataset_and_stamps_identity(
         repo_root=tmp_path,
         process_runner=fake,
         run_id="hle-id",
-        benchmark_identity=_HLE_IDENTITY,
     )
 
-    assert argv_datasets == [_HLE_REPO, _HLE_REPO]
+    assert argv_datasets == ["cais/hle", "cais/hle"]
     assert outcomes
-    assert outcomes[0].adapter_metadata["hle_dataset"] == _HLE_REPO
-    assert outcomes[0].adapter_metadata["benchmark_version"] == _HLE_IDENTITY
+    assert outcomes[0].adapter_metadata["hle_dataset"] == "cais/hle"
+    assert "benchmark_version" not in outcomes[0].adapter_metadata
 
 
-def test_run_hle_slice_refuses_dataset_env_divergence(
+def test_run_hle_slice_accepts_dataset_env_override_without_catalog_pin(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Pre-pin behavior restored: ``BENCHEVAL_HLE_DATASET`` may point the
+    harness at a mirror while no catalog identity binds the dataset."""
     home = _plain_hle_home(tmp_path)
     monkeypatch.setenv("BENCHEVAL_HLE_HOME", str(home))
-    monkeypatch.setenv("BENCHEVAL_HLE_DATASET", "cais/hle")
-    calls: list[tuple[str, ...]] = []
+    monkeypatch.setenv("BENCHEVAL_HLE_DATASET", "mirror/hle-v2")
+    plan = _hle_plan()
+    artifacts_dir = tmp_path / "artifacts"
+    paths = hle_run_paths(
+        artifacts_dir=artifacts_dir,
+        run_id="hle-override",
+        provider_id=plan.provider_id,
+        model_id=plan.model_id,
+    )
+    argv_datasets: list[str] = []
 
-    def runner(command, *, cwd, timeout_sec, env=None) -> HleCliResult:
-        calls.append(tuple(command))
-        return HleCliResult(0, "", "", 0.0, tuple(command))
+    def fake(command, *, cwd, timeout_sec, env=None) -> HleCliResult:
+        argv_datasets.append(command[command.index("--dataset") + 1])
+        if len(argv_datasets) == 1:
+            paths.default_predictions_path.write_text("{}\n", encoding="utf-8")
+        else:
+            judged = {
+                f"row-{index}": {"judge_response": {"correct": "yes"}}
+                for index in range(len(plan.instances))
+            }
+            paths.judged_path.write_text(json.dumps(judged), encoding="utf-8")
+        return HleCliResult(0, "", "", 0.1, tuple(command))
 
-    with pytest.raises(AdapterFailureError) as excinfo:
-        run_hle_slice(
-            plan=_hle_plan(),
-            artifacts_dir=tmp_path / "artifacts",
-            repo_root=tmp_path,
-            process_runner=runner,
-            run_id="hle-drift",
-        )
+    outcomes = run_hle_slice(
+        plan=plan,
+        artifacts_dir=artifacts_dir,
+        repo_root=tmp_path,
+        process_runner=fake,
+        run_id="hle-override",
+    )
 
-    assert excinfo.value.failure_label == "runtime_config_drift"
-    assert calls == []
+    assert argv_datasets == ["mirror/hle-v2", "mirror/hle-v2"]
+    assert outcomes
+    assert outcomes[0].adapter_metadata["hle_dataset"] == "mirror/hle-v2"
 
 
-def test_run_hle_slice_refuses_mismatched_supplied_identity(
+def test_run_hle_slice_ignores_supplied_identity_without_catalog_pin(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """With no catalog pin there is nothing to validate a supplied identity
+    against; it is ignored (never stamped), matching the gpqa/bfcl rule."""
     home = _plain_hle_home(tmp_path)
     monkeypatch.setenv("BENCHEVAL_HLE_HOME", str(home))
     monkeypatch.delenv("BENCHEVAL_HLE_DATASET", raising=False)
+    plan = _hle_plan()
+    artifacts_dir = tmp_path / "artifacts"
+    paths = hle_run_paths(
+        artifacts_dir=artifacts_dir,
+        run_id="hle-unpinned",
+        provider_id=plan.provider_id,
+        model_id=plan.model_id,
+    )
     calls: list[tuple[str, ...]] = []
 
-    def runner(command, *, cwd, timeout_sec, env=None) -> HleCliResult:
+    def fake(command, *, cwd, timeout_sec, env=None) -> HleCliResult:
         calls.append(tuple(command))
-        return HleCliResult(0, "", "", 0.0, tuple(command))
+        if len(calls) == 1:
+            paths.default_predictions_path.write_text("{}\n", encoding="utf-8")
+        else:
+            judged = {
+                f"row-{index}": {"judge_response": {"correct": "yes"}}
+                for index in range(len(plan.instances))
+            }
+            paths.judged_path.write_text(json.dumps(judged), encoding="utf-8")
+        return HleCliResult(0, "", "", 0.1, tuple(command))
 
-    with pytest.raises(AdapterFailureError) as excinfo:
-        run_hle_slice(
-            plan=_hle_plan(),
-            artifacts_dir=tmp_path / "artifacts",
-            repo_root=tmp_path,
-            process_runner=runner,
-            run_id="hle-drift",
-            benchmark_identity="hle@0000000000000000+data-0000000000000000",
-        )
+    outcomes = run_hle_slice(
+        plan=plan,
+        artifacts_dir=artifacts_dir,
+        repo_root=tmp_path,
+        process_runner=fake,
+        run_id="hle-unpinned",
+        benchmark_identity="hle@0000000000000000+data-0000000000000000",
+    )
 
-    assert excinfo.value.failure_label == "runtime_config_drift"
-    assert calls == []
+    assert outcomes
+    assert outcomes[0].adapter_metadata["hle_dataset"] == "cais/hle"
+    assert "benchmark_version" not in outcomes[0].adapter_metadata
 
 
 # ---------------------------------------------------------------------------

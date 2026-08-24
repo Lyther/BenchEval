@@ -24,7 +24,7 @@ BenchEval is a thin evaluation control plane:
 benchmark/slice  →  (runtime | agent)?  →  model via provider  →  EvidenceRecord + artifacts
 ```
 
-**Tier-0 executable software (gate count = 4):** `terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4`. Catalog lists `swe-bench-verified` as non-executable until its official evaluate path is wired (`bfcl-v4` was admitted 2026-08-24 after the qualified live dev-box lifecycle `run-20260824-040631-228703-4756f857`), plus `swe-bench-pro`, `cybergym`, and `exploitgym` as `adapter_pending`.
+**Tier-0 executable software (gate count = 4):** `terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4`. Catalog lists `swe-bench-verified` as non-executable until its official evaluate path is wired (`bfcl-v4` was admitted 2026-08-24 on the diagnostic-labeled dev-box lifecycle demonstration `run-20260824-040631-228703-4756f857` plus the registered `passed` run `run-20260824-045622-854659-a46ae44d`), plus `swe-bench-pro`, `cybergym`, and `exploitgym` as `adapter_pending`.
 
 **Production v1 live-proof set (pilot minimum):** `terminal-bench` runtime comparison (claude-code vs codex-cli). `gpqa-diamond` / `hle` / `bfcl-v4` are Tier-0 executable software; treat live claims as `adapter_smoke` until Phase B evidence is recorded. `swe-bench-verified` remains non-executable until official evaluation is wired.
 

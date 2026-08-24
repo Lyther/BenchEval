@@ -338,11 +338,10 @@ def test_hle_dataset_identity_is_captured_once_per_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Contract change (pinned dataset identity): the launched dataset is the
-    # pinned catalog repo. The capture-once guard below is preserved — a
-    # concurrent env edit must not change the launched or stamped identity —
-    # but the flipped value is now drift that would fail closed if it were
-    # re-resolved (see the divergence tests in test_benchmark_identity_contracts).
+    # Contract reverted (review F002): with no catalog identity pin the dataset
+    # falls back to the cais/hle default. The capture-once guard is preserved:
+    # the dataset is resolved once at run start, so a concurrent env edit must
+    # not change the launched or stamped identity mid-run.
     from bencheval.hle_adapter import HleCliResult, hle_run_paths, run_hle_slice
 
     home = _plain_hle_home(tmp_path)
@@ -386,6 +385,6 @@ def test_hle_dataset_identity_is_captured_once_per_run(
         run_id="hle-r6-dataset",
     )
 
-    assert argv_datasets == ["macabdul9/hle_text_only", "macabdul9/hle_text_only"]
+    assert argv_datasets == ["cais/hle", "cais/hle"]
     assert outcomes
-    assert outcomes[0].adapter_metadata["hle_dataset"] == "macabdul9/hle_text_only"
+    assert outcomes[0].adapter_metadata["hle_dataset"] == "cais/hle"

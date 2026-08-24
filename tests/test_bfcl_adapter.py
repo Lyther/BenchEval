@@ -12,9 +12,11 @@ SUBSTITUTE_JUSTIFICATION
   credentials; unavailable in the local Tier-0 environment
 - proof-limit: proves orchestration and failure mapping only, not BFCL
   execution, scorer correctness, or live readiness
-- real-proof: run-20260824-040631-228703-4756f857 (dev-box-cpu, 2026-08-24):
-  5/5 smoke categories officially scored via the real generate → evaluate
-  lifecycle (results/evidence/run-20260824-040631-228703-4756f857.jsonl)
+- real-proof: run-20260824-045622-854659-a46ae44d (dev-box-cpu, 2026-08-24,
+  registered `passed`): 5/5 smoke categories officially scored via the real
+  generate → evaluate lifecycle; the diagnostic-labeled demonstration
+  run-20260824-040631-228703-4756f857 covered the same lifecycle earlier
+  (evidence under the machine-local, gitignored results/ tree)
 """
 
 from __future__ import annotations
@@ -40,7 +42,9 @@ from bencheval.exceptions import AdapterFailureError, BenchEvalError
 
 def test_bfcl_admission_passes_after_live_qualification() -> None:
     # Round-1 F008 contract, inverted: the wired generate+evaluate lifecycle
-    # qualified live on the dev-box (run-20260824-040631-228703-4756f857), so
+    # ran live on the dev-box (diagnostic-labeled demonstration
+    # run-20260824-040631-228703-4756f857, then registered `passed` run
+    # run-20260824-045622-854659-a46ae44d), so
     # the Tier-0 wiring gate must report passed. Demoted fail-closed coverage
     # stays with swe-bench-verified in tests/test_adapter_admission.py.
     report = assess_bfcl_v4_admission()

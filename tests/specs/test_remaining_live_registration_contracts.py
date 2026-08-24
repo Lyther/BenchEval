@@ -208,7 +208,7 @@ def test_passed_registration_cannot_bypass_evidence_with_dev_flag(tmp_path: Path
 
 
 def _native_bfcl_record(score_path: Path, **overrides: object) -> EvidenceRecord:
-    """bfcl-v4 row modeled on the qualified live run's evidence shape."""
+    """bfcl-v4 row modeled on the registered live run's evidence shape."""
     values: dict[str, object] = {
         "run_id": "bfcl-live-run",
         "task_id": "irrelevance",

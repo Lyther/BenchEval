@@ -15,7 +15,7 @@ The minimum live proof this runbook targets (matches `scripts/run-live-pilot-mat
 1. `terminal-bench` `smoke-5` for **both** `claude-code` and `codex-cli` Harbor runtimes (same `model_id` so the compare is runtime-only).
 2. `bencheval compare` of those two evidence files succeeds (single axis: `runtime_comparison`).
 
-`bfcl-v4` is executable (admitted 2026-08-24 after the qualified live lifecycle `run-20260824-040631-228703-4756f857`); `swe-bench-verified` is cataloged but **not** executable — it still awaits official evaluate wiring. Neither is part of the TB minimum proof matrix below.
+`bfcl-v4` is executable (admitted 2026-08-24 on the diagnostic-labeled lifecycle demonstration `run-20260824-040631-228703-4756f857` plus the registered `passed` run `run-20260824-045622-854659-a46ae44d`); `swe-bench-verified` is cataloged but **not** executable — it still awaits official evaluate wiring. Neither is part of the TB minimum proof matrix below.
 
 ## 1. Prerequisites on dev-box-cpu
 

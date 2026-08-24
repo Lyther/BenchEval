@@ -352,7 +352,11 @@ def _contamination_label(plan: RunPlan) -> str | None:
 
 
 def _backend_for_plan(plan: RunPlan) -> ExecutionBackend:
-    if plan.adapter_id in (GPQA_ADAPTER_ID, HLE_ADAPTER_ID):
+    # BFCL/GPQA/HLE are all model-only inspect-driven adapters; their scored
+    # rows stamp INSPECT_BACKEND, so budget-skip and adapter-failure rows must
+    # stamp the same backend (review F004: bfcl was omitted here and mixed
+    # "harbor" failure rows into "inspect" runs).
+    if plan.adapter_id in (GPQA_ADAPTER_ID, HLE_ADAPTER_ID, BFCL_ADAPTER_ID):
         return INSPECT_BACKEND
     return HARBOR_BACKEND
 

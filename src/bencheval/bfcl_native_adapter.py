@@ -4,8 +4,10 @@ Native scoring authority is the official ``bfcl evaluate`` score artifact at
 ``<score-dir>/<model>/non_live/BFCL_v4_<category>_score.json`` (JSONL: summary
 header first, then one row per FAILED case); generation-side files
 (``verdict.json``/``result.json``) are never consulted for the verdict.
-BFCL is admitted (``executable: true``) since 2026-08-24, after the qualified
-live dev-box lifecycle (``run-20260824-040631-228703-4756f857``); the CLI
+BFCL is admitted (``executable: true``) since 2026-08-24, on the dev-box
+lifecycle demonstration ``run-20260824-040631-228703-4756f857``
+(diagnostic-labeled, operator-reviewed) plus the registered ``passed`` run
+``run-20260824-045622-854659-a46ae44d``; the CLI
 refuses ``--diagnostic`` for this now-executable row, and diagnostic-labeled
 evidence never registers ``passed``.
 
@@ -31,6 +33,7 @@ import json
 import math
 import os
 import shutil
+import stat
 import subprocess
 import time
 from collections.abc import Mapping, Sequence
@@ -48,6 +51,13 @@ from bencheval.domain import FailureLabel, RunPlan
 from bencheval.exceptions import AdapterFailureError, BenchEvalError
 from bencheval.path_safety import validate_control_plane_instance_id
 from bencheval.provider_registry import resolve_openai_compatible_launch
+from bencheval.run_isolation import (
+    AUTHORITATIVE_ARTIFACT_NAMES,
+    dir_identity_error,
+    open_owned_dir_fd,
+    prepare_instance_artifacts_dir,
+    write_text_at_exclusive,
+)
 
 BFCL_ADAPTER_ID = "bfcl"
 BFCL_COMMAND = "bfcl"
@@ -414,34 +424,147 @@ def _bfcl_prelaunch_benchmark_identity(
     return capture_bfcl_benchmark_identity(identity)
 
 
+@dataclass(frozen=True, slots=True)
+class _ScoreCandidate:
+    """Located official score artifact plus its locate-time inode identity."""
+
+    path: Path
+    identity: tuple[int, int]
+
+
 def _find_official_score_candidates(
     *,
     score_dir: Path,
     model_id: str,
     instance_id: str,
-) -> list[Path]:
+) -> list[_ScoreCandidate]:
     """Exact-name official artifacts under the normalized model directory.
 
     Upstream resolves the directory as ``model_name.replace("/", "_")`` and the
     filename as ``BFCL_v4_<category>_score.json``; the intermediate directory
     group (``non_live``/``live``/...) is category-derived, so the search is an
-    exact-name walk instead of a hardcoded group.
+    exact-name walk instead of a hardcoded group. Each match is ``lstat``-bound:
+    anything that is not a plain regular file (a symlink planted at the exact
+    score name included) is rejected here instead of being followed.
     """
     model_root = score_dir / model_id.replace("/", "_")
     if not model_root.is_dir():
         return []
     target = f"{_SCORE_FILE_PREFIX}_{instance_id}_score.json"
     try:
-        return sorted(p for p in model_root.rglob(target) if p.is_file())
+        matches = sorted(p for p in model_root.rglob(target) if p.is_file())
     except OSError as e:
         raise AdapterFailureError(
             f"bfcl score directory unreadable under {model_root}: {e}",
             failure_label="evidence_corrupt",
         ) from e
+    candidates: list[_ScoreCandidate] = []
+    for path in matches:
+        try:
+            info = os.lstat(path)
+        except OSError as e:
+            raise AdapterFailureError(
+                f"bfcl score artifact vanished after locate: {path}: {e}",
+                failure_label="evidence_corrupt",
+            ) from e
+        if not stat.S_ISREG(info.st_mode):
+            raise AdapterFailureError(
+                f"bfcl score artifact is not a plain file: {path}",
+                failure_label="evidence_corrupt",
+            )
+        candidates.append(_ScoreCandidate(path=path, identity=(info.st_dev, info.st_ino)))
+    return candidates
 
 
-def _parse_official_score(score_file: Path) -> tuple[bool, float] | None:
-    """Official BFCL v4 score artifact → (primary_pass, partial_score); None when unparseable.
+def _open_nofollow_child_dir_fd(parent_fd: int, name: str, *, role: str) -> int:
+    """Open the child directory ``name`` beneath ``parent_fd`` (no symlinks)."""
+    try:
+        return os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent_fd)
+    except OSError as e:
+        raise AdapterFailureError(
+            f"bfcl score artifact path component {name!r} unreadable ({role}): {e}",
+            failure_label="evidence_corrupt",
+        ) from e
+
+
+def _read_score_candidate_bytes(
+    *,
+    score_root_fd: int,
+    score_dir: Path,
+    candidate: _ScoreCandidate,
+) -> bytes:
+    """Read the located artifact through anchored, no-follow path resolution.
+
+    The walk never leaves the pinned ``score_root_fd`` tree and never follows a
+    symlink; the opened inode must equal the identity recorded at locate time,
+    and the pathname must still name that same inode after the read. Any
+    mismatch means a same-uid mutator swapped the artifact and its bytes can
+    never be scored.
+    """
+    rel = candidate.path.relative_to(score_dir)
+    dir_fd = os.dup(score_root_fd)
+    try:
+        for part in rel.parts[:-1]:
+            child_fd = _open_nofollow_child_dir_fd(dir_fd, part, role="bfcl score directory")
+            os.close(dir_fd)
+            dir_fd = child_fd
+        try:
+            file_fd = os.open(rel.parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dir_fd)
+        except OSError as e:
+            raise AdapterFailureError(
+                f"bfcl score artifact unreadable: {candidate.path}: {e}",
+                failure_label="evidence_corrupt",
+            ) from e
+        try:
+            opened = os.fstat(file_fd)
+        except OSError as e:
+            os.close(file_fd)
+            raise AdapterFailureError(
+                f"bfcl score artifact unreadable: {candidate.path}: {e}",
+                failure_label="evidence_corrupt",
+            ) from e
+        if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != candidate.identity:
+            os.close(file_fd)
+            raise AdapterFailureError(
+                f"bfcl score artifact replaced after locate: {candidate.path}",
+                failure_label="evidence_corrupt",
+            )
+        try:
+            handle = os.fdopen(file_fd, "rb")
+        except OSError as e:
+            # fdopen failed before taking ownership: close fd so it never leaks.
+            os.close(file_fd)
+            raise AdapterFailureError(
+                f"bfcl score artifact unreadable: {candidate.path}: {e}",
+                failure_label="evidence_corrupt",
+            ) from e
+        try:
+            with handle:
+                data = handle.read()
+        except OSError as e:
+            raise AdapterFailureError(
+                f"bfcl score artifact unreadable: {candidate.path}: {e}",
+                failure_label="evidence_corrupt",
+            ) from e
+    finally:
+        os.close(dir_fd)
+    try:
+        confirm = os.lstat(candidate.path)
+    except OSError as e:
+        raise AdapterFailureError(
+            f"bfcl score artifact vanished during read: {candidate.path}: {e}",
+            failure_label="evidence_corrupt",
+        ) from e
+    if (confirm.st_dev, confirm.st_ino) != candidate.identity:
+        raise AdapterFailureError(
+            f"bfcl score artifact replaced during read: {candidate.path}",
+            failure_label="evidence_corrupt",
+        )
+    return data
+
+
+def _parse_official_score(text: bytes) -> tuple[bool, float] | None:
+    """Official BFCL v4 score artifact bytes → (primary_pass, partial_score); None when unparseable.
 
     Pinned upstream layout: JSONL, one object per line. Line 0 is the summary
     header (``{"accuracy": float, "correct_count": int, "total_count": int}``);
@@ -452,11 +575,11 @@ def _parse_official_score(score_file: Path) -> tuple[bool, float] | None:
     and can never grant a pass.
     """
     try:
-        text = score_file.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
+        decoded = text.decode("utf-8")
+    except UnicodeDecodeError:
         return None
     rows: list[object] = []
-    for line in text.splitlines():
+    for line in decoded.splitlines():
         if not line.strip():
             return None
         try:
@@ -519,11 +642,16 @@ def parse_bfcl_instance_outcome(
     the result directory (``verdict.json``/``result.json``) are harness scratch
     output and are never consulted for the verdict.
     """
+    instance_fd = open_owned_dir_fd(artifacts_dir, role="bfcl instance artifacts directory")
+    try:
+        # Anchored, attacker-entry-replacing writes: a planted stdout.log /
+        # stderr.log symlink or hard link can never redirect these bytes.
+        write_text_at_exclusive(instance_fd, "stdout.log", cli.stdout)
+        write_text_at_exclusive(instance_fd, "stderr.log", cli.stderr)
+    finally:
+        os.close(instance_fd)
     stdout_file = artifacts_dir / "stdout.log"
     stderr_file = artifacts_dir / "stderr.log"
-    stdout_file.parent.mkdir(parents=True, exist_ok=True)
-    stdout_file.write_text(cli.stdout, encoding="utf-8")
-    stderr_file.write_text(cli.stderr, encoding="utf-8")
     stdout_rel = str(stdout_file.resolve())
     stderr_rel = str(stderr_file.resolve())
 
@@ -532,33 +660,56 @@ def parse_bfcl_instance_outcome(
     partial_score = 0.0
     failure_class: FailureLabel | None = None
     cost_usd = 0.0
+    # cost_usd=0.0 means "no provider metering captured" (the bfcl CLI reports
+    # no cost), not zero spend — mirror of the hle stamp.
+    native["cost_basis"] = "unmeasured_no_provider_metering"
     verifier_path: str | None = None
 
     if cli.returncode != 0:
         failure_class = "harness_failure"
     else:
-        candidates = _find_official_score_candidates(
-            score_dir=score_dir,
-            model_id=model_id,
-            instance_id=instance_id,
-        )
+        try:
+            candidates = _find_official_score_candidates(
+                score_dir=score_dir,
+                model_id=model_id,
+                instance_id=instance_id,
+            )
+        except AdapterFailureError:
+            # A tampered or unreadable score tree can never grant a verdict;
+            # it fails closed as corrupt evidence instead of propagating.
+            candidates = []
+            failure_class = "evidence_corrupt"
         if not candidates:
             # Evaluate exited 0 without writing the official score artifact.
-            failure_class = "harness_failure"
+            if failure_class is None:
+                failure_class = "harness_failure"
         elif len(candidates) > 1:
             # Duplicate exact-name artifacts cannot be disambiguated; scoring
             # either would be an invented verdict.
             failure_class = "runtime_output_unparseable"
         else:
-            score_file = candidates[0]
-            verifier_path = str(score_file.resolve())
-            score = _parse_official_score(score_file)
-            if score is None:
-                failure_class = "runtime_output_unparseable"
+            candidate = candidates[0]
+            score_fd = open_owned_dir_fd(score_dir, role="bfcl evaluate score directory")
+            try:
+                score_bytes = _read_score_candidate_bytes(
+                    score_root_fd=score_fd,
+                    score_dir=score_dir,
+                    candidate=candidate,
+                )
+            except AdapterFailureError:
+                # Locate→read swap: the bytes cannot be trusted, so no verdict.
+                failure_class = "evidence_corrupt"
             else:
-                primary_pass, partial_score = score
-                native["accuracy"] = partial_score
-                native["score_file"] = verifier_path
+                verifier_path = str(candidate.path.resolve())
+                score = _parse_official_score(score_bytes)
+                if score is None:
+                    failure_class = "runtime_output_unparseable"
+                else:
+                    primary_pass, partial_score = score
+                    native["accuracy"] = partial_score
+                    native["score_file"] = verifier_path
+            finally:
+                os.close(score_fd)
 
     if not primary_pass and failure_class is None:
         failure_class = "model_wrong_solution"
@@ -586,6 +737,50 @@ def parse_bfcl_instance_outcome(
         verifier_log_path=_rel_path(verifier_path, repo_root) if verifier_path else None,
         adapter_metadata=metadata,
     )
+
+
+def _raise_on_dir_drift(pins: Sequence[tuple[int, Path, str]]) -> None:
+    """Fail closed when any pinned directory path no longer names its inode."""
+    for fd, path, role in pins:
+        error = dir_identity_error(fd, path, role=role)
+        if error is not None:
+            raise AdapterFailureError(error, failure_label="evidence_corrupt")
+
+
+def _reverify_bfcl_package_data(
+    *,
+    plan: RunPlan,
+    process_runner: BfclProcessRunner | None,
+) -> None:
+    """Re-verify the pinned package data bytes around the evaluate phase.
+
+    The evaluate phase consumes mutable ``possible_answer`` bytes from the
+    installed package; a same-uid mutator rewriting them between the pre-launch
+    gate and scoring must fail closed as ``runtime_config_drift``. An injected
+    runner owns its controlled boundary and skips verification when the
+    ``bfcl_eval`` package is not installed (the pre-launch gate already bound
+    the supplied identity to the catalog pin).
+    """
+    from bencheval.identity_strings import catalog_benchmark_identity
+
+    identity = catalog_benchmark_identity(plan.benchmark_id)
+    if identity is None:
+        return
+    if not isinstance(identity, BfclPackageDataIdentity):
+        raise AdapterFailureError(
+            f"bfcl benchmark identity kind drift: {identity.kind!r}",
+            failure_label="runtime_config_drift",
+        )
+    try:
+        package_root = _bfcl_package_root()
+    except BenchEvalError as e:
+        if process_runner is not None:
+            return
+        raise AdapterFailureError(str(e), failure_label="runtime_config_drift") from e
+    try:
+        verify_bfcl_package_data(package_root=package_root, files=identity.files)
+    except BenchEvalError as e:
+        raise AdapterFailureError(str(e), failure_label="runtime_config_drift") from e
 
 
 def run_bfcl_instance(
@@ -629,10 +824,6 @@ def run_bfcl_instance(
         benchmark_identity=benchmark_identity,
     )
     from bencheval.hle_adapter import remaining_timeout_sec
-    from bencheval.run_isolation import (
-        AUTHORITATIVE_ARTIFACT_NAMES,
-        prepare_instance_artifacts_dir,
-    )
 
     # The official score artifact is nested under run-owned roots; clear both so
     # a leftover score or generation from a prior use can never be re-scored.
@@ -642,59 +833,104 @@ def run_bfcl_instance(
     )
     result_root = instance_dir / "results"
     score_root = instance_dir / "scores"
-    result_root.mkdir(parents=True, exist_ok=True)
-    score_root.mkdir(parents=True, exist_ok=True)
-    generate_command = build_bfcl_run_command(
-        plan=plan,
-        instance_id=instance_id,
-        artifacts_dir=result_root,
-    )
-    evaluate_command = build_bfcl_evaluate_command(
-        plan=plan,
-        instance_id=instance_id,
-        result_dir=result_root,
-        score_dir=score_root,
-    )
-    wall = timeout_sec if timeout_sec is not None else max(1, plan.max_wall_clock_sec_per_instance)
-    runner = process_runner or _default_process_runner
-    deadline = time.monotonic() + wall
-    generate_cli = runner(generate_command, cwd=repo_root, timeout_sec=wall, env=launch.environment)
-    if generate_cli.returncode != 0:
+    # Pin every run-owned directory by descriptor before the first subprocess:
+    # each descriptor anchors the approved inode, and a swapped path fails
+    # closed (never scored) at the phase boundaries below.
+    pins: list[tuple[int, Path, str]] = [
+        (
+            open_owned_dir_fd(instance_dir, role="bfcl instance artifacts directory"),
+            instance_dir,
+            "bfcl instance artifacts directory",
+        ),
+        (
+            open_owned_dir_fd(result_root, role="bfcl generate result directory"),
+            result_root,
+            "bfcl generate result directory",
+        ),
+        (
+            open_owned_dir_fd(score_root, role="bfcl evaluate score directory"),
+            score_root,
+            "bfcl evaluate score directory",
+        ),
+    ]
+    try:
+        generate_command = build_bfcl_run_command(
+            plan=plan,
+            instance_id=instance_id,
+            artifacts_dir=result_root,
+        )
+        evaluate_command = build_bfcl_evaluate_command(
+            plan=plan,
+            instance_id=instance_id,
+            result_dir=result_root,
+            score_dir=score_root,
+        )
+        wall = (
+            timeout_sec if timeout_sec is not None else max(1, plan.max_wall_clock_sec_per_instance)
+        )
+        runner = process_runner or _default_process_runner
+        deadline = time.monotonic() + wall
+        generate_cli = runner(
+            generate_command,
+            cwd=repo_root,
+            timeout_sec=wall,
+            env=launch.environment,
+        )
+        _raise_on_dir_drift(pins)
+        if generate_cli.returncode != 0:
+            return parse_bfcl_instance_outcome(
+                instance_id=instance_id,
+                cli=generate_cli,
+                artifacts_dir=instance_dir,
+                repo_root=repo_root,
+                harness_version=effective_harness_version,
+                score_dir=score_root,
+                model_id=plan.model_id,
+                benchmark_version=benchmark_version,
+            )
+        remaining = remaining_timeout_sec(deadline)
+        if remaining <= 0:
+            raise AdapterFailureError(
+                f"bfcl harness timed out after {wall}s",
+                failure_label="runtime_budget_exceeded",
+                latency_sec=generate_cli.latency_sec,
+                adapter_metadata={"bfcl_command": " ".join(generate_command)},
+            )
+        # The evaluate phase consumes mutable possible_answer bytes from the
+        # installed package; re-verify the pin on both sides of the subprocess.
+        _reverify_bfcl_package_data(plan=plan, process_runner=process_runner)
+        # Evaluate writes beneath the normalized per-model score subdirectory;
+        # pin it too so a mid-phase swap cannot redirect the scoring authority.
+        model_score_dir = score_root / plan.model_id.replace("/", "_")
+        pins.append(
+            (
+                open_owned_dir_fd(model_score_dir, role="bfcl evaluate model score directory"),
+                model_score_dir,
+                "bfcl evaluate model score directory",
+            ),
+        )
+        evaluate_cli = runner(
+            evaluate_command,
+            cwd=repo_root,
+            timeout_sec=remaining,
+            env=launch.environment,
+        )
+        _raise_on_dir_drift(pins)
+        _reverify_bfcl_package_data(plan=plan, process_runner=process_runner)
         return parse_bfcl_instance_outcome(
             instance_id=instance_id,
-            cli=generate_cli,
+            cli=evaluate_cli,
             artifacts_dir=instance_dir,
             repo_root=repo_root,
             harness_version=effective_harness_version,
             score_dir=score_root,
             model_id=plan.model_id,
+            latency_sec=generate_cli.latency_sec + evaluate_cli.latency_sec,
             benchmark_version=benchmark_version,
         )
-    remaining = remaining_timeout_sec(deadline)
-    if remaining <= 0:
-        raise AdapterFailureError(
-            f"bfcl harness timed out after {wall}s",
-            failure_label="runtime_budget_exceeded",
-            latency_sec=generate_cli.latency_sec,
-            adapter_metadata={"bfcl_command": " ".join(generate_command)},
-        )
-    evaluate_cli = runner(
-        evaluate_command,
-        cwd=repo_root,
-        timeout_sec=remaining,
-        env=launch.environment,
-    )
-    return parse_bfcl_instance_outcome(
-        instance_id=instance_id,
-        cli=evaluate_cli,
-        artifacts_dir=instance_dir,
-        repo_root=repo_root,
-        harness_version=effective_harness_version,
-        score_dir=score_root,
-        model_id=plan.model_id,
-        latency_sec=generate_cli.latency_sec + evaluate_cli.latency_sec,
-        benchmark_version=benchmark_version,
-    )
+    finally:
+        for fd, _path, _role in pins:
+            os.close(fd)
 
 
 __all__ = [

@@ -1,7 +1,8 @@
 """Contracts for the BFCL control-plane executor dispatch.
 
-bfcl-v4 is admitted (``executable: true``) after the qualified live dev-box
-lifecycle; this module pins the dispatch route: the executor dispatches
+bfcl-v4 is admitted (``executable: true``) on the diagnostic-labeled dev-box
+lifecycle demonstration plus a registered ``passed`` run; this module pins the
+dispatch route: the executor dispatches
 ``adapter_id == "bfcl"`` plans through the real generate → evaluate lifecycle
 with per-category evidence rows. Diagnostic-flagged plans still label rows
 ``diagnostic`` at the executor boundary and such rows can never register
@@ -20,9 +21,11 @@ SUBSTITUTE_JUSTIFICATION
 - proof-limit: proves executor dispatch, per-instance evidence mapping, and
   failure routing only — not the real bfcl CLI, the provider path, or the
   official scorer
-- real-proof: run-20260824-040631-228703-4756f857 (dev-box-cpu, 2026-08-24):
-  5/5 smoke categories officially scored via the real generate → evaluate
-  lifecycle (results/evidence/run-20260824-040631-228703-4756f857.jsonl)
+- real-proof: run-20260824-045622-854659-a46ae44d (dev-box-cpu, 2026-08-24,
+  registered `passed`): 5/5 smoke categories officially scored via the real
+  generate → evaluate lifecycle; the diagnostic-labeled demonstration
+  run-20260824-040631-228703-4756f857 covered the same lifecycle earlier
+  (evidence under the machine-local, gitignored results/ tree)
 """
 
 from __future__ import annotations

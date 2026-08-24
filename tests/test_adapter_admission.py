@@ -54,7 +54,9 @@ def test_admission_fails_without_adapter_files(tmp_path: Path) -> None:
 
 def test_bfcl_v4_admission_passes_after_live_qualification() -> None:
     # Round-1 F008 contract, inverted: the wired generate+evaluate lifecycle
-    # qualified live on the dev-box (run-20260824-040631-228703-4756f857), so
+    # ran live on the dev-box (diagnostic-labeled demonstration
+    # run-20260824-040631-228703-4756f857, then registered `passed` run
+    # run-20260824-045622-854659-a46ae44d), so
     # the Tier-0 wiring gate must report passed. Demoted fail-closed coverage
     # stays with swe-bench-verified below.
     report = assess_bfcl_v4_admission()

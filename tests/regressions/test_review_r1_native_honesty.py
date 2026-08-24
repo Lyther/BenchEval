@@ -59,8 +59,9 @@ def test_f001_f002_swe_demoted_and_bfcl_admitted() -> None:
     bfcl = catalog.by_id_or_alias("bfcl-v4")
     assert swe.executable is False
     assert execution_support_label(swe) == "manifest_only"
-    # BFCL was admitted after the qualified live dev-box lifecycle
-    # (run-20260824-040631-228703-4756f857).
+    # BFCL was admitted on the diagnostic-labeled dev-box lifecycle
+    # demonstration run-20260824-040631-228703-4756f857 plus the registered
+    # `passed` run run-20260824-045622-854659-a46ae44d.
     assert bfcl.executable is True
     assert execution_support_label(bfcl) == "executable_adapter"
     executable = {

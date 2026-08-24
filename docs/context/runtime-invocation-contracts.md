@@ -40,7 +40,7 @@ Runtime profiles: `claude-code`, `codex-cli` (`config/runtimes/claude-code.yaml`
 
 ## BFCL v4 (executable)
 
-`bfcl-v4` is executable (admitted 2026-08-24 after the qualified live dev-box run `run-20260824-040631-228703-4756f857`). The module implements the bounded generate → evaluate lifecycle as the only route; the CLI refuses `--diagnostic` for this now-executable row, and diagnostic-labeled evidence never registers `passed`.
+`bfcl-v4` is executable (admitted 2026-08-24 on the diagnostic-labeled dev-box lifecycle demonstration `run-20260824-040631-228703-4756f857` plus the registered `passed` run `run-20260824-045622-854659-a46ae44d`). The module implements the bounded generate → evaluate lifecycle as the only route; the CLI refuses `--diagnostic` for this now-executable row, and diagnostic-labeled evidence never registers `passed`.
 
 | Field | Contract |
 |-------|----------|

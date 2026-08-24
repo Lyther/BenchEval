@@ -1,7 +1,7 @@
 # External benchmark catalog
 
 > **Status:** Research only (updated 2026-07-14). **Not** the product catalog.
-> **Live product YAML:** [`config/benchmarks.yaml`](../../config/benchmarks.yaml) has **8** catalog rows and **4** Tier-0 executable rows (`terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4` — BFCL admitted 2026-08-24 after the qualified live dev-box lifecycle). `swe-bench-verified` is demoted until official evaluation is wired. `swe-bench-pro`, `cybergym`, and `exploitgym` remain `adapter_pending`. Rows below that are not yet admitted remain a planning shortlist.
+> **Live product YAML:** [`config/benchmarks.yaml`](../../config/benchmarks.yaml) has **8** catalog rows and **4** Tier-0 executable rows (`terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4` — BFCL admitted 2026-08-24 on the diagnostic-labeled dev-box lifecycle demonstration `run-20260824-040631-228703-4756f857` plus the registered `passed` run `run-20260824-045622-854659-a46ae44d`). `swe-bench-verified` is demoted until official evaluation is wired. `swe-bench-pro`, `cybergym`, and `exploitgym` remain `adapter_pending`. Rows below that are not yet admitted remain a planning shortlist.
 > **Do not** treat entries here as runnable via BenchEval CLI.
 
 Third-party suites popular in coding-agent, tool-use, and security evaluation. Prefer official harnesses when a future adapter is designed.

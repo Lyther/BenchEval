@@ -27,7 +27,7 @@ from bencheval.benchmark_plan import plan_control_plane
 from bencheval.bfcl_native_adapter import BfclCliResult
 from bencheval.control_plane_executor import _hash_config_inputs, execute_control_plane_run
 from bencheval.evidence import read_evidence_jsonl
-from bencheval.exceptions import BenchEvalError
+from bencheval.exceptions import AdapterFailureError, BenchEvalError
 from bencheval.runtime_registry import load_runtime_catalog
 from bencheval.terminal_bench_harbor import HarborCliResult, harbor_agent_for_runtime
 
@@ -343,7 +343,55 @@ def test_bfcl_applies_run_wide_budget_before_next_category(tmp_path: Path) -> No
     assert [row.instance_id for row in rows] == ["simple_python", "irrelevance"]
     assert rows[0].primary_pass is True
     assert rows[1].failure_class == "runtime_budget_exceeded"
+    # Backend stamp consistency (review F004): scored bfcl rows stamp "inspect"
+    # via _evidence_from_bfcl_outcome; the budget-skip row must match.
+    assert rows[0].backend == "inspect"
+    assert rows[1].backend == "inspect"
     assert summary.passed_count == 1
+    assert summary.failed_count == 1
+
+
+def test_bfcl_adapter_failure_row_stamps_inspect_backend(tmp_path: Path) -> None:
+    """A bfcl adapter-exception row must stamp the same backend as scored rows.
+
+    Review F004: the exception path derives the backend from ``_backend_for_plan``,
+    which omitted bfcl and stamped ``harbor`` while scored bfcl rows stamp
+    ``inspect``.
+    """
+    base_plan = plan_control_plane(
+        benchmark_id="bfcl-v4",
+        slice_id="smoke-5",
+        runtime_id=None,
+        model_id=_BFCL_MODEL,
+    )
+    plan = base_plan.model_copy(update={"instances": base_plan.instances[:1]})
+
+    def failing_runner(
+        command: Sequence[str],
+        *,
+        cwd: Path | None,
+        timeout_sec: int,
+        env: Mapping[str, str],
+    ) -> BfclCliResult:
+        del cwd, timeout_sec, env
+        raise AdapterFailureError(
+            "bfcl harness timed out after 1s",
+            failure_label="runtime_budget_exceeded",
+        )
+
+    summary = execute_control_plane_run(
+        plan=plan,
+        output_path=tmp_path / "evidence.jsonl",
+        artifacts_dir=tmp_path / "artifacts",
+        run_id="bfcl-backend-stamp",
+        bfcl_process_runner=failing_runner,
+        bfcl_benchmark_identity=_BFCL_IDENTITY,
+    )
+
+    rows = read_evidence_jsonl(tmp_path / "evidence.jsonl")
+    assert len(rows) == 1
+    assert rows[0].failure_class == "runtime_budget_exceeded"
+    assert rows[0].backend == "inspect"
     assert summary.failed_count == 1
 
 

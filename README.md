@@ -6,7 +6,7 @@ Evidence-based evaluation control plane. Product spine:
 benchmark  →  (runtime | agent)?  →  model via provider  →  evidence
 ```
 
-Tier-0 executable software entries: **4** (`terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4` — BFCL admitted 2026-08-24 after the qualified live dev-box lifecycle). `swe-bench-verified` stays cataloged but non-executable until its official evaluate path is wired. Catalog also keeps `swe-bench-pro`, `cybergym`, and `exploitgym` as `adapter_pending`. Runtimes `claude-code` / `codex-cli`; agent `momo`; providers `bytellm` / `ollama-cloud`. Runtime XOR agent; omit both for model-only (GPQA / HLE). Bare `run <benchmark>` uses each executable row’s `default_slice` (smoke). Ops: [`docs/ops/benchmarks/`](docs/ops/benchmarks/README.md).
+Tier-0 executable software entries: **4** (`terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4` — BFCL admitted 2026-08-24 on the diagnostic-labeled dev-box lifecycle demonstration `run-20260824-040631-228703-4756f857` plus the registered `passed` run `run-20260824-045622-854659-a46ae44d`). `swe-bench-verified` stays cataloged but non-executable until its official evaluate path is wired. Catalog also keeps `swe-bench-pro`, `cybergym`, and `exploitgym` as `adapter_pending`. Runtimes `claude-code` / `codex-cli`; agent `momo`; providers `bytellm` / `ollama-cloud`. Runtime XOR agent; omit both for model-only (GPQA / HLE / BFCL). Bare `run <benchmark>` uses each executable row’s `default_slice` (smoke). Ops: [`docs/ops/benchmarks/`](docs/ops/benchmarks/README.md).
 
 Intent / HLD: [`docs/context/concept-hld.md`](docs/context/concept-hld.md) (v0.3). Architecture: [`docs/architecture.md`](docs/architecture.md). Diagrams: [`docs/diagrams/`](docs/diagrams/README.md).
 

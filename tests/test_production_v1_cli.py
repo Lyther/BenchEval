@@ -57,8 +57,9 @@ def test_benchmark_list_defaults_to_executable(capsys: pytest.CaptureFixture[str
 
 
 def test_run_bfcl_admitted_executable_dry_run(capsys: pytest.CaptureFixture[str]) -> None:
-    # BFCL is admitted (executable: true) after the qualified live lifecycle, so
-    # a plain dry-run builds the plan instead of refusing.
+    # BFCL is admitted (executable: true) after the live dev-box lifecycle and
+    # registered `passed` run, so a plain dry-run builds the plan instead of
+    # refusing.
     code = main(["run", "bfcl-v4/smoke-5", "--model", "kimi-k2.7-code", "--dry-run"])
     assert code == 0
     payload = json.loads(capsys.readouterr().out)
