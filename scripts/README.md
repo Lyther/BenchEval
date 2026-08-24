@@ -8,7 +8,7 @@
 - `check-production-v1.sh` — Tier 0 gate (`make check-production-v1`); requires the
   `analytics` extra so PyArrow/DuckDB round trips cannot skip.
 - `run-live-pilot-matrix.sh` — Phase B live Terminal-Bench runtime matrix; writes
-  `results/preflight/` on blockers. BFCL and SWE-Bench remain non-executable.
+  `results/preflight/` on blockers. SWE-Bench remains non-executable.
   Set `BYTELLM_API_KEY` for ByteLLM pilots; the script keeps real auth on the
   host shim and passes only dummy runtime keys into Harbor containers.
   Set `BENCHEVAL_ANTHROPIC_SYSTEM_ROLE_SHIM=1` for Anthropic-compatible

@@ -37,4 +37,4 @@ flowchart TB
     Cat -.->|executable: false| Demoted
 ```
 
-Notes: Research candidates stay in docs (`external-benchmark-catalog.md`), not product YAML. `harness_kind` is adapter-declared run-plan/evidence metadata, not a benchmark YAML knob. SWE/BFCL modules remain in-tree for future evaluate wiring but are refused by execute/CLI today.
+Notes: Research candidates stay in docs (`external-benchmark-catalog.md`), not product YAML. `harness_kind` is adapter-declared run-plan/evidence metadata, not a benchmark YAML knob. BFCL is executable (official generate → evaluate lifecycle); the SWE module remains in-tree but is refused by execute/CLI.

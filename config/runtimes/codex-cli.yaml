@@ -34,4 +34,7 @@ safety:
 versioning:
   version_command: ["codex", "--version"]
   config_hash_inputs: [".codex"]
+  # Pinned agent version installed in the Harbor container; launch refuses
+  # when absent.
+  agent_version_pin: "0.148.0"
 admission: "admitted"

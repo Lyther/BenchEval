@@ -24,9 +24,9 @@ BenchEval is a thin evaluation control plane:
 benchmark/slice  →  (runtime | agent)?  →  model via provider  →  EvidenceRecord + artifacts
 ```
 
-**Tier-0 executable software (gate count = 3):** `terminal-bench`, `gpqa-diamond`, `hle`. Catalog lists `swe-bench-verified` and `bfcl-v4` as non-executable until official evaluate paths are wired, plus `swe-bench-pro`, `cybergym`, and `exploitgym` as `adapter_pending`.
+**Tier-0 executable software (gate count = 4):** `terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4`. Catalog lists `swe-bench-verified` as non-executable until its official evaluate path is wired (`bfcl-v4` was admitted 2026-08-24 after the qualified live dev-box lifecycle `run-20260824-040631-228703-4756f857`), plus `swe-bench-pro`, `cybergym`, and `exploitgym` as `adapter_pending`.
 
-**Production v1 live-proof set (pilot minimum):** `terminal-bench` runtime comparison (claude-code vs codex-cli). `gpqa-diamond` / `hle` are Tier-0 executable software; treat live claims as `adapter_smoke` until Phase B evidence is recorded. `swe-bench-verified` / `bfcl-v4` remain non-executable until official evaluate paths are wired.
+**Production v1 live-proof set (pilot minimum):** `terminal-bench` runtime comparison (claude-code vs codex-cli). `gpqa-diamond` / `hle` / `bfcl-v4` are Tier-0 executable software; treat live claims as `adapter_smoke` until Phase B evidence is recorded. `swe-bench-verified` remains non-executable until official evaluation is wired.
 
 **Admitted scaffolds:** runtimes `claude-code`, `codex-cli`; agent `momo`; providers `bytellm`, `ollama-cloud`.
 
@@ -40,8 +40,7 @@ adapter_id = BenchEval adapter selected by config
 harness_kind = derived run-plan/evidence metadata declared by the adapter, not benchmark YAML
 ```
 
-CLI: `bencheval run <bench>/<slice> --model <id> [--runtime|--agent] [--provider bytellm]`.
-`--dry-run` = phase 1 only; `-y` skips the continue prompt.
+CLI: `bencheval run <bench>/<slice> --model <id> [--runtime|--agent] [--provider bytellm]`. `--dry-run` = phase 1 only; `-y` skips the continue prompt.
 
 ## 3. System Diagram
 
@@ -106,7 +105,7 @@ flowchart LR
 | Preflight / Doctor | Runtime/provider env checks before live runs (never prints secrets). | `doctor.py`. | `doctor.py` |
 | Materialization Manager | Cleanup policy + adapter-owned ephemeral dirs. | `lifecycle.py` (`CleanupPolicy`); adapters own workspace layout. | `lifecycle.py` |
 | Adapter Dispatcher | Route plan → adapter (runtime XOR agent XOR model-only). | `control_plane_executor.py`. | `control_plane_executor.py` |
-| Adapters | Harbor TB, GPQA, HLE; SWE/BFCL diagnostic modules remain non-executable; SWE-Pro / ExploitGym / CyberGym are pending. | Tier-0 executable set in YAML. | `terminal_bench_harbor.py`, `gpqa_adapter.py`, `hle_adapter.py`; SWE/BFCL diagnostic modules and pending adapter modules |
+| Adapters | Harbor TB, GPQA, HLE, BFCL; the SWE diagnostic module remains non-executable; SWE-Pro / ExploitGym / CyberGym are pending. | Tier-0 executable set in YAML. | `terminal_bench_harbor.py`, `gpqa_adapter.py`, `hle_adapter.py`, `bfcl_native_adapter.py`; the SWE diagnostic module and pending adapter modules |
 | Evidence Normalizer | Convert native output → `EvidenceRecord`. | `evidence.py`. | `evidence.py` |
 | Evidence Store | Evidence JSONL + optional Parquet/DuckDB export. | `evidence.py`, `export.py`. | as listed |
 | Compare/Report/Export | Markdown/JSON reports + cross-run comparisons + run bundles. | `report.py`, `evidence_compare.py`, `export.py`, `run_bundle.py`. | as listed |
@@ -114,10 +113,7 @@ flowchart LR
 
 ## 6. Execution Profiles
 
-Live product paths use upstream-owned harnesses: Harbor/Docker for Terminal-Bench,
-Inspect Evals for GPQA, and the CAIS scripts for HLE. Historical E0–E4 labels below
-are planning vocabulary only — Inspect is a benchmark harness, not an admitted product
-runtime.
+Live product paths use upstream-owned harnesses: Harbor/Docker for Terminal-Bench, Inspect Evals for GPQA, and the CAIS scripts for HLE. Historical E0–E4 labels below are planning vocabulary only — Inspect is a benchmark harness, not an admitted product runtime.
 
 | Profile | Name | Used for | Notes |
 |---------|------|----------|-------|
@@ -133,7 +129,7 @@ Dry-run planning reports `requires_harbor` / `requires_sandbox` when needed. Tho
 
 ### 7.1 Benchmark Contract (`config/benchmarks.yaml`)
 
-Existing product YAML registry is the authoritative catalog (**8** entries; **3** Tier-0 executable). Schema: `BenchmarkCatalog`/`BenchmarkEntry` in `benchmark_registry.py` (Pydantic, `frozen=True, extra="forbid"`). Fields: id, name, aliases, category, tier (`calibration`/`stretch`/`reference_only`), adapter_status (`cataloged`/`adapter_pending`/`manifest_available`/`unverified`), recommended_backend, recommended_profile, task_count, public_indexed, contamination_risk, single_mode_required, source_url, notes, `default_slice`, `adapter_id`, and `executable`. Ops manuals: `docs/ops/benchmarks/`. `harness_kind` is deliberately **not** configurable in benchmark YAML: the adapter implementation declares the official runner kind used for planning and evidence metadata. New harness families need a Python adapter + executor wiring + official score ingestion; config-only expansion applies when reusing an existing adapter family.
+Existing product YAML registry is the authoritative catalog (**8** entries; **4** Tier-0 executable). Schema: `BenchmarkCatalog`/`BenchmarkEntry` in `benchmark_registry.py` (Pydantic, `frozen=True, extra="forbid"`). Fields: id, name, aliases, category, tier (`calibration`/`stretch`/`reference_only`), adapter_status (`cataloged`/`adapter_pending`/`manifest_available`/`unverified`), recommended_backend, recommended_profile, task_count, public_indexed, contamination_risk, single_mode_required, source_url, notes, `default_slice`, `adapter_id`, and `executable`. Ops manuals: `docs/ops/benchmarks/`. `harness_kind` is deliberately **not** configurable in benchmark YAML: the adapter implementation declares the official runner kind used for planning and evidence metadata. New harness families need a Python adapter + executor wiring + official score ingestion; config-only expansion applies when reusing an existing adapter family.
 
 ### 7.2 Slice Manifest (new typed layer)
 
@@ -231,25 +227,7 @@ Deferred / not product: Inspect-as-runtime wrappers. Compatibility shims must be
 | B2 | $2.00 | 300s | Agentic / defensive Core upper bound |
 | B3 | explicit | explicit | Stretch only |
 
-Class values are classification ceilings, and the slice's own envelope is always
-the effective cap (bands mirror the class defaults, so a slice never classifies
-into a class whose ceiling it exceeds; B3's zero defaults declare no standard
-envelope). Per-instance wall-clock and run-total wall-clock are **separate
-`RunPlan` fields**: `max_wall_clock_sec_per_instance` bounds each attempt and
-`max_wall_clock_sec` bounds the whole run (`per-instance × instances`); adapters
-must never derive one from the other. Serialized schema-"0.3" plans written
-before the per-instance field existed derive it from the run total on load (the
-pre-field contract allowed one attempt to consume the whole envelope). The
-aggregate model-only harnesses (GPQA, HLE) execute every sample in one
-subprocess chain and are therefore bounded by the **run-total** envelope;
-per-instance wall is not enforceable inside an aggregate process and evidence
-records this as `per_instance_wall_enforcement=unavailable_aggregate_harness`.
-Observed steps are recorded retrospectively
-in evidence only — no max-step envelope is claimed or enforced. For the aggregate
-model-only adapters (GPQA, HLE, BFCL) no provider metering is captured: the cost
-envelope is an unenforced planning estimate and `cost_usd=0.0` in evidence means
-*unmeasured*, not zero spend. Exceeding an enforced envelope → failure label
-`budget_exceeded` (distinct from `wrong_solution`).
+Class values are classification ceilings, and the slice's own envelope is always the effective cap (bands mirror the class defaults, so a slice never classifies into a class whose ceiling it exceeds; B3's zero defaults declare no standard envelope). Per-instance wall-clock and run-total wall-clock are **separate `RunPlan` fields**: `max_wall_clock_sec_per_instance` bounds each attempt and `max_wall_clock_sec` bounds the whole run (`per-instance × instances`); adapters must never derive one from the other. Serialized schema-"0.3" plans written before the per-instance field existed derive it from the run total on load (the pre-field contract allowed one attempt to consume the whole envelope). The aggregate model-only harnesses (GPQA, HLE) execute every sample in one subprocess chain and are therefore bounded by the **run-total** envelope; per-instance wall is not enforceable inside an aggregate process and evidence records this as `per_instance_wall_enforcement=unavailable_aggregate_harness`. Observed steps are recorded retrospectively in evidence only — no max-step envelope is claimed or enforced. For the aggregate model-only adapters (GPQA, HLE, BFCL) no provider metering is captured: the cost envelope is an unenforced planning estimate and `cost_usd=0.0` in evidence means *unmeasured*, not zero spend. Exceeding an enforced envelope → failure label `budget_exceeded` (distinct from `wrong_solution`).
 
 ## 10. Failure Taxonomy (must be distinguishable)
 
@@ -288,9 +266,7 @@ A report cannot claim model/runtime superiority unless: benchmark id identical; 
 ## 14. VETOs (unchanged where still relevant)
 
 - Mixing Calibration/Stretch tasks into weighted public-benchmark totals without caveats.
-- BenchEval-authored or ad hoc LLM-as-judge for authoritative `primary_pass`. An
-  upstream benchmark's official judge (HLE) is allowed only when its exact model
-  identity and native judged artifact are bound into evidence.
+- BenchEval-authored or ad hoc LLM-as-judge for authoritative `primary_pass`. An upstream benchmark's official judge (HLE) is allowed only when its exact model identity and native judged artifact are bound into evidence.
 - Live internet in MVP tasks.
 - Statistical significance claims from smoke/lite slices alone.
 - Breaking the v0.2 `EvidenceRecord` flat contract (additive only).
@@ -323,7 +299,7 @@ A report cannot claim model/runtime superiority unless: benchmark id identical; 
 
 | Concern | Module | Notes |
 |---|---|---|
-| Benchmark catalog | `benchmark_registry.py`, `config/benchmarks.yaml` | **8** catalog rows; **3** Tier-0 executable. |
+| Benchmark catalog | `benchmark_registry.py`, `config/benchmarks.yaml` | **8** catalog rows; **4** Tier-0 executable. |
 | Slices / manifests | `slice_manifest.py`, `manifest.py`, `config/slices/` | Typed slice wrappers + inline instance lists; legacy manifest parser for generated lists. |
 | Config root / bundle | `paths.py` | Checkout, `BENCHEVAL_HOME`, and packaged-wheel config resolution and validation. |
 | Models / pricing | `models.py`, `pricing.py`, `config/models.yaml` | Non-secret model routes. |
@@ -333,7 +309,7 @@ A report cannot claim model/runtime superiority unless: benchmark id identical; 
 | Structured preflight | `preflight_report.py`, `scripts/write_preflight.py` | `preflight_v1` artifacts; `private`/`public` visibility modes. |
 | Redaction | `redaction.py` | Shared fail-closed scrub pipeline (strings, JSON values/keys, env secrets) used by public bundles and public preflight. |
 | Execute (phase 2) | `control_plane_executor.py` | Dispatches to product adapters. |
-| Adapters | `terminal_bench_harbor.py`, `gpqa_adapter.py`, `hle_adapter.py`, `external_agent_adapter.py` | Executable TB/GPQA/HLE paths; SWE/BFCL diagnostic modules are retained but demoted. |
+| Adapters | `terminal_bench_harbor.py`, `gpqa_adapter.py`, `hle_adapter.py`, `bfcl_native_adapter.py`, `external_agent_adapter.py` | Executable TB/GPQA/HLE/BFCL paths; the SWE diagnostic module is retained but demoted. |
 | Evidence | `evidence.py` | Additive agent, provider launch, and judge-model provenance. |
 | Live run registry | `live_run_manifest.py` | Append-only run identity and evidence/report/bundle references. |
 | Report / compare / export | `report.py`, `evidence_compare.py`, `export.py`, `run_bundle.py` | `export-run --redaction public\|private`. |

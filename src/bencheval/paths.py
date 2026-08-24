@@ -9,7 +9,10 @@ from bencheval.exceptions import BenchEvalError
 
 _BENCHEVAL_HOME_ENV = "BENCHEVAL_HOME"
 _CONFIG_MARKER = Path("config") / "benchmarks.yaml"
-_BUNDLE_REQUIRED_FILES: tuple[Path, ...] = (Path("config") / "models.yaml",)
+_BUNDLE_REQUIRED_FILES: tuple[Path, ...] = (
+    Path("config") / "models.yaml",
+    Path("config") / "bfcl-v4-supported-models.yaml",
+)
 
 # Minimum tree for v0.3 control-plane CLI (catalog, planner, dry-run).
 _BUNDLE_REQUIRED_DIRS: tuple[Path, ...] = (

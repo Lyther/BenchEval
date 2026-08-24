@@ -11,6 +11,7 @@ from bencheval.benchmark_plan import plan_control_plane
 from bencheval.control_plane_executor import execute_control_plane_run
 from bencheval.evidence import read_evidence_jsonl
 from bencheval.exceptions import AdapterFailureError
+from bencheval.runtime_registry import load_runtime_catalog
 from bencheval.terminal_bench_harbor import (
     CLAUDE_CODE_NPM_IMPORT_PATH,
     HarborCliResult,
@@ -20,6 +21,22 @@ from bencheval.terminal_bench_harbor import (
     run_terminal_bench_instance,
     write_harbor_proxy_env_file,
 )
+
+
+def _legacy_pass_result(runtime_id: str) -> str:
+    """Legacy-verdict result.json carrying the agent_info identity the run path requires."""
+    pin = load_runtime_catalog().by_id(runtime_id).versioning.agent_version_pin
+    return json.dumps(
+        {
+            "resolved": True,
+            "agent_info": {
+                "name": harbor_agent_for_runtime(runtime_id),
+                "version": pin,
+                "model_info": None,
+            },
+        },
+    )
+
 
 # SUBSTITUTE_JUSTIFICATION
 # - substitute: monkeypatched launch env, injected Harbor runners, and disposable results
@@ -63,7 +80,10 @@ def test_build_harbor_run_command_claude_code(monkeypatch: pytest.MonkeyPatch) -
     assert "--agent" not in cmd
     assert "--agent-import-path" in cmd
     assert cmd[cmd.index("--agent-import-path") + 1] == CLAUDE_CODE_NPM_IMPORT_PATH
-    assert "--agent-kwarg" not in cmd
+    # The only agent kwarg without allowed_tools is the launch-time version pin.
+    kwarg_tokens = [cmd[i + 1] for i, tok in enumerate(cmd[:-1]) if tok == "--agent-kwarg"]
+    assert len(kwarg_tokens) == 1
+    assert kwarg_tokens[0] == "version=2.1.235"
     assert "--agent-setup-timeout-multiplier" in cmd
     assert cmd[cmd.index("--agent-setup-timeout-multiplier") + 1] == "8"
     assert "--task-name" in cmd and "fix-git" in cmd
@@ -405,7 +425,7 @@ def test_execute_control_plane_smoke_writes_evidence(tmp_path: Path) -> None:
         out_dir = Path(command[command.index("--jobs-dir") + 1])
         out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "result.json").write_text(
-            json.dumps({"resolved": True}),
+            _legacy_pass_result("claude-code"),
             encoding="utf-8",
         )
         return HarborCliResult(
@@ -507,7 +527,7 @@ def test_harbor_executor_adapter_failure_on_second_instance_writes_two_rows(
         out_dir.mkdir(parents=True, exist_ok=True)
         if call_count == 1:
             (out_dir / "result.json").write_text(
-                json.dumps({"resolved": True}),
+                _legacy_pass_result("claude-code"),
                 encoding="utf-8",
             )
             return HarborCliResult(0, "", "", 0.1, tuple(command))

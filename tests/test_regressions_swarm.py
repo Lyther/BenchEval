@@ -140,6 +140,7 @@ def test_cli_run_execute_writes_interpretation_on_evidence(
         repo_root: Path,
         process_runner=None,
         timeout_sec: int | None = None,
+        benchmark_identity: str | None = None,
     ):
         return run_gpqa_slice(
             plan=plan,
@@ -147,6 +148,7 @@ def test_cli_run_execute_writes_interpretation_on_evidence(
             repo_root=repo_root,
             process_runner=fake_runner,
             timeout_sec=timeout_sec,
+            benchmark_identity=benchmark_identity,
         )
 
     monkeypatch.setattr(

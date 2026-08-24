@@ -1,4 +1,27 @@
-"""Round-1 score/provenance contracts: qualify, harness, verdicts, BFCL/HLE/proxy."""
+"""Round-1 score/provenance contracts: qualify, harness, verdicts, BFCL/HLE/proxy.
+
+SUBSTITUTE_JUSTIFICATION
+- substitute: constructed ``SwebenchCliResult``/``HarborCliResult``/``BfclCliResult``
+  process results and the synthetic artifact payloads written below (including
+  official-format BFCL ``BFCL_v4_*_score.json`` JSONL artifacts, Harbor
+  result.json files, SWE verifier.json files, HLE judged-output files, and GPQA
+  inspect log payloads); the monkeypatched ``bfcl_harness_version`` in
+  ``test_f004_bfcl_provisional_benchmark_version_and_swe_demotion_refusal``; and the
+  proxy-env monkeypatching in ``test_f006_proxy_route_identity_in_runtime_hash``
+- replaces: the external mini-SWE-agent/Harbor/BFCL/inspect harness processes,
+  the artifacts they would author, the installed bfcl distribution's version
+  output, and the host proxy environment
+- necessity: the assertions require deterministic malformed/incoherent artifact
+  states and controlled env identities that the real harnesses and host cannot
+  safely and deterministically produce on demand
+- real-option: the dev-box live lanes for each harness; not available in the
+  local Tier-0 environment
+- proof-limit: proves BenchEval-side parser fail-closed behavior, provenance
+  stamping, and CLI error surfaces only — not harness execution, scorer
+  correctness, or live readiness
+- real-proof: BLOCKED until the dev-box pilot lanes re-qualify
+  (docs/ops/dev-box-pilot.md)
+"""
 
 from __future__ import annotations
 
@@ -147,13 +170,6 @@ def test_f002_model_compare_rejects_missing_harness_version() -> None:
 @pytest.mark.parametrize(
     ("adapter", "filename", "key", "bad"),
     [
-        ("bfcl", "verdict.json", "primary_pass", "false"),
-        ("bfcl", "verdict.json", "correct", "false"),
-        ("bfcl", "verdict.json", "resolved", "false"),
-        ("bfcl", "verdict.json", "primary_pass", 1),
-        ("bfcl", "verdict.json", "primary_pass", None),
-        ("bfcl", "verdict.json", "primary_pass", ["false"]),
-        ("bfcl", "verdict.json", "primary_pass", {"v": False}),
         ("swe", "verifier.json", "resolved", "false"),
         ("swe", "verifier.json", "tests_passed", "false"),
         ("swe", "verifier.json", "resolved", 0),
@@ -178,15 +194,7 @@ def test_f003_non_boolean_verdicts_fail_closed(
     art = tmp_path / "inst"
     art.mkdir()
     (art / filename).write_text(json.dumps({key: bad}), encoding="utf-8")
-    if adapter == "bfcl":
-        out = parse_bfcl_instance_outcome(
-            instance_id="bfcl_smoke_001",
-            cli=BfclCliResult(0, "", "", 0.1, ("bfcl", "generate")),
-            artifacts_dir=art,
-            repo_root=tmp_path,
-            harness_version="bfcl@test",
-        )
-    elif adapter == "swe":
+    if adapter == "swe":
         out = parse_swebench_instance_outcome(
             instance_id="swe-001",
             cli=SwebenchCliResult(0, "", "", 0.1, ("mini-extra", "swebench")),
@@ -207,11 +215,140 @@ def test_f003_non_boolean_verdicts_fail_closed(
     assert out.failure_class == "runtime_output_unparseable"
 
 
-def test_f004_bfcl_execute_demoted_and_benchmark_version_not_package(
+def _bfcl_score_jsonl(rows: list[object]) -> str:
+    return "".join(json.dumps(row) + "\n" for row in rows)
+
+
+_BFCL_HEADER_PERFECT = {"accuracy": 1.0, "correct_count": 1, "total_count": 1}
+_BFCL_HEADER_PARTIAL = {"accuracy": 0.5, "correct_count": 1, "total_count": 2}
+_BFCL_FAILURE_ROW = {
+    "id": "bfcl_smoke_001_0",
+    "valid": False,
+    "error": ["mismatch"],
+    "error_type": "ast:exec_output_mismatch",
+}
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        pytest.param(
+            _bfcl_score_jsonl([{"accuracy": "1.0", "correct_count": 1, "total_count": 1}]),
+            id="accuracy-str",
+        ),
+        pytest.param(
+            _bfcl_score_jsonl([{"accuracy": True, "correct_count": 1, "total_count": 1}]),
+            id="accuracy-bool",
+        ),
+        pytest.param(
+            _bfcl_score_jsonl([{"accuracy": 1.5, "correct_count": 1, "total_count": 1}]),
+            id="accuracy-out-of-range",
+        ),
+        pytest.param(
+            _bfcl_score_jsonl([{"accuracy": float("nan"), "correct_count": 1, "total_count": 1}]),
+            id="accuracy-nan",
+        ),
+        pytest.param(
+            _bfcl_score_jsonl([{"accuracy": float("inf"), "correct_count": 1, "total_count": 1}]),
+            id="accuracy-infinity",
+        ),
+        pytest.param(
+            _bfcl_score_jsonl(
+                [{"accuracy": 1.0, "correct_count": 0, "total_count": 1}, _BFCL_FAILURE_ROW],
+            ),
+            id="accuracy-incoherent-with-counts",
+        ),
+        pytest.param(
+            _bfcl_score_jsonl([{"accuracy": 0.5, "correct_count": 2, "total_count": 1}]),
+            id="correct-count-exceeds-total",
+        ),
+        pytest.param(
+            _bfcl_score_jsonl([{"accuracy": 1.0, "correct_count": 1, "total_count": "1"}]),
+            id="total_count-str",
+        ),
+        pytest.param(
+            _bfcl_score_jsonl([{"accuracy": 1.0, "correct_count": True, "total_count": 1}]),
+            id="correct_count-bool",
+        ),
+        pytest.param(
+            _bfcl_score_jsonl([{"accuracy": 1.0, "total_count": 1}]),
+            id="correct_count-missing",
+        ),
+        pytest.param(
+            _bfcl_score_jsonl([_BFCL_HEADER_PARTIAL, {**_BFCL_FAILURE_ROW, "valid": True}]),
+            id="failure-row-valid-true",
+        ),
+        pytest.param(
+            _bfcl_score_jsonl([_BFCL_HEADER_PARTIAL, {**_BFCL_FAILURE_ROW, "valid": "false"}]),
+            id="failure-row-valid-str",
+        ),
+        pytest.param(
+            _bfcl_score_jsonl(
+                [{"accuracy": 0.0, "correct_count": 0, "total_count": 2}, _BFCL_FAILURE_ROW],
+            ),
+            id="failure-row-count-mismatch",
+        ),
+        pytest.param(
+            _bfcl_score_jsonl(
+                [
+                    {"accuracy": 0.0, "correct_count": 0, "total_count": 2},
+                    _BFCL_FAILURE_ROW,
+                    {**_BFCL_FAILURE_ROW, "error": ["other mismatch"]},
+                ],
+            ),
+            id="failure-row-duplicate-ids",
+        ),
+        pytest.param(
+            _bfcl_score_jsonl([_BFCL_HEADER_PARTIAL]) + "[1, 2]\n",
+            id="failure-row-not-an-object",
+        ),
+        pytest.param(
+            _bfcl_score_jsonl([_BFCL_HEADER_PARTIAL]) + "not-json\n",
+            id="failure-row-invalid-json",
+        ),
+        pytest.param(
+            json.dumps([_BFCL_HEADER_PERFECT]) + "\n",
+            id="legacy-json-array",
+        ),
+    ],
+)
+def test_f003_malformed_bfcl_official_score_fails_closed(
+    tmp_path: Path,
+    content: str,
+) -> None:
+    """BFCL scoring authority moved to the official evaluate score artifact; the
+    malformed-verdict fail-closed contract applies there with equal force. The
+    artifact is JSONL (header first, failure rows only) at the pinned upstream
+    commit — see tests/specs/test_bfcl_official_score_contracts.py."""
+    art = tmp_path / "inst"
+    art.mkdir()
+    score_dir = art / "scores"
+    score_file = score_dir / _MODEL / "non_live" / "BFCL_v4_bfcl_smoke_001_score.json"
+    score_file.parent.mkdir(parents=True)
+    score_file.write_text(content, encoding="utf-8")
+    out = parse_bfcl_instance_outcome(
+        instance_id="bfcl_smoke_001",
+        cli=BfclCliResult(0, "", "", 0.1, ("bfcl", "evaluate")),
+        artifacts_dir=art,
+        repo_root=tmp_path,
+        harness_version="bfcl@test",
+        score_dir=score_dir,
+        model_id=_MODEL,
+    )
+    assert out.primary_pass is False
+    assert out.partial_score == 0.0
+    assert out.failure_class == "runtime_output_unparseable"
+
+
+def test_f004_bfcl_provisional_benchmark_version_and_swe_demotion_refusal(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # SUBSTITUTE_JUSTIFICATION: N/A — no process runner; asserts demotion + identity helper.
+    # Covered by the file-scope SUBSTITUTE_JUSTIFICATION: the monkeypatched
+    # bfcl_harness_version substitutes the installed distribution's version
+    # output; the test asserts provisional benchmark-identity provenance when
+    # the harness identity is uncaptured, and (with BFCL admitted) keeps the
+    # demotion fail-closed coverage on swe-bench-verified.
     from bencheval.bfcl_native_adapter import bfcl_benchmark_version
 
     monkeypatch.setattr(
@@ -226,12 +363,19 @@ def test_f004_bfcl_execute_demoted_and_benchmark_version_not_package(
         model_id=_MODEL,
     )
     assert (plan.benchmark_version or "").startswith("provisional:")
+
+    swe_plan = plan_control_plane(
+        benchmark_id="swe-bench-verified",
+        slice_id="swe-bench-verified-smoke-10",
+        runtime_id="claude-code",
+        model_id=_MODEL,
+    )
     with pytest.raises(BenchEvalError, match="executable_adapter"):
         execute_control_plane_run(
-            plan=plan,
-            output_path=tmp_path / "unused-bfcl.jsonl",
-            artifacts_dir=tmp_path / "unused-bfcl-art",
-            run_id="bfcl-demoted",
+            plan=swe_plan,
+            output_path=tmp_path / "unused-swe.jsonl",
+            artifacts_dir=tmp_path / "unused-swe-art",
+            run_id="swe-demoted",
         )
 
 
@@ -394,7 +538,6 @@ def test_f010_compare_empty_evidence_is_cli_error(
 @pytest.mark.parametrize(
     ("adapter", "filename"),
     [
-        ("bfcl", "verdict.json"),
         ("swe", "verifier.json"),
         ("tb", "result.json"),
     ],
@@ -407,15 +550,7 @@ def test_r2_f012_keyless_result_json_fails_closed(
     art = tmp_path / "inst"
     art.mkdir()
     (art / filename).write_text(json.dumps({"cost_usd": 0.1}), encoding="utf-8")
-    if adapter == "bfcl":
-        out = parse_bfcl_instance_outcome(
-            instance_id="bfcl_smoke_001",
-            cli=BfclCliResult(0, "", "", 0.1, ("bfcl", "generate")),
-            artifacts_dir=art,
-            repo_root=tmp_path,
-            harness_version="bfcl@test",
-        )
-    elif adapter == "swe":
+    if adapter == "swe":
         out = parse_swebench_instance_outcome(
             instance_id="swe-001",
             cli=SwebenchCliResult(0, "", "", 0.1, ("mini-extra", "swebench")),
@@ -431,6 +566,31 @@ def test_r2_f012_keyless_result_json_fails_closed(
             repo_root=tmp_path,
             harness_version="harbor@test",
         )
+    assert out.primary_pass is False
+    assert out.partial_score == 0.0
+    assert out.failure_class == "runtime_output_unparseable"
+
+
+def test_r2_f012_keyless_bfcl_official_score_fails_closed(tmp_path: Path) -> None:
+    """Keyless summary header (no accuracy verdict) in the official score artifact."""
+    art = tmp_path / "inst"
+    art.mkdir()
+    score_dir = art / "scores"
+    score_file = score_dir / _MODEL / "non_live" / "BFCL_v4_bfcl_smoke_001_score.json"
+    score_file.parent.mkdir(parents=True)
+    score_file.write_text(
+        json.dumps({"correct_count": 1, "total_count": 1}) + "\n",
+        encoding="utf-8",
+    )
+    out = parse_bfcl_instance_outcome(
+        instance_id="bfcl_smoke_001",
+        cli=BfclCliResult(0, "", "", 0.1, ("bfcl", "evaluate")),
+        artifacts_dir=art,
+        repo_root=tmp_path,
+        harness_version="bfcl@test",
+        score_dir=score_dir,
+        model_id=_MODEL,
+    )
     assert out.primary_pass is False
     assert out.partial_score == 0.0
     assert out.failure_class == "runtime_output_unparseable"

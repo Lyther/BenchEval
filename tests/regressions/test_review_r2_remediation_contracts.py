@@ -165,10 +165,10 @@ def test_n001_gpqa_jsonl_log_is_identity_checked_and_parsed(tmp_path: Path) -> N
     assert score.accuracy == 1.0
 
 
-def test_n002_internal_docs_match_three_executable_adapter_surface() -> None:
+def test_n002_internal_docs_match_executable_adapter_surface() -> None:
     contracts = Path("docs/api/internal-contracts.md").read_text(encoding="utf-8")
     architecture = Path("docs/architecture.md").read_text(encoding="utf-8")
 
-    assert "runnable benchmarks (default: 3)" in contracts
+    assert "runnable benchmarks (default: 4)" in contracts
     assert "GPQA" in architecture and "HLE" in architecture
-    assert "SWE/BFCL diagnostic modules" in architecture
+    assert "SWE diagnostic module" in architecture

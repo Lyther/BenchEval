@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -43,6 +43,73 @@ ContaminationRisk = Literal["low", "medium", "high", "unknown"]
 
 _KEY_SEPARATOR_RE = re.compile(r"[\s_-]+")
 
+# Immutable identity pins: digests are "sha256:<64 lowercase hex>" (the repo's
+# hash-label idiom), git/HF revisions are full 40-hex commits.
+_SHA256_PIN_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+_GIT_COMMIT_PIN = r"^[0-9a-f]{40}$"
+
+
+def _validate_pinned_files(files: dict[str, str]) -> dict[str, str]:
+    for relpath, digest in files.items():
+        if not relpath or relpath.startswith("/") or ".." in relpath.split("/"):
+            raise ValueError(f"identity files key {relpath!r} must be a safe relative path")
+        if not _SHA256_PIN_RE.fullmatch(digest):
+            raise ValueError(
+                f"identity files digest for {relpath!r} must be sha256:<64 lowercase hex>",
+            )
+    return files
+
+
+class HfDatasetSnapshotIdentity(BaseModel):
+    """Pin for a Hugging Face dataset snapshot (repo + revision + file digests)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["hf-dataset-snapshot"]
+    repo: str = Field(min_length=1)
+    revision: str = Field(pattern=_GIT_COMMIT_PIN)
+    files: dict[str, str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _files_are_sha256_pins(self) -> Self:
+        _validate_pinned_files(self.files)
+        return self
+
+
+class InspectEvalsCsvIdentity(BaseModel):
+    """Pin for an inspect-evals CSV-backed task (dist + eval metadata + CSV bytes)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["inspect-evals-csv"]
+    package: str = Field(min_length=1)
+    package_version: str = Field(min_length=1)
+    eval_version: str = Field(min_length=1)
+    dataset_url: str = Field(min_length=1)
+    sha256: str = Field(pattern=_SHA256_PIN_RE.pattern)
+
+
+class BfclPackageDataIdentity(BaseModel):
+    """Pin for BFCL package data files inside the installed ``bfcl-eval`` dist."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["bfcl-package-data"]
+    bfcl_eval_version: str = Field(min_length=1)
+    upstream_commit: str = Field(pattern=_GIT_COMMIT_PIN)
+    files: dict[str, str] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _files_are_sha256_pins(self) -> Self:
+        _validate_pinned_files(self.files)
+        return self
+
+
+BenchmarkIdentity = Annotated[
+    HfDatasetSnapshotIdentity | InspectEvalsCsvIdentity | BfclPackageDataIdentity,
+    Field(discriminator="kind"),
+]
+
 
 class BenchmarkEntry(BaseModel):
     """Catalog metadata for one public benchmark family."""
@@ -68,6 +135,9 @@ class BenchmarkEntry(BaseModel):
     # insert a behavior-changing harness layer.
     adapter_id: str | None = Field(default=None, min_length=1)
     executable: bool = False
+    # Optional immutable identity pin for the benchmark's dataset/package bytes.
+    # Binding an identity is not admission: ``executable`` is unchanged by it.
+    identity: BenchmarkIdentity | None = None
     # Bare `bencheval run <benchmark>` resolves to this slice id when set.
     default_slice: str | None = Field(default=None, min_length=1)
 

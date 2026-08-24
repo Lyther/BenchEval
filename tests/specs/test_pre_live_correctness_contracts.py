@@ -588,12 +588,16 @@ def _plain_hle_home(home: Path) -> Path:
     return home
 
 
-def test_hle_dataset_defaults_to_cais_and_honors_mirror_override(
+def test_hle_dataset_defaults_to_pinned_repo_and_refuses_mirror_divergence(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Air-gapped/mirrored environments point the official harness at a local
-    # export via BENCHEVAL_HLE_DATASET; the default remains cais/hle.
+    # Contract change (pinned dataset identity): the catalog ``identity:``
+    # block now binds the launched dataset to the pinned repo
+    # (macabdul9/hle_text_only). This obsoletes the prior assertion that the
+    # default was cais/hle and that BENCHEVAL_HLE_DATASET could point the
+    # harness at an arbitrary mirror; a divergent override is source drift and
+    # fails closed instead of launching a non-pinned source.
     from bencheval.hle_adapter import build_hle_run_commands
 
     home = _plain_hle_home(tmp_path / "hle-home")
@@ -611,32 +615,46 @@ def test_hle_dataset_defaults_to_cais_and_honors_mirror_override(
         artifacts_dir=tmp_path / "artifacts",
         run_id="ds-default",
     )
-    assert "cais/hle" in default_cmds[0]
-    assert "cais/hle" in default_cmds[1]
+    assert "macabdul9/hle_text_only" in default_cmds[0]
+    assert "macabdul9/hle_text_only" in default_cmds[1]
 
-    mirror = str(tmp_path / "hle-test.parquet")
-    monkeypatch.setenv("BENCHEVAL_HLE_DATASET", mirror)
-    override_cmds = build_hle_run_commands(
+    # Restating the pinned repo is accepted (identity unchanged).
+    monkeypatch.setenv("BENCHEVAL_HLE_DATASET", "macabdul9/hle_text_only")
+    restated_cmds = build_hle_run_commands(
         plan=plan,
         max_samples=2,
         artifacts_dir=tmp_path / "artifacts",
-        run_id="ds-override",
+        run_id="ds-restated",
     )
-    assert mirror in override_cmds[0]
-    assert mirror in override_cmds[1]
+    assert "macabdul9/hle_text_only" in restated_cmds[0]
+
+    # A divergent mirror is drift and fails closed before any command build.
+    from bencheval.exceptions import BenchEvalError
+
+    mirror = str(tmp_path / "hle-test.parquet")
+    monkeypatch.setenv("BENCHEVAL_HLE_DATASET", mirror)
+    with pytest.raises(BenchEvalError, match="diverges"):
+        build_hle_run_commands(
+            plan=plan,
+            max_samples=2,
+            artifacts_dir=tmp_path / "artifacts",
+            run_id="ds-override",
+        )
 
 
 def test_hle_dataset_source_is_stamped_into_evidence_metadata(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # A non-official dataset source is never hidden from evidence.
+    # The launched dataset source is never hidden from evidence. Contract
+    # change (pinned dataset identity): the stamped source is now the pinned
+    # catalog repo; the prior local-parquet mirror case is covered by the
+    # fail-closed divergence test above.
     from bencheval.hle_adapter import HleCliResult, run_hle_slice
 
     home = _plain_hle_home(tmp_path / "hle-home")
     monkeypatch.setenv("BENCHEVAL_HLE_HOME", str(home))
-    mirror = str(tmp_path / "hle-test.parquet")
-    monkeypatch.setenv("BENCHEVAL_HLE_DATASET", mirror)
+    monkeypatch.delenv("BENCHEVAL_HLE_DATASET", raising=False)
     plan = plan_control_plane(
         benchmark_id="hle",
         slice_id="smoke",
@@ -661,7 +679,7 @@ def test_hle_dataset_source_is_stamped_into_evidence_metadata(
         run_id="ds-metadata",
     )
 
-    assert outcomes[0].adapter_metadata["hle_dataset"] == mirror
+    assert outcomes[0].adapter_metadata["hle_dataset"] == "macabdul9/hle_text_only"
 
 
 # --- 10. F003: post-launch path swap cannot redirect BenchEval log writes ----

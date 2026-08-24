@@ -20,8 +20,8 @@ from bencheval.doctor import PILOT_DOCTOR_BACKEND, run_doctor, run_pilot_doctor
 # - proof-limit: proves doctor decision logic only, not real host/provider availability
 # - real-proof: BLOCKED until scripts/doctor-pilot.sh runs on the provisioned dev-box
 # - covered tests: test_pilot_doctor_all_present,
-#   test_pilot_doctor_ignores_demoted_bfcl_dependency,
-#   test_pilot_doctor_ignores_broken_demoted_bfcl_cli,
+#   test_pilot_doctor_ignores_bfcl_dependency,
+#   test_pilot_doctor_ignores_broken_bfcl_cli,
 #   test_pilot_doctor_ignores_demoted_swe_dependency,
 #   test_pilot_doctor_missing_harbor, test_pilot_doctor_docker_unavailable,
 #   test_pilot_doctor_version_probe_failure_still_pass,
@@ -77,7 +77,7 @@ def test_pilot_doctor_all_present(monkeypatch: pytest.MonkeyPatch) -> None:
     assert [c.name for c in report.checks] == ["harbor_cli", "docker"]
 
 
-def test_pilot_doctor_ignores_demoted_bfcl_dependency(
+def test_pilot_doctor_ignores_bfcl_dependency(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_pilot_host(monkeypatch, present={"harbor"})
@@ -86,7 +86,7 @@ def test_pilot_doctor_ignores_demoted_bfcl_dependency(
     assert report.ok is True
 
 
-def test_pilot_doctor_ignores_broken_demoted_bfcl_cli(
+def test_pilot_doctor_ignores_broken_bfcl_cli(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_pilot_host(monkeypatch, present={"harbor"})

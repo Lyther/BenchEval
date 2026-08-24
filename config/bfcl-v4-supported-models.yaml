@@ -1,0 +1,15 @@
+schema_version: "0.1"
+# BFCL v4 supported-model manifest — the launch gate for `bfcl-v4` runs.
+#
+# The official evaluate path (bfcl_eval/eval_checker/eval_runner.py at the
+# pinned commit) raises ValueError for any model outside
+# bfcl_eval/constants/model_config.py MODEL_CONFIG_MAPPING, so launching an
+# unsupported model only burns a charged generate phase before the scorer
+# refuses it. BenchEval therefore refuses to launch any model not listed here.
+upstream_commit: "6ea57973c7a6097fd7c5915698c54c17c5b1b6c8"
+bfcl_eval_version: "2026.3.23"
+# Intersection of the pinned upstream MODEL_CONFIG_MAPPING with
+# config/models.yaml (currently a single entry; gpt-5.2-2025-12-11 is at
+# model_config.py:180 upstream and config/models.yaml:81 here).
+models:
+  - gpt-5.2-2025-12-11

@@ -17,7 +17,7 @@ flowchart TB
     HLE["CAIS HLE scripts"]
     Provider["LLM providers<br/>ByteLLM · Ollama Cloud · …"]
     AgentCLI["External agent CLI<br/>e.g. momo"]
-    Catalog["Executable benchmarks<br/>TB · GPQA · HLE"]
+    Catalog["Executable benchmarks<br/>TB · GPQA · HLE · BFCL"]
 
     Op -->|list · catalog · run · compare| BE
     CI -->|Tier 0 gates · unit/integration tests| BE

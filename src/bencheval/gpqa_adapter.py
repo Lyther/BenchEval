@@ -2,18 +2,20 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import subprocess
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as distribution_version
 from pathlib import Path
 from typing import Protocol
 
+from bencheval.benchmark_registry import InspectEvalsCsvIdentity
 from bencheval.domain import FailureLabel, RunPlan
 from bencheval.exceptions import AdapterFailureError, BenchEvalError
 from bencheval.path_safety import validate_control_plane_instance_id
@@ -131,6 +133,173 @@ def _inspect_evals_harness_version() -> str | None:
         return None
 
 
+# --- Pinned dataset identity (catalog ``identity:`` block) ------------------
+
+_GPQA_CACHE_EVAL_NAME = "gpqa"
+_GPQA_CACHE_TAG = "gpqa_diamond"
+# The real CSV is ~200 KB; the bound exists so a wrong-pinned URL cannot turn
+# the buffered download into a memory blowup.
+_MAX_GPQA_CSV_BYTES = 64 * 1024 * 1024
+
+
+def gpqa_csv_cache_path(*, cache_root: Path, dataset_url: str) -> Path:
+    """Cache file inspect_evals resolves for the pinned CSV URL.
+
+    Mirrors ``inspect_evals.utils.load_dataset._get_cached_path``: the name is
+    ``<tag>_<sha256(url)[:32]><ext>`` under ``<cache_root>/<eval>/``.
+    """
+    from urllib.parse import urlparse
+
+    url_hash = hashlib.sha256(dataset_url.encode("utf-8")).hexdigest()[:32]
+    suffix = Path(urlparse(dataset_url).path).suffix
+    return cache_root / _GPQA_CACHE_EVAL_NAME / f"{_GPQA_CACHE_TAG}_{url_hash}{suffix}"
+
+
+def verify_gpqa_csv_cache(*, cache_root: Path, dataset_url: str, sha256_pin: str) -> Path:
+    """Return the cached CSV path iff its bytes sha256-match the pin.
+
+    Pure verification core: local path in, digest compare against the pin.
+    """
+    from bencheval.identity_strings import file_sha256
+
+    cached = gpqa_csv_cache_path(cache_root=cache_root, dataset_url=dataset_url)
+    if cached.is_symlink() or not cached.is_file():
+        raise BenchEvalError(f"gpqa dataset cache file missing or not a plain file: {cached}")
+    actual = f"sha256:{file_sha256(cached)}"
+    if actual != sha256_pin:
+        raise BenchEvalError(
+            f"gpqa dataset cache sha256 drift at {cached}: expected {sha256_pin}, got {actual}",
+        )
+    return cached
+
+
+def _inspect_evals_cache_root() -> Path:
+    """The cache root the harness subprocess resolves at its own import time."""
+    from inspect_evals.constants import INSPECT_EVALS_CACHE_PATH
+
+    return INSPECT_EVALS_CACHE_PATH
+
+
+def _download_gpqa_csv(*, dataset_url: str, dest: Path) -> None:
+    """Fetch the pinned CSV and anchor the write to the pinned cache dir fd.
+
+    The payload is buffered whole (bounded) and written with one anchored,
+    no-follow, exclusive create: a failed fetch never leaves a partial file,
+    and an existing file is never overwritten.
+    """
+    import urllib.request
+
+    from bencheval.run_isolation import write_bytes_at_exclusive
+
+    try:
+        with urllib.request.urlopen(dataset_url, timeout=120) as response:
+            payload = response.read(_MAX_GPQA_CSV_BYTES + 1)
+    except Exception as e:
+        raise BenchEvalError(f"cannot download pinned gpqa dataset {dataset_url}: {e}") from e
+    if len(payload) > _MAX_GPQA_CSV_BYTES:
+        raise BenchEvalError(
+            f"pinned gpqa dataset exceeds {_MAX_GPQA_CSV_BYTES} bytes: {dataset_url}",
+        )
+    dir_fd = open_owned_dir_fd(dest.parent, role="inspect_evals cache directory")
+    try:
+        write_bytes_at_exclusive(dir_fd, dest.name, payload)
+    finally:
+        os.close(dir_fd)
+
+
+def capture_gpqa_benchmark_identity(
+    identity: InspectEvalsCsvIdentity,
+    *,
+    cache_root: Path | None = None,
+    fetcher: Callable[..., None] | None = None,
+) -> str:
+    """Verify the installed dist, eval metadata, and cached CSV bytes against
+    the catalog pin, then return the capturable identity string.
+
+    Fails closed on any drift. A missing cache file is fetched from the pinned
+    URL (or the injected ``fetcher`` test seam); an existing mismatching file
+    is never silently overwritten — drift aborts the run instead.
+    """
+    from inspect_evals.metadata import load_eval_metadata
+
+    from bencheval.identity_strings import gpqa_benchmark_identity
+
+    try:
+        dist_version = distribution_version(identity.package)
+    except PackageNotFoundError as e:
+        raise BenchEvalError(
+            f"gpqa identity requires the {identity.package!r} distribution to be installed",
+        ) from e
+    if dist_version != identity.package_version:
+        raise BenchEvalError(
+            f"{identity.package} distribution version drift: pinned "
+            f"{identity.package_version}, installed {dist_version}",
+        )
+    eval_version = str(load_eval_metadata("gpqa").version)
+    if eval_version != identity.eval_version:
+        raise BenchEvalError(
+            f"gpqa eval metadata version drift: pinned {identity.eval_version}, "
+            f"installed {eval_version}",
+        )
+    root = cache_root if cache_root is not None else _inspect_evals_cache_root()
+    cached = gpqa_csv_cache_path(cache_root=root, dataset_url=identity.dataset_url)
+    downloaded = not cached.is_file()
+    if downloaded:
+        (fetcher or _download_gpqa_csv)(dataset_url=identity.dataset_url, dest=cached)
+    try:
+        verify_gpqa_csv_cache(
+            cache_root=root,
+            dataset_url=identity.dataset_url,
+            sha256_pin=identity.sha256,
+        )
+    except BenchEvalError:
+        if downloaded:
+            # A just-fetched file that fails the pin is poison we created this
+            # run; remove it so a later run cannot score drifted bytes.
+            cached.unlink(missing_ok=True)
+        raise
+    return gpqa_benchmark_identity(identity)
+
+
+def _gpqa_prelaunch_benchmark_identity(
+    *,
+    plan: RunPlan,
+    process_runner: GpqaProcessRunner | None,
+    benchmark_identity: str | None,
+) -> str | None:
+    """Fail closed before launch when the catalog pins a benchmark identity.
+
+    The real/default runner always verifies local bytes against the pin. A
+    supplied identity belongs to an injected runner's controlled test boundary
+    and must equal the config-derived expectation.
+    """
+    from bencheval.identity_strings import catalog_benchmark_identity, gpqa_benchmark_identity
+
+    identity = catalog_benchmark_identity(plan.benchmark_id)
+    if identity is None:
+        return None
+    if not isinstance(identity, InspectEvalsCsvIdentity):
+        raise AdapterFailureError(
+            f"gpqa benchmark identity kind drift: {identity.kind!r}",
+            failure_label="runtime_config_drift",
+        )
+    expected = gpqa_benchmark_identity(identity)
+    if process_runner is not None:
+        if benchmark_identity is None:
+            return None
+        if benchmark_identity != expected:
+            raise AdapterFailureError(
+                f"gpqa benchmark identity drift: expected {expected!r}, "
+                f"supplied {benchmark_identity!r}",
+                failure_label="runtime_config_drift",
+            )
+        return benchmark_identity
+    try:
+        return capture_gpqa_benchmark_identity(identity)
+    except BenchEvalError as e:
+        raise AdapterFailureError(str(e), failure_label="runtime_config_drift") from e
+
+
 def _as_float(value: object) -> float | None:
     if isinstance(value, bool):
         return None
@@ -230,6 +399,7 @@ def _load_json_object(
     *,
     expected_task: str,
     expected_model: str,
+    log_dir_fd: int | None = None,
 ) -> dict[str, object] | None:
     suffix = path.suffix.lower()
     if suffix == ".eval":
@@ -239,14 +409,28 @@ def _load_json_object(
             return None
         try:
             log = read_eval_log(path, header_only=True)
-        except (OSError, ValueError, TypeError):
+        except (OSError, UnicodeDecodeError, ValueError, TypeError):
             return None
         dumped = json.loads(log.model_dump_json())
         return dumped if isinstance(dumped, dict) else None
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return None
+    if log_dir_fd is not None:
+        # Dirfd-relative, no-follow read from the pinned log-dir inode: a
+        # rename-and-recreate swap of inspect-logs after the pin cannot
+        # substitute a forged done-log (same-uid boundary, as in HLE).
+        try:
+            raw_fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=log_dir_fd)
+        except OSError:
+            return None
+        try:
+            with os.fdopen(raw_fd, encoding="utf-8") as handle:
+                text = handle.read()
+        except (OSError, UnicodeDecodeError):
+            return None
+    else:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return None
     if suffix == ".jsonl":
         # Prefer the last JSON object that looks like an eval log.
         last: dict[str, object] | None = None
@@ -371,13 +555,28 @@ def parse_gpqa_official_score(
     expected_task: str = _INSPECT_TASK,
     stdout: str = "",
     stderr: str = "",
+    log_dir_fd: int | None = None,
 ) -> GpqaOfficialScore | None:
     """Extract official accuracy from Inspect eval logs only.
 
     Operator-authored ``official_scores.json`` is never pass-authoritative.
+    When ``log_dir_fd`` is set, direct-child log files are read dirfd-relative
+    and no-follow from that pinned inode (the honest boundary is a same-uid
+    mutator racing after the pin); nested or non-child candidates keep the
+    pathname fallback. Carve-out: ``.eval`` candidates are always read via
+    unpinned pathname because ``inspect_ai.read_eval_log`` requires a path —
+    they are unreachable in the executor path (``build_gpqa_run_command``
+    forces ``--log-format json``), so dirfd pinning applies to JSON
+    candidates only.
     """
     if expected_model is None:
         return None
+    pinned_root: Path | None = None
+    if log_dir_fd is not None:
+        try:
+            pinned_root = log_dir.resolve()
+        except OSError:
+            pinned_root = None
     for path in _inspect_log_candidates(log_dir, stdout=stdout, stderr=stderr):
         candidate = path
         if not candidate.is_file() and not candidate.is_absolute():
@@ -389,10 +588,14 @@ def parse_gpqa_official_score(
         # Never treat the operator override filename as an Inspect log.
         if candidate.name == _OFFICIAL_SCORES_NAME:
             continue
+        candidate_fd = (
+            log_dir_fd if pinned_root is not None and candidate.parent == pinned_root else None
+        )
         parsed = _load_json_object(
             candidate,
             expected_task=expected_task,
             expected_model=expected_model,
+            log_dir_fd=candidate_fd,
         )
         if parsed is None or not _looks_like_inspect_eval_log(
             parsed,
@@ -420,6 +623,8 @@ def _default_process_runner(
             cwd=str(cwd) if cwd is not None else None,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=timeout_sec,
             env=dict(env),
@@ -456,6 +661,7 @@ def run_gpqa_slice(
     repo_root: Path,
     process_runner: GpqaProcessRunner | None = None,
     timeout_sec: int | None = None,
+    benchmark_identity: str | None = None,
 ) -> list[GpqaInstanceOutcome]:
     """Run one Inspect eval; score only from official log metrics, never exit code."""
     if plan.adapter_id != GPQA_ADAPTER_ID:
@@ -463,12 +669,16 @@ def run_gpqa_slice(
     for inst in plan.instances:
         validate_control_plane_instance_id(inst.instance_id)
     log_dir = artifacts_dir / "inspect-logs"
-    log_dir.mkdir(parents=True, exist_ok=True)
-    # Pin the artifacts directory inode before launching Inspect: every
-    # BenchEval-owned write below is anchored to this descriptor, and the
-    # post-run identity check proves the path still names the pinned inode.
-    artifacts_fd = open_owned_dir_fd(artifacts_dir, role="gpqa artifacts directory")
+    # Pin both directory inodes before launching Inspect (open_owned_dir_fd
+    # also creates them): every BenchEval-owned write and the scored done-log
+    # read below are anchored to these descriptors, and the post-run identity
+    # checks prove the paths still name the pinned inodes. Both opens live
+    # inside the try so a failing second open can never leak the first fd.
+    artifacts_fd: int | None = None
+    log_fd: int | None = None
     try:
+        artifacts_fd = open_owned_dir_fd(artifacts_dir, role="gpqa artifacts directory")
+        log_fd = open_owned_dir_fd(log_dir, role="gpqa inspect log directory")
         command = build_gpqa_run_command(
             plan=plan,
             sample_limit=len(plan.instances),
@@ -478,6 +688,13 @@ def run_gpqa_slice(
         launch = resolve_openai_compatible_launch(
             plan.provider_id,
             require_api_key=process_runner is None,
+        )
+        # Identity gate BEFORE any launch: verify the pinned dist/eval/CSV bytes
+        # (or validate a test-boundary-supplied identity); drift aborts here.
+        benchmark_version = _gpqa_prelaunch_benchmark_identity(
+            plan=plan,
+            process_runner=process_runner,
+            benchmark_identity=benchmark_identity,
         )
         # Aggregate harness: one Inspect eval covers every sample in a single
         # subprocess, so the run-total envelope is the only honest bound; no
@@ -502,6 +719,22 @@ def run_gpqa_slice(
                 adapter_metadata={"gpqa_command": " ".join(cli.command)},
             )
 
+        log_identity_error = dir_identity_error(
+            log_fd,
+            log_dir,
+            role="gpqa inspect log directory",
+        )
+        if log_identity_error is not None:
+            # The launched subprocess (handed --log-dir) swapped the log
+            # directory mid-run; fail closed instead of scoring a planted
+            # done-log.
+            raise AdapterFailureError(
+                log_identity_error,
+                failure_label="evidence_corrupt",
+                latency_sec=cli.latency_sec,
+                adapter_metadata={"gpqa_command": " ".join(cli.command)},
+            )
+
         stdout_file = artifacts_dir / "stdout.log"
         stderr_file = artifacts_dir / "stderr.log"
         # Anchored, no-follow, exclusive recreates: a symlink or hard link
@@ -510,12 +743,28 @@ def run_gpqa_slice(
         write_text_at_exclusive(artifacts_fd, "stdout.log", cli.stdout)
         write_text_at_exclusive(artifacts_fd, "stderr.log", cli.stderr)
 
+        # Re-verify immediately before the scored read: no subprocess runs
+        # between the post-run check and parse, so this narrows the swap
+        # window to the dirfd-pinned read itself.
+        log_identity_error = dir_identity_error(
+            log_fd,
+            log_dir,
+            role="gpqa inspect log directory",
+        )
+        if log_identity_error is not None:
+            raise AdapterFailureError(
+                log_identity_error,
+                failure_label="evidence_corrupt",
+                latency_sec=cli.latency_sec,
+                adapter_metadata={"gpqa_command": " ".join(cli.command)},
+            )
         official = (
             parse_gpqa_official_score(
                 log_dir,
                 expected_model=effective_model,
                 stdout=cli.stdout,
                 stderr=cli.stderr,
+                log_dir_fd=log_fd,
             )
             if cli.returncode == 0
             else None
@@ -574,6 +823,34 @@ def run_gpqa_slice(
             )
             + "\n",
         )
+        # Final identity checks immediately before outcome stamping (F108
+        # parity): the scored read was dirfd-pinned, but verifier/native paths
+        # below stamp pathnames — fail closed if either pinned inode was
+        # swapped anywhere in the post-parse window.
+        log_identity_final = dir_identity_error(
+            log_fd,
+            log_dir,
+            role="gpqa inspect log directory",
+        )
+        if log_identity_final is not None:
+            raise AdapterFailureError(
+                log_identity_final,
+                failure_label="evidence_corrupt",
+                latency_sec=cli.latency_sec,
+                adapter_metadata={"gpqa_command": " ".join(cli.command)},
+            )
+        artifacts_identity_final = dir_identity_error(
+            artifacts_fd,
+            artifacts_dir,
+            role="gpqa artifacts directory",
+        )
+        if artifacts_identity_final is not None:
+            raise AdapterFailureError(
+                artifacts_identity_final,
+                failure_label="evidence_corrupt",
+                latency_sec=cli.latency_sec,
+                adapter_metadata={"gpqa_command": " ".join(cli.command)},
+            )
         harness_version = _inspect_evals_harness_version()
         meta = {
             "adapter_id": GPQA_ADAPTER_ID,
@@ -589,6 +866,8 @@ def run_gpqa_slice(
         }
         if harness_version is not None:
             meta["harness_version"] = harness_version
+        if benchmark_version is not None:
+            meta["benchmark_version"] = benchmark_version
         shared_native: dict[str, object] = {
             "returncode": cli.returncode,
             "inspect_task": _INSPECT_TASK,
@@ -632,7 +911,10 @@ def run_gpqa_slice(
             ),
         ]
     finally:
-        os.close(artifacts_fd)
+        if log_fd is not None:
+            os.close(log_fd)
+        if artifacts_fd is not None:
+            os.close(artifacts_fd)
 
 
 __all__ = [
@@ -642,6 +924,9 @@ __all__ = [
     "GpqaOfficialScore",
     "GpqaProcessRunner",
     "build_gpqa_run_command",
+    "capture_gpqa_benchmark_identity",
+    "gpqa_csv_cache_path",
     "parse_gpqa_official_score",
     "run_gpqa_slice",
+    "verify_gpqa_csv_cache",
 ]

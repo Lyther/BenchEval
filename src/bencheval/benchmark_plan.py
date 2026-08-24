@@ -252,6 +252,7 @@ def plan_control_plane(
     agent_id: str | None = None,
     provider_id: str | None = None,
     cleanup_policy: CleanupPolicy = "always",
+    diagnostic: bool = False,
 ) -> RunPlan:
     """Build a frozen :class:`~bencheval.domain.RunPlan` for ``run`` phase 1."""
     runtime_arg = runtime_id.strip() if runtime_id and runtime_id.strip() else None
@@ -420,6 +421,7 @@ def plan_control_plane(
         cleanup_policy=cleanup_policy,
         caveats=tuple(caveats),
         comparison_validity=validity,
+        diagnostic=diagnostic,
     )
 
 

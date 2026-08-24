@@ -43,7 +43,7 @@ def test_executable_benchmark_count_snapshot() -> None:
     executable = [
         b for b in catalog.benchmarks if execution_support_label(b) == "executable_adapter"
     ]
-    assert len(executable) == 3
+    assert len(executable) == 4
     for b in executable:
         assert b.adapter_id
         assert b.default_slice
@@ -53,14 +53,17 @@ def test_benchmark_list_defaults_to_executable(capsys: pytest.CaptureFixture[str
     code = main(["benchmark", "list", "--format", "json"])
     assert code == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["count"] == 3
+    assert payload["count"] == 4
 
 
-def test_run_bfcl_demoted_from_executable(capsys: pytest.CaptureFixture[str]) -> None:
+def test_run_bfcl_admitted_executable_dry_run(capsys: pytest.CaptureFixture[str]) -> None:
+    # BFCL is admitted (executable: true) after the qualified live lifecycle, so
+    # a plain dry-run builds the plan instead of refusing.
     code = main(["run", "bfcl-v4/smoke-5", "--model", "kimi-k2.7-code", "--dry-run"])
-    assert code == 1
-    err = capsys.readouterr().err
-    assert "executable_adapter" in err
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["benchmark_id"] == "bfcl-v4"
+    assert payload["diagnostic"] is False
 
 
 def test_run_terminal_bench_without_runtime_errors(capsys: pytest.CaptureFixture[str]) -> None:

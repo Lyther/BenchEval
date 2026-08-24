@@ -187,8 +187,10 @@ def _open_instance_dir_fd(artifacts_root: Path, instance_id: str) -> int:
         artifacts_root,
         what="instance directory",
     )
-    instance_dir.mkdir(parents=True, exist_ok=True)
-    return os.open(instance_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    # open_owned_dir_fd creates the directory when missing and opens it
+    # O_NOFOLLOW, converting every filesystem failure (ELOOP, FileExistsError
+    # on a swapped entry, ...) to BenchEvalError instead of leaking raw OSError.
+    return open_owned_dir_fd(instance_dir, role="instance directory")
 
 
 def _open_capture_dir_fd(capture_root: Path, instance_id: str) -> int:

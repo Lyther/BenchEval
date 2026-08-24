@@ -61,12 +61,33 @@ benchmarks:
     single_mode_required: false
     source_url: https://gorilla.cs.berkeley.edu/leaderboard.html
     notes: >
-      Demoted from executable: adapter runs `bfcl generate` only and does not
-      wire `bfcl evaluate` or official score artifacts. Keep as catalog/planning
-      surface until generate+evaluate is one bounded lifecycle.
+      Admitted: the bounded `bfcl generate` → `bfcl evaluate` lifecycle is
+      scored only by the official `BFCL_v4_<category>_score.json` JSONL
+      artifact (pinned upstream format), with launches gated on
+      config/bfcl-v4-supported-models.yaml and the identity pin below.
+      Qualified by live dev-box run run-20260824-040631-228703-4756f857
+      (2026-08-24, dev-box-cpu, 5/5 smoke categories officially scored;
+      evidence archived at
+      results/evidence/run-20260824-040631-228703-4756f857.jsonl).
+      `--diagnostic` is refused for this now-executable row; diagnostic-labeled
+      evidence can never register `passed`.
     adapter_id: bfcl
-    executable: false
+    executable: true
     default_slice: smoke-5
+    identity:
+      kind: bfcl-package-data
+      bfcl_eval_version: 2026.3.23
+      upstream_commit: 6ea57973c7a6097fd7c5915698c54c17c5b1b6c8
+      files:
+        data/BFCL_v4_irrelevance.json: sha256:2b6ed4c2e992cdcf5f1678a701851f944bef7550ee026ed1ddb89efed5be01a6
+        data/BFCL_v4_multiple.json: sha256:aef168155ebd74b7ac2401198b201343bc7d16d7a3d7e0d4e6d8ee82c6969b2a
+        data/BFCL_v4_parallel.json: sha256:19f51a82eff42e5d62541aa500115a056eb78f437c2ba1f10415fd7c8e5dda84
+        data/BFCL_v4_parallel_multiple.json: sha256:8863ea8433239f55c5f016154cf0830853c89f693c6ea270396a2fa121960579
+        data/BFCL_v4_simple_python.json: sha256:82dd63ba502eb2520c6b5d1d9a5c4b590e03ff261565175561f6228a367d1991
+        data/possible_answer/BFCL_v4_multiple.json: sha256:244e00ce9395df948bcafc7bee64e8f9c87ef70887587d83cae45b13699f3047
+        data/possible_answer/BFCL_v4_parallel.json: sha256:8a6aa19c1adddc6a5a2f7e40f9dbf30cc7e95815e7b830c90589ab318229e0f0
+        data/possible_answer/BFCL_v4_parallel_multiple.json: sha256:5ebf24f458c1f16300c05505d83d6f0a1b68b79be273a033febd0d4f840507e3
+        data/possible_answer/BFCL_v4_simple_python.json: sha256:90cd5bc653690ee8e459b5b3f3fc9458606f7f3fcbf795bb51b7dc581f8c86dc
   - id: swe-bench-pro
     name: SWE-bench Pro
     aliases:
@@ -111,6 +132,13 @@ benchmarks:
     adapter_id: gpqa
     executable: true
     default_slice: smoke
+    identity:
+      kind: inspect-evals-csv
+      package: inspect-evals
+      package_version: 0.8.0
+      eval_version: 2-B
+      dataset_url: https://openaipublic.blob.core.windows.net/simple-evals/gpqa_diamond.csv
+      sha256: sha256:41d1213cd7a4998605a26c2798500652572007161b3a92817ba46b35befcd305
   - id: hle
     name: Humanity's Last Exam
     aliases:
@@ -128,11 +156,20 @@ benchmarks:
     single_mode_required: false
     source_url: https://github.com/centerforaisafety/hle
     notes: >
-      Model-only via official CAIS HLE eval scripts (`cais/hle` on the host).
-      Requires judge step; smoke uses --max_samples. See docs/ops/benchmarks/hle.md.
+      Model-only via the official CAIS HLE eval scripts (`cais/hle` host checkout,
+      pinned per-script); the launched dataset is the pinned HF mirror
+      `macabdul9/hle_text_only` bound by the identity block below, not data from
+      the CAIS repo. Requires judge step; smoke uses --max_samples.
+      See docs/ops/benchmarks/hle.md.
     adapter_id: hle
     executable: true
     default_slice: smoke
+    identity:
+      kind: hf-dataset-snapshot
+      repo: macabdul9/hle_text_only
+      revision: e3e9cb5a550ec7de645fac553b0e2768d30a03ee
+      files:
+        data/test-00000-of-00001.parquet: sha256:7c610e6550a627d45b4c39e57691a9cb9d33a9c411047eeb11af25dd74cb1b66
   - id: cybergym
     name: CyberGym
     aliases:

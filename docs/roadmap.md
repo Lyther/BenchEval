@@ -15,7 +15,7 @@ benchmark  →  (runtime | agent)?  →  model via provider  →  evidence
 
 | Axis | Tier-0 executable ids |
 |------|-----------------------|
-| Benchmarks | `terminal-bench`, `gpqa-diamond`, `hle` |
+| Benchmarks | `terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4` |
 | Runtimes | `claude-code`, `codex-cli` |
 | Agents | `momo` |
 | Providers | `bytellm`, `ollama-cloud` |
@@ -28,7 +28,7 @@ Runtime XOR agent. Omit both for model-only (GPQA, HLE). Unknown ids fail before
 ### Near-term work
 
 - [ ] **C1** Tier-1 live proof for at least one Tier-0 executable path with registered evidence (`docs/ops/dev-box-pilot.md`).
-- [ ] **C2** Wire `bfcl generate` + official `bfcl evaluate` as one bounded lifecycle before making BFCL executable.
+- [x] **C2** Wire `bfcl generate` + official `bfcl evaluate` as one bounded lifecycle before making BFCL executable (admitted 2026-08-24 via `run-20260824-040631-228703-4756f857`).
 - [ ] **C3** Harbor CLI contract spike for Terminal-Bench (`harbor run --dataset terminal-bench/terminal-bench-2-1`) if live TB is blocked.
 - [ ] **C4** Admit the next benchmark to Tier-2 Production v1 only via deliberate YAML + adapter + live proof — research catalog stays docs-only.
 
@@ -36,7 +36,7 @@ Runtime XOR agent. Omit both for model-only (GPQA, HLE). Unknown ids fail before
 
 - `README.md`, `docs/architecture.md`, `docs/api/internal-contracts.md`
 - `config/benchmarks.yaml`, `config/runtimes/{claude-code,codex-cli}.yaml`, `config/agents/`, `config/providers/`, `config/slices/`, `config/models.yaml`
-- `src/bencheval/`: `cli.py`, `benchmark_plan.py`, `control_plane_executor.py`, `doctor.py`, registries, `terminal_bench_harbor.py`, `gpqa_adapter.py`, `hle_adapter.py`, `external_agent_adapter.py`, `evidence.py`, `report.py`, `evidence_compare.py`, `export.py` (SWE/BFCL modules are diagnostic and non-executable)
+- `src/bencheval/`: `cli.py`, `benchmark_plan.py`, `control_plane_executor.py`, `doctor.py`, registries, `terminal_bench_harbor.py`, `gpqa_adapter.py`, `hle_adapter.py`, `external_agent_adapter.py`, `evidence.py`, `report.py`, `evidence_compare.py`, `export.py` (the SWE module is diagnostic and non-executable; BFCL is executable)
 - Pilot: `scripts/run-live-pilot-matrix.sh`, `scripts/doctor-pilot.sh`
 - Hygiene: `tests/regressions/test_peer_ship_hygiene.py`
 
@@ -47,7 +47,6 @@ Runtime XOR agent. Omit both for model-only (GPQA, HLE). Unknown ids fail before
 | Provider credentials | Required for live runs |
 | Harbor / harness sandbox on **dev-box** | Required for TB / harness-owned sandboxes — not a BenchEval Docker plane |
 | `claude-code` / `codex-cli` / `momo` noninteractive auth | Required for scaffolded live runs |
-| Official BFCL lifecycle | Generation + evaluate not wired end-to-end; benchmark is non-executable |
 
 ---
 

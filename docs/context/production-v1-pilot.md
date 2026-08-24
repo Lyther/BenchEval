@@ -1,6 +1,6 @@
 # Production v1 internal pilot
 
-**Scope:** Product catalog has **8** YAML rows; Tier-0 gate admits **3 executable** benchmarks (`terminal-bench`, `gpqa-diamond`, `hle`). `swe-bench-verified` and `bfcl-v4` are demoted until official evaluate paths are wired; `swe-bench-pro`, `cybergym`, and `exploitgym` stay cataloged/`adapter_pending`. Full dataset/image pulls are host-side (2TB test env), not CI.
+**Scope:** Product catalog has **8** YAML rows; Tier-0 gate admits **4 executable** benchmarks (`terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4` — BFCL admitted 2026-08-24 after the qualified live dev-box lifecycle `run-20260824-040631-228703-4756f857`). `swe-bench-verified` is demoted until official evaluation is wired. `swe-bench-pro`, `cybergym`, and `exploitgym` stay cataloged/`adapter_pending`. Full dataset/image pulls are host-side (2TB test env), not CI.
 
 ## Phase A — ship gates (no live deps)
 
@@ -9,9 +9,7 @@ uv sync --dev --extra eval --extra analytics
 make check-production-v1
 ```
 
-Includes: real PyArrow/DuckDB export round trips, full-package coverage, the uninstrumented
-planner timing contract, ruff, shellcheck, `uv lock --check`, executable catalog count =
-3, and an unknown-benchmark `run` that must fail before execute.
+Includes: real PyArrow/DuckDB export round trips, full-package coverage, the uninstrumented planner timing contract, ruff, shellcheck, `uv lock --check`, executable catalog count = 4, and an unknown-benchmark `run` that must fail before execute.
 
 ## Phase B — live matrix (credentials + Docker)
 

@@ -26,8 +26,8 @@ run uv lock --check
 
 payload="$(uv run --no-sync bencheval benchmark list --execution-support executable_adapter --format json)"
 count="$(printf '%s' "${payload}" | uv run --no-sync python -c 'import json,sys; print(json.load(sys.stdin)["count"])')"
-if [[ ${count} != "3" ]]; then
-  printf 'error: expected 3 executable_adapter benchmarks, got %s\n' "${count}" >&2
+if [[ ${count} != "4" ]]; then
+  printf 'error: expected 4 executable_adapter benchmarks, got %s\n' "${count}" >&2
   exit 1
 fi
 

@@ -220,8 +220,9 @@ start_anthropic_role_shim
 
 TB_CC=0
 TB_CX=0
-# bfcl-v4 / swe-bench-verified are demoted (non-executable). Do not invoke them here:
-# CLI refuse increments FAILED and poisons BENCHEVAL_ALLOW_PREFLIGHT_ONLY.
+# bfcl-v4 / swe-bench-verified are outside the Terminal-Bench pilot matrix
+# (swe-bench-verified stays demoted; bfcl-v4 is executable but not a pilot lane).
+# Do not invoke them here: CLI refuse increments FAILED and poisons BENCHEVAL_ALLOW_PREFLIGHT_ONLY.
 if run_tb claude-code; then
   TB_CC=1
 fi

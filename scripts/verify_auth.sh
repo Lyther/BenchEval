@@ -10,19 +10,31 @@ die() {
   exit 1
 }
 
-curl_probe() {
-  curl --noproxy "127.0.0.1,localhost,::1,0.0.0.0,172.17.0.1,host.docker.internal" \
-    --fail --silent --show-error --max-time 10 "$@"
+# Credential headers travel via a 0600 curl config file, never argv: process
+# lists and argv collectors only see `-K <path>`. The file is removed after
+# each probe and via trap on every exit path.
+probe_config=""
+cleanup_probe_config() {
+  if [ -n "${probe_config}" ]; then
+    rm -f "${probe_config}"
+    probe_config=""
+  fi
+}
+trap cleanup_probe_config EXIT
+
+new_probe_config() {
+  cleanup_probe_config
+  probe_config="$(mktemp "${TMPDIR:-/tmp}/verify_auth.XXXXXX")"
+  chmod 600 "${probe_config}"
+  local line
+  for line in "$@"; do
+    printf '%s\n' "${line}" >>"${probe_config}"
+  done
 }
 
-mask_tail() {
-  local v="${1:-}"
-  local n="${#v}"
-  if [ "$n" -le 4 ]; then
-    printf '****'
-  else
-    printf '****%s' "${v: -4}"
-  fi
+curl_probe() {
+  curl --noproxy "127.0.0.1,localhost,::1,0.0.0.0,172.17.0.1,host.docker.internal" \
+    --fail --silent --show-error --max-time 10 -K "${probe_config}" "$@"
 }
 
 models_url_from_base() {
@@ -56,17 +68,19 @@ probe_bytellm() {
   fi
   base="${base:-http://127.0.0.1:4000}"
   base="${base%/}"
-  warn "probing ByteLLM at ${base} (key $(mask_tail "${key}"))"
+  warn "probing ByteLLM at ${base}"
+  new_probe_config \
+    "header = \"Authorization: Bearer ${key}\"" \
+    "header = \"x-api-key: ${key}\"" \
+    'header = "anthropic-version: 2023-06-01"' \
+    'header = "Content-Type: application/json"'
   if ! curl_probe \
     -X POST \
-    -H "Authorization: Bearer ${key}" \
-    -H "x-api-key: ${key}" \
-    -H "anthropic-version: 2023-06-01" \
-    -H "Content-Type: application/json" \
     --data '{"model":"claude-sonnet-4-6","messages":[{"role":"user","content":"hello"}]}' \
     "${base}/v1/messages/count_tokens" >/dev/null; then
     die "ByteLLM credential probe failed (HTTP)"
   fi
+  cleanup_probe_config
 }
 
 bytellm_key="${BYTELLM_API_KEY:-${BYTELLM_PROXY_API_KEY:-}}"
@@ -84,37 +98,40 @@ fi
 if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
   anthropic_base="${ANTHROPIC_BASE_URL:-https://api.anthropic.com/v1}"
   anthropic_url="$(models_url_from_base "${anthropic_base}")"
-  warn "probing Anthropic at ${anthropic_url} (key $(mask_tail "${ANTHROPIC_API_KEY}"))"
-  if ! curl_probe \
-    -H "x-api-key: ${ANTHROPIC_API_KEY}" \
-    -H "anthropic-version: 2023-06-01" \
-    "${anthropic_url}" >/dev/null; then
+  warn "probing Anthropic at ${anthropic_url}"
+  new_probe_config \
+    "header = \"x-api-key: ${ANTHROPIC_API_KEY}\"" \
+    'header = "anthropic-version: 2023-06-01"'
+  if ! curl_probe "${anthropic_url}" >/dev/null; then
     die "Anthropic credential probe failed (HTTP)"
   fi
+  cleanup_probe_config
 fi
 
 if [ -n "${OPENAI_API_KEY:-}" ]; then
   openai_base="${OPENAI_BASE_URL:-https://api.openai.com/v1}"
   openai_url="$(models_url_from_base "${openai_base}")"
-  warn "probing OpenAI at ${openai_url} (key $(mask_tail "${OPENAI_API_KEY}"))"
-  if ! curl_probe \
-    -H "Authorization: Bearer ${OPENAI_API_KEY}" \
-    -H "Content-Type: application/json" \
-    "${openai_url}" >/dev/null; then
+  warn "probing OpenAI at ${openai_url}"
+  new_probe_config \
+    "header = \"Authorization: Bearer ${OPENAI_API_KEY}\"" \
+    'header = "Content-Type: application/json"'
+  if ! curl_probe "${openai_url}" >/dev/null; then
     die "OpenAI credential probe failed (HTTP)"
   fi
+  cleanup_probe_config
 fi
 
 if [ -n "${MOONSHOT_API_KEY:-}" ]; then
   base="${MOONSHOT_BASE_URL:-https://api.moonshot.ai/v1}"
   base="${base%/}"
   url="${base}/models"
-  warn "probing Moonshot at ${url} (key $(mask_tail "${MOONSHOT_API_KEY}"))"
-  if ! curl_probe \
-    -H "Authorization: Bearer ${MOONSHOT_API_KEY}" \
-    "${url}" >/dev/null; then
+  warn "probing Moonshot at ${url}"
+  new_probe_config \
+    "header = \"Authorization: Bearer ${MOONSHOT_API_KEY}\""
+  if ! curl_probe "${url}" >/dev/null; then
     die "Moonshot credential probe failed (HTTP)"
   fi
+  cleanup_probe_config
 fi
 
 warn "all configured baseline credentials passed"
