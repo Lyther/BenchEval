@@ -588,16 +588,16 @@ def _plain_hle_home(home: Path) -> Path:
     return home
 
 
-def test_hle_dataset_defaults_to_cais_and_accepts_mirror_override(
+def test_hle_dataset_defaults_to_pinned_repo_and_refuses_mirror_divergence(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Contract reverted (review F002): the macabdul9/hle_text_only mirror pin
-    # is removed from the catalog — it silently rebound the benchmark to
-    # non-official bytes. The pre-pin behavior is restored: the default dataset
-    # is cais/hle, and BENCHEVAL_HLE_DATASET may override it (the override is
-    # always stamped into evidence, never hidden). HLE evidence stays
-    # provisional until an official-source pin is decided.
+    # Contract (pinned OFFICIAL dataset identity, product option (a) after the
+    # review-F002 mirror revert): the catalog ``identity:`` block binds the
+    # launched dataset to the official ``cais/hle`` repo at an immutable
+    # revision. BENCHEVAL_HLE_DATASET may only restate it exactly; the reverted
+    # third-party mirror (or any other value) is source drift and fails closed
+    # before launch.
     from bencheval.hle_adapter import build_hle_run_commands
 
     home = _plain_hle_home(tmp_path / "hle-home")
@@ -618,17 +618,38 @@ def test_hle_dataset_defaults_to_cais_and_accepts_mirror_override(
     assert "cais/hle" in default_cmds[0]
     assert "cais/hle" in default_cmds[1]
 
-    # A mirror override is accepted again (no pin to diverge from).
-    mirror = str(tmp_path / "hle-test.parquet")
-    monkeypatch.setenv("BENCHEVAL_HLE_DATASET", mirror)
-    override_cmds = build_hle_run_commands(
+    # Restating the pinned repo is accepted (identity unchanged).
+    monkeypatch.setenv("BENCHEVAL_HLE_DATASET", "cais/hle")
+    restated_cmds = build_hle_run_commands(
         plan=plan,
         max_samples=2,
         artifacts_dir=tmp_path / "artifacts",
-        run_id="ds-override",
+        run_id="ds-restated",
     )
-    assert mirror in override_cmds[0]
-    assert mirror in override_cmds[1]
+    assert "cais/hle" in restated_cmds[0]
+
+    # The reverted mirror is drift and fails closed before any command build.
+    from bencheval.exceptions import BenchEvalError
+
+    monkeypatch.setenv("BENCHEVAL_HLE_DATASET", "macabdul9/hle_text_only")
+    with pytest.raises(BenchEvalError, match="diverges"):
+        build_hle_run_commands(
+            plan=plan,
+            max_samples=2,
+            artifacts_dir=tmp_path / "artifacts",
+            run_id="ds-mirror",
+        )
+
+    # A local parquet mirror is drift too.
+    mirror = str(tmp_path / "hle-test.parquet")
+    monkeypatch.setenv("BENCHEVAL_HLE_DATASET", mirror)
+    with pytest.raises(BenchEvalError, match="diverges"):
+        build_hle_run_commands(
+            plan=plan,
+            max_samples=2,
+            artifacts_dir=tmp_path / "artifacts",
+            run_id="ds-override",
+        )
 
 
 def test_hle_dataset_source_is_stamped_into_evidence_metadata(
@@ -636,8 +657,8 @@ def test_hle_dataset_source_is_stamped_into_evidence_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The launched dataset source is never hidden from evidence. With the
-    # mirror pin reverted (review F002), the stamped source is the cais/hle
-    # default; a BENCHEVAL_HLE_DATASET override would be stamped instead.
+    # official pin restored (product option (a) after the review-F002 mirror
+    # revert), the stamped source is the pinned catalog repo ``cais/hle``.
     from bencheval.hle_adapter import HleCliResult, run_hle_slice
 
     home = _plain_hle_home(tmp_path / "hle-home")

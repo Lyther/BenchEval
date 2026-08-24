@@ -49,11 +49,11 @@ _GPQA_CSV_URL = "https://openaipublic.blob.core.windows.net/simple-evals/gpqa_di
 _GPQA_CSV_SHA = "sha256:41d1213cd7a4998605a26c2798500652572007161b3a92817ba46b35befcd305"
 _GPQA_IDENTITY = "gpqa-diamond@inspect-evals-0.8.0+eval-2-B+csv-41d1213cd7a49986"
 
-_HLE_REPO = "macabdul9/hle_text_only"
-_HLE_REVISION = "e3e9cb5a550ec7de645fac553b0e2768d30a03ee"
+_HLE_REPO = "cais/hle"
+_HLE_REVISION = "5a81a4c7271a2a2a312b9a690f0c2fde837e4c29"
 _HLE_PARQUET_RELPATH = "data/test-00000-of-00001.parquet"
-_HLE_PARQUET_SHA = "sha256:7c610e6550a627d45b4c39e57691a9cb9d33a9c411047eeb11af25dd74cb1b66"
-_HLE_IDENTITY = "hle@e3e9cb5a550ec7de+data-7c610e6550a627d4"
+_HLE_PARQUET_SHA = "sha256:6d0ee0602e8aea6b159509577e884f48ecac7b8e3f6822a35f51335a446c726a"
+_HLE_IDENTITY = "hle@5a81a4c7271a2a2a+data-6d0ee0602e8aea6b"
 
 _BFCL_EVAL_VERSION = "2026.3.23"
 _BFCL_UPSTREAM_COMMIT = "6ea57973c7a6097fd7c5915698c54c17c5b1b6c8"
@@ -154,7 +154,7 @@ def _sha256_pin(payload: bytes) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_catalog_exposes_pinned_identities_for_gpqa_and_bfcl() -> None:
+def test_catalog_exposes_pinned_identities_for_gpqa_hle_bfcl() -> None:
     catalog = load_benchmark_catalog()
 
     gpqa = catalog.by_id_or_alias("gpqa-diamond").identity
@@ -166,11 +166,16 @@ def test_catalog_exposes_pinned_identities_for_gpqa_and_bfcl() -> None:
     assert gpqa.dataset_url == _GPQA_CSV_URL
     assert gpqa.sha256 == _GPQA_CSV_SHA
 
-    # HLE carries NO identity block (review F002 revert): the removed mirror
-    # pin silently rebound the benchmark to non-official bytes. The catalog
-    # stays unpinned — and hle evidence stays provisional — until an
-    # official-source pin or a separately-named derivative benchmark is decided.
-    assert catalog.by_id_or_alias("hle").identity is None
+    # HLE pins the OFFICIAL CAIS dataset (product decision: option (a) after the
+    # review-F002 mirror revert). The pinned repo must be exactly ``cais/hle`` —
+    # never the third-party mirror that silently rebound the benchmark.
+    hle = catalog.by_id_or_alias("hle").identity
+    assert hle is not None
+    assert hle.kind == "hf-dataset-snapshot"
+    assert hle.repo == _HLE_REPO == "cais/hle"
+    assert hle.repo != "macabdul9/hle_text_only"
+    assert hle.revision == _HLE_REVISION
+    assert hle.files == {_HLE_PARQUET_RELPATH: _HLE_PARQUET_SHA}
 
     bfcl = catalog.by_id_or_alias("bfcl-v4").identity
     assert bfcl is not None
@@ -347,14 +352,13 @@ def test_captured_identity_strings_match_pinned_values() -> None:
     from bencheval.identity_strings import (
         bfcl_benchmark_identity,
         gpqa_benchmark_identity,
+        hle_benchmark_identity,
     )
 
     catalog = load_benchmark_catalog()
     gpqa_entry = catalog.by_id_or_alias("gpqa-diamond")
     assert gpqa_benchmark_identity(gpqa_entry.identity) == _GPQA_IDENTITY
-    # HLE is intentionally unpinned (review F002 revert): no identity block, so
-    # no captured string exists to compare.
-    assert catalog.by_id_or_alias("hle").identity is None
+    assert hle_benchmark_identity(catalog.by_id_or_alias("hle").identity) == _HLE_IDENTITY
     assert bfcl_benchmark_identity(catalog.by_id_or_alias("bfcl-v4").identity) == _BFCL_IDENTITY
 
 
@@ -446,16 +450,10 @@ def test_qualify_lane_still_rejects_provisional_gpqa_identity(tmp_path: Path) ->
     assert "provisional" in " ".join(q.reasons).lower()
 
 
-def test_qualify_lane_rejects_provisional_hle_identity(tmp_path: Path) -> None:
-    """HLE evidence stays unregistrable while its dataset identity is unresolved.
-
-    Discriminating guard for the F002 revert: with no catalog identity block,
-    hle runs stamp ``provisional:hle/cais`` and the provisional disqualifier
-    must keep blocking ``passed`` registration.
-    """
+def _hle_qualifying_row(tmp_path: Path, *, benchmark_version: str) -> EvidenceRecord:
     verifier = tmp_path / "hle_summary.json"
     verifier.write_text('{"accuracy": 1.0}\n', encoding="utf-8")
-    row = EvidenceRecord(
+    return EvidenceRecord(
         run_id="identity-qualify-hle",
         task_id="hle-aggregate",
         model_id="kimi-k2.7-code",
@@ -467,13 +465,14 @@ def test_qualify_lane_rejects_provisional_hle_identity(tmp_path: Path) -> None:
         latency_sec=1.0,
         created_at=datetime(2026, 8, 19, tzinfo=UTC),
         benchmark_id="hle",
-        benchmark_version="provisional:hle/cais",
+        benchmark_version=benchmark_version,
         slice_id="smoke",
         adapter_id="hle",
         harness_kind="hle-native",
-        harness_version="hle@e3e9cb5",
+        harness_version="hle@5a81a4c",
         provider_id="bytellm",
         provider_config_hash="sha256:bytellm-test",
+        judge_model_id="gpt-5.3-chat-2026-03-03",
         instance_id="hle-aggregate",
         interpretation_label="adapter_smoke",
         artifact_paths=[str(verifier)],
@@ -481,6 +480,33 @@ def test_qualify_lane_rejects_provisional_hle_identity(tmp_path: Path) -> None:
         verifier_integrity_label="native",
         counts_toward_pass_at_k=True,
     )
+
+
+def test_qualify_lane_accepts_captured_hle_identity(tmp_path: Path) -> None:
+    """Pinned-official hle evidence with the captured identity is eligible."""
+    row = _hle_qualifying_row(tmp_path, benchmark_version=_HLE_IDENTITY)
+    evidence = tmp_path / "evidence.jsonl"
+    JsonlEvidenceSink().append_jsonl(evidence, row)
+
+    q = qualify_lane(
+        evidence,
+        expected_instances=1,
+        benchmark_id="hle",
+        slice_id="smoke",
+        require_runtime=False,
+        repo_root=tmp_path,
+    )
+
+    assert q.ok, "; ".join(q.reasons)
+
+
+def test_qualify_lane_rejects_provisional_hle_identity(tmp_path: Path) -> None:
+    """A provisional-LABELED hle row stays unregistrable even with the pin restored.
+
+    The disqualifier is label-based: it protects any benchmark whose evidence
+    carries a ``provisional:*`` fallback, hle included.
+    """
+    row = _hle_qualifying_row(tmp_path, benchmark_version="provisional:hle/cais")
     evidence = tmp_path / "evidence.jsonl"
     JsonlEvidenceSink().append_jsonl(evidence, row)
 
@@ -652,6 +678,71 @@ def test_verify_hle_snapshot_files_accepts_real_bytes(tmp_path: Path) -> None:
     )
 
 
+def test_verify_hle_snapshot_files_accepts_hub_cache_blob_symlink(tmp_path: Path) -> None:
+    """Real HF hub caches store snapshot entries as symlinks into the repo's
+    own blobs/ store (observed on the dev-box pre-warm of cais/hle). A link
+    that resolves strictly inside the same repo cache root to a plain file
+    with the pinned bytes must verify."""
+    from bencheval.hle_adapter import verify_hle_snapshot_files
+
+    payload = b"parquet-bytes\n"
+    repo_cache = tmp_path / "datasets--cais--hle"
+    blob = repo_cache / "blobs" / "6d0ee0602e8aea6b"
+    blob.parent.mkdir(parents=True)
+    blob.write_bytes(payload)
+    snapshot = repo_cache / "snapshots" / ("5" * 40)
+    target = snapshot / _HLE_PARQUET_RELPATH
+    target.parent.mkdir(parents=True)
+    target.symlink_to(Path("../../../blobs") / blob.name)
+
+    verify_hle_snapshot_files(
+        snapshot_dir=snapshot,
+        files={_HLE_PARQUET_RELPATH: _sha256_pin(payload)},
+    )
+
+
+def test_verify_hle_snapshot_files_rejects_symlink_escaping_cache_root(tmp_path: Path) -> None:
+    """A snapshot symlink resolving OUTSIDE the repo cache root is a foreign
+    target and fails closed — even when the pointed-to bytes match the pin."""
+    from bencheval.hle_adapter import verify_hle_snapshot_files
+
+    payload = b"parquet-bytes\n"
+    outside = tmp_path / "outside.parquet"
+    outside.write_bytes(payload)
+    repo_cache = tmp_path / "datasets--cais--hle"
+    snapshot = repo_cache / "snapshots" / ("5" * 40)
+    target = snapshot / _HLE_PARQUET_RELPATH
+    target.parent.mkdir(parents=True)
+    target.symlink_to(outside)
+
+    with pytest.raises(BenchEvalError):
+        verify_hle_snapshot_files(
+            snapshot_dir=snapshot,
+            files={_HLE_PARQUET_RELPATH: _sha256_pin(payload)},
+        )
+
+
+def test_verify_hle_snapshot_files_rejects_in_cache_symlink_with_drifted_bytes(
+    tmp_path: Path,
+) -> None:
+    """An intra-cache link still hashes the real resolved bytes."""
+    from bencheval.hle_adapter import verify_hle_snapshot_files
+
+    repo_cache = tmp_path / "datasets--cais--hle"
+    blob = repo_cache / "blobs" / "deadbeef"
+    blob.parent.mkdir(parents=True)
+    blob.write_bytes(b"drifted\n")
+    snapshot = repo_cache / "snapshots" / ("5" * 40)
+    target = snapshot / _HLE_PARQUET_RELPATH
+    target.parent.mkdir(parents=True)
+    target.symlink_to(Path("../../../blobs") / blob.name)
+
+    with pytest.raises(BenchEvalError, match="sha256"):
+        verify_hle_snapshot_files(
+            snapshot_dir=snapshot, files={_HLE_PARQUET_RELPATH: _HLE_PARQUET_SHA}
+        )
+
+
 def test_verify_hle_snapshot_files_fails_closed_on_drift_and_absence(tmp_path: Path) -> None:
     from bencheval.hle_adapter import verify_hle_snapshot_files
 
@@ -675,7 +766,7 @@ def test_hle_datasets_cache_must_contain_exactly_the_pinned_revision(tmp_path: P
     from bencheval.hle_adapter import hle_datasets_cache_error
 
     cache = tmp_path / "datasets"
-    pinned = cache / "macabdul9___hle_text_only" / "default" / "0.0.0" / _HLE_REVISION
+    pinned = cache / "cais___hle" / "default" / "0.0.0" / _HLE_REVISION
     pinned.mkdir(parents=True)
     assert (
         hle_datasets_cache_error(datasets_cache=cache, repo=_HLE_REPO, revision=_HLE_REVISION)
@@ -699,8 +790,8 @@ def test_capture_hle_identity_binds_snapshot_and_cache(tmp_path: Path) -> None:
       pre-warm against huggingface.co (or HF_ENDPOINT mirror)
     - necessity: external service effect; the assertion targets local digest
       verification, cache singleness, and identity capture
-    - real-option: live snapshot_download of macabdul9/hle_text_only — external
-      fetch, nondeterministic inside a unit test
+    - real-option: live snapshot_download of cais/hle — external fetch (and the
+      dataset is access-gated), nondeterministic inside a unit test
     - proof-limit: does not prove the remote revision matches the pin today
     - real-proof: dev-box live lane downloads, verifies, and pre-warms the real
       snapshot before an offline launch
@@ -724,7 +815,7 @@ def test_capture_hle_identity_binds_snapshot_and_cache(tmp_path: Path) -> None:
         target = snapshot / _HLE_PARQUET_RELPATH
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(payload)
-        (cache / "macabdul9___hle_text_only" / "default" / "0.0.0" / revision).mkdir(parents=True)
+        (cache / "cais___hle" / "default" / "0.0.0" / revision).mkdir(parents=True)
         return snapshot
 
     captured = capture_hle_benchmark_identity(identity, fetcher=fetcher, datasets_cache=cache)
@@ -754,6 +845,57 @@ def test_capture_hle_identity_fails_closed_on_snapshot_drift(tmp_path: Path) -> 
 
     with pytest.raises(BenchEvalError, match="sha256"):
         capture_hle_benchmark_identity(identity, fetcher=fetcher, datasets_cache=tmp_path / "d")
+
+
+def test_default_fetcher_addresses_the_dataset_repo_type(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The default network seam must address the HF dataset endpoint.
+
+    ``huggingface_hub.snapshot_download`` defaults ``repo_type`` to ``model``,
+    and the model endpoint 404s dataset repos — verified against the live hub
+    on 2026-08-24 (``model_info("cais/hle")`` → RepositoryNotFoundError while
+    ``dataset_info`` resolves the pinned revision). The pinned dataset must
+    therefore be requested explicitly as a dataset.
+
+    SUBSTITUTE_JUSTIFICATION
+    - substitute: monkeypatched ``huggingface_hub.snapshot_download`` and
+      ``datasets.load_dataset`` recording their call arguments
+    - replaces: the real HF hub download and datasets pre-warm
+    - necessity: the assertion is the exact request shape the production
+      fetcher emits; a real call is an external fetch of an access-gated
+      dataset and cannot run inside a deterministic unit test
+    - real-option: live snapshot_download of cais/hle — exercised by the
+      dev-box live lane pre-warm instead
+    - proof-limit: proves only the request shape, not the remote bytes
+    - real-proof: dev-box live lane downloads and digest-verifies the real
+      pinned snapshot before launch
+    """
+    import datasets
+    import huggingface_hub
+
+    from bencheval.hle_adapter import _fetch_hle_snapshot_and_prewarm
+
+    calls: dict[str, object] = {}
+
+    def fake_snapshot_download(**kwargs: object) -> str:
+        calls["snapshot_download"] = kwargs
+        return str(tmp_path)
+
+    def fake_load_dataset(*args: object, **kwargs: object) -> None:
+        calls["load_dataset"] = (args, kwargs)
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", fake_snapshot_download)
+    monkeypatch.setattr(datasets, "load_dataset", fake_load_dataset)
+
+    snapshot = _fetch_hle_snapshot_and_prewarm(repo=_HLE_REPO, revision=_HLE_REVISION)
+
+    assert snapshot == tmp_path
+    download_kwargs = calls["snapshot_download"]
+    assert isinstance(download_kwargs, dict)
+    assert download_kwargs["repo_id"] == _HLE_REPO
+    assert download_kwargs["revision"] == _HLE_REVISION
+    assert download_kwargs["repo_type"] == "dataset"
 
 
 # ---------------------------------------------------------------------------
@@ -816,15 +958,11 @@ def test_run_gpqa_slice_refuses_mismatched_supplied_identity(tmp_path: Path) -> 
     assert calls == []
 
 
-def test_run_hle_slice_launches_default_dataset_without_catalog_pin(
+def test_run_hle_slice_launches_pinned_dataset_and_stamps_identity(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """With no catalog identity block the launch falls back to ``cais/hle``.
-
-    The planner's ``provisional:hle/cais`` label stays the evidence version:
-    nothing is captured, so the adapter stamps no ``benchmark_version``.
-    """
+    """The pinned official dataset decides ``--dataset``; the identity is stamped."""
     home = _plain_hle_home(tmp_path)
     monkeypatch.setenv("BENCHEVAL_HLE_HOME", str(home))
     monkeypatch.delenv("BENCHEVAL_HLE_DATASET", raising=False)
@@ -856,101 +994,112 @@ def test_run_hle_slice_launches_default_dataset_without_catalog_pin(
         repo_root=tmp_path,
         process_runner=fake,
         run_id="hle-id",
+        benchmark_identity=_HLE_IDENTITY,
+    )
+
+    # Anti-mirror discrimination: the launched dataset is exactly the official
+    # pinned repo, never the reverted third-party mirror.
+    assert argv_datasets == ["cais/hle", "cais/hle"]
+    assert outcomes
+    assert outcomes[0].adapter_metadata["hle_dataset"] == "cais/hle"
+    assert outcomes[0].adapter_metadata["benchmark_version"] == _HLE_IDENTITY
+
+
+def test_run_hle_slice_accepts_env_restating_pinned_repo(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``BENCHEVAL_HLE_DATASET=cais/hle`` restates the pin exactly: accepted."""
+    home = _plain_hle_home(tmp_path)
+    monkeypatch.setenv("BENCHEVAL_HLE_HOME", str(home))
+    monkeypatch.setenv("BENCHEVAL_HLE_DATASET", "cais/hle")
+    plan = _hle_plan()
+    artifacts_dir = tmp_path / "artifacts"
+    paths = hle_run_paths(
+        artifacts_dir=artifacts_dir,
+        run_id="hle-restated",
+        provider_id=plan.provider_id,
+        model_id=plan.model_id,
+    )
+    argv_datasets: list[str] = []
+
+    def fake(command, *, cwd, timeout_sec, env=None) -> HleCliResult:
+        argv_datasets.append(command[command.index("--dataset") + 1])
+        if len(argv_datasets) == 1:
+            paths.default_predictions_path.write_text("{}\n", encoding="utf-8")
+        else:
+            judged = {
+                f"row-{index}": {"judge_response": {"correct": "yes"}}
+                for index in range(len(plan.instances))
+            }
+            paths.judged_path.write_text(json.dumps(judged), encoding="utf-8")
+        return HleCliResult(0, "", "", 0.1, tuple(command))
+
+    outcomes = run_hle_slice(
+        plan=plan,
+        artifacts_dir=artifacts_dir,
+        repo_root=tmp_path,
+        process_runner=fake,
+        run_id="hle-restated",
+        benchmark_identity=_HLE_IDENTITY,
     )
 
     assert argv_datasets == ["cais/hle", "cais/hle"]
     assert outcomes
-    assert outcomes[0].adapter_metadata["hle_dataset"] == "cais/hle"
-    assert "benchmark_version" not in outcomes[0].adapter_metadata
 
 
-def test_run_hle_slice_accepts_dataset_env_override_without_catalog_pin(
+def test_run_hle_slice_refuses_mirror_dataset_env_divergence(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Pre-pin behavior restored: ``BENCHEVAL_HLE_DATASET`` may point the
-    harness at a mirror while no catalog identity binds the dataset."""
+    """The reverted third-party mirror is source drift against the official pin."""
     home = _plain_hle_home(tmp_path)
     monkeypatch.setenv("BENCHEVAL_HLE_HOME", str(home))
-    monkeypatch.setenv("BENCHEVAL_HLE_DATASET", "mirror/hle-v2")
-    plan = _hle_plan()
-    artifacts_dir = tmp_path / "artifacts"
-    paths = hle_run_paths(
-        artifacts_dir=artifacts_dir,
-        run_id="hle-override",
-        provider_id=plan.provider_id,
-        model_id=plan.model_id,
-    )
-    argv_datasets: list[str] = []
+    monkeypatch.setenv("BENCHEVAL_HLE_DATASET", "macabdul9/hle_text_only")
+    calls: list[tuple[str, ...]] = []
 
-    def fake(command, *, cwd, timeout_sec, env=None) -> HleCliResult:
-        argv_datasets.append(command[command.index("--dataset") + 1])
-        if len(argv_datasets) == 1:
-            paths.default_predictions_path.write_text("{}\n", encoding="utf-8")
-        else:
-            judged = {
-                f"row-{index}": {"judge_response": {"correct": "yes"}}
-                for index in range(len(plan.instances))
-            }
-            paths.judged_path.write_text(json.dumps(judged), encoding="utf-8")
-        return HleCliResult(0, "", "", 0.1, tuple(command))
+    def runner(command, *, cwd, timeout_sec, env=None) -> HleCliResult:
+        calls.append(tuple(command))
+        return HleCliResult(0, "", "", 0.0, tuple(command))
 
-    outcomes = run_hle_slice(
-        plan=plan,
-        artifacts_dir=artifacts_dir,
-        repo_root=tmp_path,
-        process_runner=fake,
-        run_id="hle-override",
-    )
+    with pytest.raises(AdapterFailureError) as excinfo:
+        run_hle_slice(
+            plan=_hle_plan(),
+            artifacts_dir=tmp_path / "artifacts",
+            repo_root=tmp_path,
+            process_runner=runner,
+            run_id="hle-drift",
+        )
 
-    assert argv_datasets == ["mirror/hle-v2", "mirror/hle-v2"]
-    assert outcomes
-    assert outcomes[0].adapter_metadata["hle_dataset"] == "mirror/hle-v2"
+    assert excinfo.value.failure_label == "runtime_config_drift"
+    assert calls == []
 
 
-def test_run_hle_slice_ignores_supplied_identity_without_catalog_pin(
+def test_run_hle_slice_refuses_mismatched_supplied_identity(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """With no catalog pin there is nothing to validate a supplied identity
-    against; it is ignored (never stamped), matching the gpqa/bfcl rule."""
     home = _plain_hle_home(tmp_path)
     monkeypatch.setenv("BENCHEVAL_HLE_HOME", str(home))
     monkeypatch.delenv("BENCHEVAL_HLE_DATASET", raising=False)
-    plan = _hle_plan()
-    artifacts_dir = tmp_path / "artifacts"
-    paths = hle_run_paths(
-        artifacts_dir=artifacts_dir,
-        run_id="hle-unpinned",
-        provider_id=plan.provider_id,
-        model_id=plan.model_id,
-    )
     calls: list[tuple[str, ...]] = []
 
-    def fake(command, *, cwd, timeout_sec, env=None) -> HleCliResult:
+    def runner(command, *, cwd, timeout_sec, env=None) -> HleCliResult:
         calls.append(tuple(command))
-        if len(calls) == 1:
-            paths.default_predictions_path.write_text("{}\n", encoding="utf-8")
-        else:
-            judged = {
-                f"row-{index}": {"judge_response": {"correct": "yes"}}
-                for index in range(len(plan.instances))
-            }
-            paths.judged_path.write_text(json.dumps(judged), encoding="utf-8")
-        return HleCliResult(0, "", "", 0.1, tuple(command))
+        return HleCliResult(0, "", "", 0.0, tuple(command))
 
-    outcomes = run_hle_slice(
-        plan=plan,
-        artifacts_dir=artifacts_dir,
-        repo_root=tmp_path,
-        process_runner=fake,
-        run_id="hle-unpinned",
-        benchmark_identity="hle@0000000000000000+data-0000000000000000",
-    )
+    with pytest.raises(AdapterFailureError) as excinfo:
+        run_hle_slice(
+            plan=_hle_plan(),
+            artifacts_dir=tmp_path / "artifacts",
+            repo_root=tmp_path,
+            process_runner=runner,
+            run_id="hle-drift",
+            benchmark_identity="hle@0000000000000000+data-0000000000000000",
+        )
 
-    assert outcomes
-    assert outcomes[0].adapter_metadata["hle_dataset"] == "cais/hle"
-    assert "benchmark_version" not in outcomes[0].adapter_metadata
+    assert excinfo.value.failure_label == "runtime_config_drift"
+    assert calls == []
 
 
 # ---------------------------------------------------------------------------

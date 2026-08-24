@@ -148,15 +148,34 @@ def verify_hle_snapshot_files(*, snapshot_dir: Path, files: Mapping[str, str]) -
     """sha256-check every pinned file inside a downloaded HF snapshot.
 
     Pure verification core: local snapshot path in, digest compare against the
-    pin; a missing, symlinked, or drifted file fails closed.
+    pin; a missing or drifted file fails closed. A real hub cache stores
+    snapshot entries as symlinks into the repo's own ``blobs/`` store, so a
+    link is followed only when it resolves strictly inside the same repo cache
+    root to a plain file; a link escaping that root (or one that does not end
+    in a plain file) fails closed as a foreign target. The digest is always
+    computed on the resolved bytes.
     """
     from bencheval.identity_strings import file_sha256
 
+    cache_root = snapshot_dir.parent.parent
     for relpath, pin in sorted(files.items()):
         target = snapshot_dir / relpath
-        if target.is_symlink() or not target.is_file():
+        read_path = target
+        if target.is_symlink():
+            try:
+                resolved = target.resolve(strict=True)
+            except OSError as e:
+                raise BenchEvalError(
+                    f"hle snapshot file symlink does not resolve: {target}",
+                ) from e
+            if not resolved.is_file() or not _path_is_under(resolved, cache_root):
+                raise BenchEvalError(
+                    f"hle snapshot symlink escapes the pinned cache root: {target} -> {resolved}",
+                )
+            read_path = resolved
+        elif not target.is_file():
             raise BenchEvalError(f"hle snapshot file missing or not a plain file: {target}")
-        actual = f"sha256:{file_sha256(target)}"
+        actual = f"sha256:{file_sha256(read_path)}"
         if actual != pin:
             raise BenchEvalError(
                 f"hle snapshot sha256 drift at {target}: expected {pin}, got {actual}",
@@ -208,7 +227,9 @@ def _fetch_hle_snapshot_and_prewarm(*, repo: str, revision: str) -> Path:
             f"hle identity verification requires huggingface-hub and datasets: {e}",
         ) from e
     try:
-        snapshot = Path(snapshot_download(repo_id=repo, revision=revision))
+        # repo_type="dataset" is mandatory: the default "model" endpoint 404s
+        # dataset repos such as cais/hle (observed against the live hub).
+        snapshot = Path(snapshot_download(repo_id=repo, revision=revision, repo_type="dataset"))
     except Exception as e:
         raise BenchEvalError(
             f"cannot download pinned hle snapshot {repo}@{revision}: {e}",
