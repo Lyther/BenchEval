@@ -41,6 +41,7 @@ from bencheval.live_run_manifest import (
     LiveRunStatus,
     append_live_run,
     default_runs_manifest_path,
+    read_live_run_projections,
 )
 from bencheval.model_registry import load_model_registry
 from bencheval.provider_registry import DEFAULT_PROVIDER_ID, load_provider_catalog
@@ -678,6 +679,39 @@ def _evidence_register(args: argparse.Namespace) -> int:
     return 0
 
 
+def _evidence_list(args: argparse.Namespace) -> int:
+    manifest_path = Path(args.manifest_path) if args.manifest_path else default_runs_manifest_path()
+    if not args.current:
+        sys.stderr.write("error: evidence list requires --current\n")
+        return 2
+    try:
+        rows = read_live_run_projections(manifest_path)
+    except BenchEvalError as e:
+        sys.stderr.write(f"error: {e}\n")
+        return 1
+    payload = [
+        {
+            "run_id": row.run_id,
+            "model_id": row.model_id,
+            "host": row.host,
+            "status": row.status,
+            "benchmark": row.benchmark,
+            "slice_id": row.slice_id,
+            "runtime": row.runtime,
+            "evidence_path": row.evidence_path,
+            "report_path": row.report_path,
+            "bundle_path": row.bundle_path,
+            "notes": row.notes,
+            "event_count": row.event_count,
+            "first_generated_at": row.first_generated_at.isoformat(),
+            "last_generated_at": row.last_generated_at.isoformat(),
+        }
+        for row in rows
+    ]
+    sys.stdout.write(json.dumps({"count": len(payload), "runs": payload}, indent=2) + "\n")
+    return 0
+
+
 def _add_benchmark_list_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--format", choices=("text", "json"), default="text")
     parser.add_argument("--category", choices=get_args(BenchmarkCategory), default=None)
@@ -839,6 +873,13 @@ def _build_parser() -> argparse.ArgumentParser:
     register.add_argument("--manifest-path", default=None)
     register.add_argument("--allow-missing-artifacts", action="store_true")
     register.set_defaults(handler=_evidence_register)
+    evidence_list = evidence_sub.add_parser(
+        "list",
+        help="List live-run current state from the validated history",
+    )
+    evidence_list.add_argument("--current", action="store_true")
+    evidence_list.add_argument("--manifest-path", default=None)
+    evidence_list.set_defaults(handler=_evidence_list)
 
     return parser
 

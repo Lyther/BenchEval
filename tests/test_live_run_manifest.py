@@ -17,6 +17,8 @@ from bencheval.live_run_manifest import (
     LiveRunRecord,
     append_live_run,
     default_runs_manifest_path,
+    project_live_runs,
+    read_live_run_projections,
     read_live_runs,
 )
 
@@ -183,6 +185,53 @@ def test_directory_target_rejected(tmp_path: Path) -> None:
 def test_read_missing_file_raises(tmp_path: Path) -> None:
     with pytest.raises(LiveRunManifestError, match="cannot read"):
         read_live_runs(tmp_path / "nope.jsonl")
+    assert not (tmp_path / "nope.jsonl.lock").exists()
+
+
+def test_project_live_runs_uses_last_valid_event(tmp_path: Path) -> None:
+    manifest = tmp_path / "runs.jsonl"
+    append_live_run(manifest, _record(status="registered", notes="start"))
+    append_live_run(
+        manifest,
+        _record(
+            status="completed",
+            notes="done",
+            generated_at=datetime(2026, 6, 18, 15, 6, 0, tzinfo=UTC),
+            evidence_path="/later/evidence.jsonl",
+        ),
+    )
+    views = read_live_run_projections(manifest)
+    assert len(views) == 1
+    view = views[0]
+    assert view.status == "completed"
+    assert view.event_count == 2
+    assert view.notes == "done"
+    assert view.evidence_path == "/later/evidence.jsonl"
+    assert view.first_generated_at == _TS
+    assert project_live_runs(read_live_runs(manifest)) == views
+
+
+def test_cli_evidence_list_current_projects_latest_state(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    manifest = tmp_path / "runs.jsonl"
+    append_live_run(manifest, _record(status="registered", notes="start"))
+    append_live_run(
+        manifest,
+        _record(
+            status="completed",
+            notes="done",
+            generated_at=datetime(2026, 6, 18, 15, 6, 0, tzinfo=UTC),
+        ),
+    )
+    code = main(["evidence", "list", "--current", "--manifest-path", str(manifest)])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["count"] == 1
+    assert payload["runs"][0]["status"] == "completed"
+    assert payload["runs"][0]["event_count"] == 2
+    assert payload["runs"][0]["notes"] == "done"
 
 
 def test_default_runs_manifest_path_under_repo_results() -> None:
