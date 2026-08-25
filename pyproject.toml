@@ -73,7 +73,9 @@ override-dependencies = [
 # unconstrained and resolved 4.8.4, flagged by PYSEC-2026-3716 (fixed in 5.0.1).
 # A constraint, not a dependency: bencheval core never imports datasets; only
 # the eval extra reaches it via inspect-evals (and hle_adapter at run time).
-constraint-dependencies = ["datasets>=5.0.1"]
+# openai>=2.45.0: inspect-ai 0.3.252 refuses to call OpenAI-compatible routes
+# below that runtime floor (GPQA live failed on locked 2.31.0).
+constraint-dependencies = ["datasets>=5.0.1", "openai>=2.45.0"]
 
 [tool.ruff]
 line-length = 100
