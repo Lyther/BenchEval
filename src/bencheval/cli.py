@@ -467,8 +467,11 @@ def _compare_run(args: argparse.Namespace) -> int:
                 "format": fmt,
                 "output": str(output_path.resolve()),
                 "pass_rate_delta": report.pass_rate_delta,
+                "comparison_valid": report.comparison_valid,
+                "interpretation_label": report.interpretation_label,
+                "validity_reasons": list(report.validity_reasons),
             }
-            comparison_valid = True
+            comparison_valid = report.comparison_valid
         sys.stdout.write(json.dumps(payload, indent=2) + "\n")
         # Pilot proof treats a zero exit as a successful comparison; invalid
         # model/runtime comparisons must not look green (F005).

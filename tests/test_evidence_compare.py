@@ -100,6 +100,8 @@ def test_compare_markdown_output() -> None:
     assert "# Evidence comparison" in md
     assert "Backend pass rates" in md
     assert "be-core-t1-single-structured-call" in md
+    assert "Comparison valid: true" in md
+    assert "Interpretation: legacy" in md
 
 
 def test_compare_rejects_duplicate_evidence_key_in_file() -> None:
