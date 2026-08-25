@@ -277,13 +277,9 @@ def test_f007_harbor_deny_network_policy_rejected(tmp_path: Path) -> None:
 def test_f008_external_agent_rejects_traversal_instance_id(tmp_path: Path) -> None:
     with pytest.raises(Exception, match="instance"):
         validate_control_plane_instance_id("../escaped")
-    plan = plan_control_plane(
-        benchmark_id="terminal-bench",
-        slice_id="smoke-5",
-        runtime_id=None,
-        model_id="kimi-k2.7-code",
-        agent_id="momo",
-    )
+    from tests.factories import make_scaffold_agent_plan
+
+    plan = make_scaffold_agent_plan()
 
     def boom(*_a: object, **_k: object) -> None:
         raise AssertionError("should not launch")

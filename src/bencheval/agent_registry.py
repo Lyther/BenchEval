@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -12,6 +13,7 @@ from bencheval.exceptions import BenchEvalError
 from bencheval.paths import repo_root as _repo_root
 
 _ID_PATTERN = r"^[a-z0-9][a-z0-9-]*$"
+AgentAdmission = Literal["scaffold", "draft", "admitted"]
 
 
 class AgentInfo(BaseModel):
@@ -33,7 +35,7 @@ class AgentProfile(BaseModel):
 
     schema_version: str = Field(min_length=1)
     agent: AgentInfo
-    admission: str = "draft"
+    admission: AgentAdmission = "draft"
 
     @property
     def id(self) -> str:
@@ -101,10 +103,26 @@ def load_agent_catalog(dir_path: Path | str | None = None) -> AgentCatalog:
     return _load_agent_catalog_cached(str(d.resolve()))
 
 
+def require_admitted_agent(agent_id: str) -> AgentProfile:
+    """Return ``agent_id`` only when it is an admitted execution profile."""
+    try:
+        profile = load_agent_catalog().by_id(agent_id)
+    except KeyError:
+        raise
+    if profile.admission != "admitted":
+        raise BenchEvalError(
+            f"agent {profile.id!r} is a {profile.admission} profile; "
+            "only admitted agents can produce a plan or launch",
+        )
+    return profile
+
+
 __all__ = [
+    "AgentAdmission",
     "AgentCatalog",
     "AgentProfile",
     "default_agents_dir",
     "load_agent_catalog",
     "load_agent_profile",
+    "require_admitted_agent",
 ]

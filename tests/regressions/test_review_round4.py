@@ -75,13 +75,9 @@ def _evidence_row(task_id: str = "inst-1"):
 
 
 def _agent_plan():
-    return plan_control_plane(
-        benchmark_id="terminal-bench",
-        slice_id="smoke-5",
-        runtime_id=None,
-        agent_id="momo",
-        model_id="kimi-k2.7-code",
-    )
+    from tests.factories import make_scaffold_agent_plan
+
+    return make_scaffold_agent_plan()
 
 
 # --- F001: BenchEval-owned captures must live outside the agent output root --

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from bencheval.benchmark_plan import plan_control_plane
 from bencheval.external_agent_adapter import (
     ExternalAgentCliResult,
     run_external_agent_instance,
@@ -20,13 +19,9 @@ from bencheval.external_agent_adapter import (
 
 
 def test_exit_0_without_verifier_artifact_is_not_pass(tmp_path: Path) -> None:
-    plan = plan_control_plane(
-        benchmark_id="terminal-bench",
-        slice_id="smoke-5",
-        runtime_id=None,
-        agent_id="momo",
-        model_id="kimi-k2.7-code",
-    )
+    from tests.factories import make_scaffold_agent_plan
+
+    plan = make_scaffold_agent_plan()
 
     def zero_exit_runner(command, *, cwd, timeout_sec):
         return ExternalAgentCliResult(

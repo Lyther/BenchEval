@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import get_args
 from urllib.parse import urlsplit
 
+from bencheval.agent_registry import require_admitted_agent
 from bencheval.backends import (
     HARBOR_BACKEND,
     INSPECT_BACKEND,
@@ -810,6 +811,11 @@ def execute_control_plane_run(
     run_id: str | None = None,
 ) -> ControlPlaneRunSummary:
     """Dispatch a ``RunPlan`` to the matching adapter and append evidence rows."""
+    if plan.agent_id is not None:
+        try:
+            require_admitted_agent(plan.agent_id)
+        except KeyError as e:
+            raise BenchEvalError(f"unknown agent {plan.agent_id!r}") from e
     _require_executable_benchmark(plan)
     if plan.adapter_id == GPQA_ADAPTER_ID:
         return _execute_gpqa(

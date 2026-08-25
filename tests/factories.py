@@ -1,9 +1,12 @@
-"""Shared test factories for control-plane evidence rows."""
+"""Shared test factories for control-plane evidence rows and crafted plans."""
 
 from datetime import UTC, datetime
 from typing import Literal
 
+from bencheval.benchmark_plan import plan_control_plane
+from bencheval.domain import RunPlan
 from bencheval.evidence import EvidenceRecord
+from bencheval.lifecycle import CleanupPolicy
 
 _CP_TS = datetime(2026, 6, 1, tzinfo=UTC)
 
@@ -44,4 +47,34 @@ def make_control_plane_evidence_record(
         interpretation_label="runtime_comparison",
         attempt_validity=attempt_validity,
         counts_toward_pass_at_k=counts_toward_pass_at_k,
+    )
+
+
+def make_scaffold_agent_plan(
+    *,
+    benchmark_id: str = "terminal-bench",
+    slice_id: str = "smoke-5",
+    model_id: str = "kimi-k2.7-code",
+    cleanup_policy: CleanupPolicy = "always",
+) -> RunPlan:
+    """Craft a MOMO plan without using the product planner.
+
+    The planner rejects scaffold agents. Retained adapter tests still need a
+    typed plan that looks like the old admitted path.
+    """
+    plan = plan_control_plane(
+        benchmark_id=benchmark_id,
+        slice_id=slice_id,
+        runtime_id="claude-code",
+        model_id=model_id,
+        cleanup_policy=cleanup_policy,
+    )
+    return plan.model_copy(
+        update={
+            "runtime_id": None,
+            "runtime_kind": None,
+            "agent_id": "momo",
+            "model_binding": "bencheval_injected",
+            "network_policy": "benchmark_required",
+        },
     )

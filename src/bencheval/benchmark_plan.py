@@ -13,7 +13,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal, cast, get_args
 
-from bencheval.agent_registry import load_agent_catalog
+from bencheval.agent_registry import require_admitted_agent
 from bencheval.benchmark_registry import (
     BenchmarkEntry,
     execution_support_label,
@@ -291,7 +291,7 @@ def plan_control_plane(
 
     if agent_arg is not None:
         try:
-            agent_profile = load_agent_catalog().by_id(agent_arg)
+            agent_profile = require_admitted_agent(agent_arg)
         except KeyError as e:
             raise BenchEvalError(f"unknown agent {agent_arg!r}") from e
         if harness_kind not in agent_profile.agent.supported_harnesses:

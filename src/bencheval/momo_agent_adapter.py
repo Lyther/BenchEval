@@ -1,4 +1,4 @@
-"""Back-compat re-exports for the admitted momo agent path."""
+"""Back-compat re-exports for the cataloged, non-executable momo scaffold."""
 
 from bencheval import external_agent_adapter as _ext
 

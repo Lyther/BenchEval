@@ -22,19 +22,14 @@ import pytest
 from bencheval.benchmark_plan import plan_control_plane
 from bencheval.control_plane_executor import execute_control_plane_run
 from bencheval.evidence import read_evidence_jsonl
-from bencheval.external_agent_adapter import ExternalAgentCliResult
+from bencheval.external_agent_adapter import ExternalAgentCliResult, execute_external_agent_run
 from bencheval.gpqa_adapter import GpqaCliResult
 from bencheval.hle_adapter import HleCliResult, hle_run_paths
+from tests.factories import make_scaffold_agent_plan
 
 
 def test_external_agent_stops_before_launching_past_the_wall_budget(tmp_path: Path) -> None:
-    base_plan = plan_control_plane(
-        benchmark_id="terminal-bench",
-        slice_id="smoke-5",
-        runtime_id=None,
-        agent_id="momo",
-        model_id="kimi-k2.7-code",
-    )
+    base_plan = make_scaffold_agent_plan()
     plan = base_plan.model_copy(
         update={"instances": base_plan.instances[:3], "max_wall_clock_sec": 1},
     )
@@ -45,11 +40,11 @@ def test_external_agent_stops_before_launching_past_the_wall_budget(tmp_path: Pa
         return ExternalAgentCliResult(1, "", "agent failed", 2.0, tuple(command))
 
     evidence_path = tmp_path / "evidence.jsonl"
-    summary = execute_control_plane_run(
+    summary = execute_external_agent_run(
         plan=plan,
         output_path=evidence_path,
         artifacts_dir=tmp_path / "artifacts",
-        agent_process_runner=slow_agent,
+        process_runner=slow_agent,
         run_id="external-agent-wall-budget-contract",
     )
 
@@ -64,14 +59,7 @@ def test_external_agent_stops_before_launching_past_the_wall_budget(tmp_path: Pa
 
 
 def test_external_agent_applies_cleanup_policy_and_preserves_logs(tmp_path: Path) -> None:
-    base_plan = plan_control_plane(
-        benchmark_id="terminal-bench",
-        slice_id="smoke-5",
-        runtime_id=None,
-        agent_id="momo",
-        model_id="kimi-k2.7-code",
-        cleanup_policy="always",
-    )
+    base_plan = make_scaffold_agent_plan(cleanup_policy="always")
     plan = base_plan.model_copy(update={"instances": base_plan.instances[:1]})
     transient_paths: list[Path] = []
 
@@ -84,11 +72,11 @@ def test_external_agent_applies_cleanup_policy_and_preserves_logs(tmp_path: Path
         return ExternalAgentCliResult(1, "kept stdout", "kept stderr", 0.1, tuple(command))
 
     evidence_path = tmp_path / "evidence.jsonl"
-    execute_control_plane_run(
+    execute_external_agent_run(
         plan=plan,
         output_path=evidence_path,
         artifacts_dir=tmp_path / "artifacts",
-        agent_process_runner=failed_agent,
+        process_runner=failed_agent,
         run_id="external-agent-cleanup-contract",
     )
 

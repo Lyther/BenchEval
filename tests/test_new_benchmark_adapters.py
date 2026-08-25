@@ -197,5 +197,10 @@ def test_pending_benchmarks_do_not_plan_without_real_slice(benchmark_id: str) ->
         "agent_id": "momo" if benchmark_id != "swe-bench-pro" else None,
         "model_id": "kimi-k2.7-code",
     }
-    with pytest.raises(BenchEvalError, match=r"slice .* not found"):
+    expected = (
+        r"slice .* not found"
+        if benchmark_id == "swe-bench-pro"
+        else r"momo.*scaffold|scaffold.*momo"
+    )
+    with pytest.raises(BenchEvalError, match=expected):
         plan_control_plane(**kwargs)
