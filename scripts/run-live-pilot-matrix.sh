@@ -11,7 +11,24 @@ readonly STAMP
 readonly MODEL="${BENCHEVAL_PILOT_MODEL:-kimi-k2.7-code}"
 readonly TB_CLAUDE_MODEL="${BENCHEVAL_PILOT_CLAUDE_MODEL:-${MODEL}}"
 readonly TB_CODEX_MODEL="${BENCHEVAL_PILOT_CODEX_MODEL:-${MODEL}}"
-readonly TB_EXPECTED_INSTANCES="${BENCHEVAL_PILOT_TB_EXPECTED_INSTANCES:-5}"
+readonly TB_SLICE="${BENCHEVAL_PILOT_TB_SLICE:-tier1-one}"
+if [[ ${TB_SLICE} == "tier1-one" ]]; then
+  TB_SLICE_EXPECTED=1
+elif [[ ${TB_SLICE} == "smoke-5" ]]; then
+  TB_SLICE_EXPECTED=5
+else
+  printf 'error: unsupported Terminal-Bench slice %s (use tier1-one or smoke-5)\n' \
+    "${TB_SLICE}" >&2
+  exit 1
+fi
+readonly TB_SLICE_EXPECTED
+if [[ -n ${BENCHEVAL_PILOT_TB_EXPECTED_INSTANCES:-} &&
+  ${BENCHEVAL_PILOT_TB_EXPECTED_INSTANCES} != "${TB_SLICE_EXPECTED}" ]]; then
+  printf 'error: slice/count mismatch: %s expects %s instances, got %s\n' \
+    "${TB_SLICE}" "${TB_SLICE_EXPECTED}" "${BENCHEVAL_PILOT_TB_EXPECTED_INSTANCES}" >&2
+  exit 1
+fi
+readonly TB_EXPECTED_INSTANCES="${TB_SLICE_EXPECTED}"
 export BENCHEVAL_HARBOR_FORWARD_PROXY="${BENCHEVAL_HARBOR_FORWARD_PROXY:-1}"
 
 cd "${REPO_ROOT}"
@@ -191,13 +208,13 @@ run_tb() {
   local raw="results/raw/${tag}"
   if ! uv run --no-sync bencheval doctor --backend harbor --model "${model}" --profile E2; then
     preflight "results/preflight/${tag}.json" \
-      --benchmark terminal-bench --slice smoke-5 --runtime "${runtime}" \
+      --benchmark terminal-bench --slice "${TB_SLICE}" --runtime "${runtime}" \
       --model "${model}" --ok false --doctor-backend harbor \
       --reason "harbor doctor failed"
     return 1
   fi
   local run_status=0
-  uv run --no-sync bencheval run "terminal-bench/smoke-5" \
+  uv run --no-sync bencheval run "terminal-bench/${TB_SLICE}" \
     --runtime "${runtime}" \
     --model "${model}" -y --output "${evidence}" --artifacts-dir "${raw}" || run_status=$?
   emit_artifacts "${tag}" "${evidence}" "${raw}" || true
@@ -206,7 +223,7 @@ run_tb() {
       "${tag}" "${run_status}" >&2
   fi
   if ! require_qualified_lane "${evidence}" "${TB_EXPECTED_INSTANCES}" "${tag}" \
-    --benchmark-id terminal-bench --slice-id smoke-5 --require-runtime; then
+    --benchmark-id terminal-bench --slice-id "${TB_SLICE}" --require-runtime; then
     FAILED=$((FAILED + 1))
     return 1
   fi
