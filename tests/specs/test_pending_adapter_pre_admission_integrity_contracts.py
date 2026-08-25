@@ -7,14 +7,18 @@ decision.
 
 SUBSTITUTE_JUSTIFICATION
 - substitute: the ``_runner`` callables, the temporary ExploitGym entrypoint,
-  and ``BENCHEVAL_EXPLOITGYM_HOME`` in the four tests below
+  ``BENCHEVAL_EXPLOITGYM_HOME``, and the ``_write_owned_logs`` wrapper used by
+  the verdict-swap test below
 - replaces: the external CyberGym/ExploitGym process launch and an installed
-  ExploitGym checkout at the adapter's process boundary
-- necessity: the negative assertion requires a deterministic directory
-  rename-and-symlink swap in the exact interval after launch and before
-  BenchEval writes captured stdout/stderr; an official harness cannot safely
-  or deterministically expose that race, while the positive assertion must
-  use the same boundary to prove the fix does not reject every outcome
+  ExploitGym checkout at the adapter's process boundary; the wrapper replaces
+  only the scheduling point after the real owned-log writer returns, while the
+  real directory descriptor, log writes, verdict reader, and scorer still run
+- necessity: the negative assertions require deterministic directory
+  rename-and-symlink swaps in the exact intervals after launch and before
+  BenchEval writes captured stdout/stderr, or after those writes and before
+  verdict scoring; an official harness cannot safely or deterministically
+  expose either race, while the positive assertion must use the same process
+  boundary to prove the fix does not reject every outcome
 - real-option: a helper subprocess could coordinate the same local race but
   would still replace the official harness and add scheduling nondeterminism;
   a real official run cannot force the hostile state without modifying the
@@ -26,7 +30,8 @@ SUBSTITUTE_JUSTIFICATION
   requires a new post-v1 product decision plus official lifecycle proof on an
   authorized operator host
 - covered tests: test_pending_adapter_keeps_logs_on_the_normal_owned_path,
-  test_pending_adapter_rejects_post_launch_directory_swap
+  test_pending_adapter_rejects_post_launch_directory_swap,
+  test_pending_adapter_rejects_verdict_directory_swap_after_log_capture
 """
 
 from __future__ import annotations
@@ -36,6 +41,8 @@ from pathlib import Path
 
 import pytest
 
+import bencheval.cybergym_adapter as cybergym_adapter
+import bencheval.exploitgym_adapter as exploitgym_adapter
 from bencheval.cybergym_adapter import (
     CybergymCliResult,
     run_cybergym_instance,
@@ -153,3 +160,51 @@ def test_pending_adapter_rejects_post_launch_directory_swap(
 
     assert excinfo.value.failure_label == "evidence_corrupt"
     assert list(outside.iterdir()) == []
+
+
+@pytest.mark.parametrize("adapter_id", ["cybergym", "exploitgym"])
+def test_pending_adapter_rejects_verdict_directory_swap_after_log_capture(
+    adapter_id: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_instance, result_type = _prepare_adapter(
+        adapter_id=adapter_id,
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+    )
+    module = cybergym_adapter if adapter_id == "cybergym" else exploitgym_adapter
+    artifacts = tmp_path / "artifacts"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "verdict.json").write_text('{"primary_pass": true}', encoding="utf-8")
+
+    real_write_owned_logs = module._write_owned_logs
+
+    def _swap_after_log_capture(**kwargs: object) -> tuple[Path, Path]:
+        paths = real_write_owned_logs(**kwargs)
+        instance_dir = artifacts / _INSTANCE_ID
+        instance_dir.rename(artifacts / f"{_INSTANCE_ID}-moved")
+        instance_dir.symlink_to(outside, target_is_directory=True)
+        return paths
+
+    monkeypatch.setattr(module, "_write_owned_logs", _swap_after_log_capture)
+
+    def _runner(command: object, *, cwd: object, timeout_sec: object) -> object:
+        instance_dir = artifacts / _INSTANCE_ID
+        (instance_dir / "verdict.json").write_text(
+            '{"primary_pass": false}',
+            encoding="utf-8",
+        )
+        return result_type(0, "captured-out", "captured-err", 0.1, tuple(command))
+
+    with pytest.raises(AdapterFailureError) as excinfo:
+        run_instance(
+            plan=_pending_plan(adapter_id),
+            instance_id=_INSTANCE_ID,
+            artifacts_dir=artifacts,
+            repo_root=tmp_path,
+            process_runner=_runner,
+        )
+
+    assert excinfo.value.failure_label == "evidence_corrupt"

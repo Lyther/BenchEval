@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import time
@@ -17,6 +16,7 @@ from bencheval.path_safety import validate_control_plane_instance_id
 from bencheval.run_isolation import (
     dir_identity_error,
     open_owned_dir_fd,
+    read_json_at_nofollow,
     write_text_at_exclusive,
 )
 
@@ -196,45 +196,54 @@ def run_cybergym_instance(
             instance_fd=instance_fd,
             cli=cli,
         )
+        verdict = instance_dir / "verdict.json"
+        verdict_present, parsed = read_json_at_nofollow(instance_fd, verdict.name)
+        # gen_task exit 0 is not official CyberGym scoring — require explicit verdict.
+        primary_pass = False
+        if isinstance(parsed, dict) and "primary_pass" in parsed:
+            value = parsed["primary_pass"]
+            # Fail closed: only an actual JSON boolean is scoring authority;
+            # strings like "false" must never coerce to a pass.
+            primary_pass = value if isinstance(value, bool) else False
+        if cli.returncode != 0:
+            failure: FailureLabel | None = "harness_failure"
+        elif not verdict_present:
+            failure = "runtime_output_unparseable"
+        else:
+            failure = None if primary_pass else "model_wrong_solution"
+        outcome = CybergymInstanceOutcome(
+            instance_id=instance_id,
+            primary_pass=primary_pass,
+            partial_score=1.0 if primary_pass else 0.0,
+            cost_usd=0.0,
+            latency_sec=cli.latency_sec,
+            native_score={"returncode": cli.returncode, "score_source": "verdict_or_missing"},
+            failure_class=failure,
+            stdout_path=os.path.abspath(stdout_file),
+            stderr_path=os.path.abspath(stderr_file),
+            verifier_log_path=os.path.abspath(verdict) if verdict_present else None,
+            adapter_metadata={
+                "adapter_id": CYBERGYM_ADAPTER_ID,
+                "harness_kind": "cybergym-native",
+                "cybergym_command": " ".join(cli.command),
+                "interpretation": "adapter_smoke",
+            },
+        )
+        identity_error = dir_identity_error(
+            instance_fd,
+            instance_dir,
+            role="cybergym instance directory",
+        )
+        if identity_error is not None:
+            raise AdapterFailureError(
+                identity_error,
+                failure_label="evidence_corrupt",
+                latency_sec=cli.latency_sec,
+                adapter_metadata={"cybergym_command": " ".join(cli.command)},
+            )
+        return outcome
     finally:
         os.close(instance_fd)
-    verdict = instance_dir / "verdict.json"
-    # gen_task exit 0 is not official CyberGym scoring — require explicit verdict.
-    primary_pass = False
-    if verdict.is_file():
-        try:
-            parsed = json.loads(verdict.read_text(encoding="utf-8"))
-            if isinstance(parsed, dict) and "primary_pass" in parsed:
-                value = parsed["primary_pass"]
-                # Fail closed: only an actual JSON boolean is scoring authority;
-                # strings like "false" must never coerce to a pass.
-                primary_pass = value if isinstance(value, bool) else False
-        except json.JSONDecodeError:
-            primary_pass = False
-    if cli.returncode != 0:
-        failure: FailureLabel | None = "harness_failure"
-    elif not verdict.is_file():
-        failure = "runtime_output_unparseable"
-    else:
-        failure = None if primary_pass else "model_wrong_solution"
-    return CybergymInstanceOutcome(
-        instance_id=instance_id,
-        primary_pass=primary_pass,
-        partial_score=1.0 if primary_pass else 0.0,
-        cost_usd=0.0,
-        latency_sec=cli.latency_sec,
-        native_score={"returncode": cli.returncode, "score_source": "verdict_or_missing"},
-        failure_class=failure,
-        stdout_path=str(stdout_file.resolve()),
-        stderr_path=str(stderr_file.resolve()),
-        verifier_log_path=str(verdict.resolve()) if verdict.is_file() else None,
-        adapter_metadata={
-            "adapter_id": CYBERGYM_ADAPTER_ID,
-            "harness_kind": "cybergym-native",
-            "cybergym_command": " ".join(cli.command),
-            "interpretation": "adapter_smoke",
-        },
-    )
 
 
 __all__ = [

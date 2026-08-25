@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import stat
@@ -351,6 +352,38 @@ def write_bytes_at_exclusive(dir_fd: int, name: str, data: bytes) -> None:
         raise BenchEvalError(f"cannot write dirfd-relative file {name!r}: {e}") from e
 
 
+def read_json_at_nofollow(dir_fd: int, name: str) -> tuple[bool, object | None]:
+    """Read one regular JSON file relative to ``dir_fd`` without following links.
+
+    The boolean is true only when a regular file was opened. Invalid JSON or
+    undecodable bytes retain that presence signal while returning no payload,
+    so adapters can preserve their benchmark-specific malformed-output policy.
+    """
+    _validate_dirfd_relative_name(name)
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
+    try:
+        descriptor = os.open(name, flags, dir_fd=dir_fd)
+    except OSError:
+        return False, None
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode):
+            return False, None
+        try:
+            handle = os.fdopen(descriptor, "r", encoding="utf-8")
+        except OSError:
+            return True, None
+        descriptor = -1
+        try:
+            with handle:
+                return True, json.load(handle)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return True, None
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
 def dir_identity_error(dir_fd: int, path: Path, *, role: str) -> str | None:
     """None when ``path`` still names the inode pinned by ``dir_fd``.
 
@@ -380,6 +413,7 @@ __all__ = [
     "dir_identity_error",
     "open_owned_dir_fd",
     "prepare_instance_artifacts_dir",
+    "read_json_at_nofollow",
     "reject_symlink_path",
     "release_evidence_reservation",
     "reserved_evidence_inode",

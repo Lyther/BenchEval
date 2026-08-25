@@ -8,13 +8,18 @@ may determine ``primary_pass``.
 SUBSTITUTE_JUSTIFICATION
 - substitute: sanitized SWE-bench ``report.json`` payloads,
   ``SwebenchCliResult`` values, and the injected ``process_runner`` in
-  ``test_run_instance_rejects_post_launch_directory_swap``
+  ``test_run_instance_rejects_post_launch_directory_swap``; the
+  ``_score_from_official`` wrapper and ``os.close`` hook in the two ownership-
+  window tests below replace only the timing of those local filesystem events
 - replaces: official SWE-bench Docker evaluator output and its completed
-  subprocess result
+  subprocess result; the wrapper and close hook replace only the scheduling
+  points immediately before scoring and immediately after the real anchored
+  leaf validation, while the real parser, descriptor reads, and scorer run
 - necessity: wrong-instance, non-boolean, missing-report, conflicting local
-  verdict, and post-launch directory-swap states must be forced
-  deterministically; the official evaluator cannot safely guarantee those
-  negative combinations for a real task
+  verdict, post-launch directory-swap, post-validation report-directory swap,
+  and post-validation leaf-swap states must be forced deterministically; the
+  official evaluator cannot safely guarantee those negative combinations or
+  exact race intervals for a real task
 - real-option: a live mini-SWE generation plus official Docker evaluation is
   the required integration proof, but it cannot deterministically produce the
   hostile/malformed report cases or the exact rename-and-symlink race
@@ -34,6 +39,7 @@ from pathlib import Path
 
 import pytest
 
+import bencheval.swebench_adapter as swebench_adapter
 from bencheval.benchmark_plan import plan_control_plane
 from bencheval.exceptions import AdapterFailureError
 from bencheval.swebench_adapter import (
@@ -227,3 +233,65 @@ def test_workspace_diff_symlink_is_not_recorded(tmp_path: Path) -> None:
 
     assert outcome.primary_pass is True
     assert outcome.workspace_diff_path is None
+
+
+def test_report_directory_swap_during_scoring_is_rejected(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifacts = tmp_path / "instance"
+    artifacts.mkdir()
+    _write_official_report(artifacts, resolved=False)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    _write_official_report(outside, resolved=True)
+
+    real_score = swebench_adapter._score_from_official
+
+    def _swap_then_score(**kwargs: object):
+        artifacts.rename(tmp_path / "instance-moved")
+        artifacts.symlink_to(outside, target_is_directory=True)
+        return real_score(**kwargs)
+
+    monkeypatch.setattr(swebench_adapter, "_score_from_official", _swap_then_score)
+
+    with pytest.raises(AdapterFailureError) as excinfo:
+        _parse(artifacts, tmp_path)
+
+    assert excinfo.value.failure_label == "evidence_corrupt"
+
+
+def test_workspace_diff_leaf_swap_does_not_escape_recorded_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifacts = tmp_path / "instance"
+    artifacts.mkdir()
+    _write_official_report(artifacts, resolved=True)
+    workspace_diff = artifacts / "workspace.diff"
+    workspace_diff.write_text("owned diff\n", encoding="utf-8")
+    original_identity = workspace_diff.stat()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    forged = outside / "workspace.diff"
+    forged.write_text("forged diff\n", encoding="utf-8")
+
+    real_close = swebench_adapter.os.close
+
+    def _close_then_swap(fd: int) -> None:
+        opened = swebench_adapter.os.fstat(fd)
+        real_close(fd)
+        if (opened.st_dev, opened.st_ino) != (
+            original_identity.st_dev,
+            original_identity.st_ino,
+        ):
+            return
+        workspace_diff.unlink()
+        workspace_diff.symlink_to(forged)
+
+    monkeypatch.setattr(swebench_adapter.os, "close", _close_then_swap)
+
+    outcome = _parse(artifacts, tmp_path)
+
+    assert outcome.primary_pass is True
+    assert outcome.workspace_diff_path == "instance/workspace.diff"
