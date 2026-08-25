@@ -129,6 +129,22 @@ def release_evidence_reservation(path: Path) -> None:
         raise BenchEvalError(f"cannot release evidence reservation for {path}: {e}") from e
 
 
+def _unlink_empty_reserved_evidence_if_owned(path: Path) -> None:
+    """Remove only the empty pathname that still names this process's held inode."""
+    target = Path(_evidence_registry_key(path))
+    reservation = _RESERVED_EVIDENCE_FILES.get(str(target))
+    if reservation is None or _reserved_path_identity_error(target, reservation) is not None:
+        return
+    try:
+        if os.fstat(reservation.descriptor).st_size != 0:
+            return
+        target.unlink()
+    except FileNotFoundError:
+        return
+    except OSError as e:
+        raise BenchEvalError(f"cannot roll back evidence claim {target}: {e}") from e
+
+
 def claim_exclusive_evidence_path(path: Path) -> None:
     """Atomically reserve a missing evidence JSONL path for one run.
 
@@ -212,23 +228,49 @@ def claim_exclusive_run_artifacts(path: Path) -> bool:
     return created
 
 
-def claim_exclusive_run_outputs(*, evidence_path: Path, artifacts_path: Path) -> None:
+def rollback_claimed_run_outputs(
+    *,
+    evidence_path: Path,
+    artifacts_path: Path,
+    artifacts_created: bool,
+    evidence_claimed: bool,
+) -> None:
+    """Release a claim created by this attempt without deleting unrelated files."""
+    if evidence_claimed:
+        try:
+            _unlink_empty_reserved_evidence_if_owned(evidence_path)
+        finally:
+            release_evidence_reservation(evidence_path)
+    artifacts = artifacts_path.expanduser()
+    for name in (_CLAIM_MARKER_NAME, "run-plan.json"):
+        leftover = artifacts / name
+        try:
+            leftover.unlink()
+        except FileNotFoundError:
+            continue
+        except OSError as e:
+            raise BenchEvalError(f"cannot roll back {name} in {artifacts}: {e}") from e
+    if artifacts_created:
+        try:
+            artifacts.rmdir()
+        except OSError:
+            return
+
+
+def claim_exclusive_run_outputs(*, evidence_path: Path, artifacts_path: Path) -> bool:
     """Claim an artifacts tree and atomically reserve its paired evidence file."""
     artifacts_created = claim_exclusive_run_artifacts(artifacts_path)
     try:
         claim_exclusive_evidence_path(evidence_path)
     except BenchEvalError:
-        marker = artifacts_path.expanduser() / _CLAIM_MARKER_NAME
-        try:
-            marker.unlink()
-        except OSError:
-            pass
-        if artifacts_created:
-            try:
-                artifacts_path.expanduser().rmdir()
-            except OSError:
-                pass
+        rollback_claimed_run_outputs(
+            evidence_path=evidence_path,
+            artifacts_path=artifacts_path,
+            artifacts_created=artifacts_created,
+            evidence_claimed=False,
+        )
         raise
+    return artifacts_created
 
 
 def prepare_instance_artifacts_dir(
@@ -417,6 +459,7 @@ __all__ = [
     "reject_symlink_path",
     "release_evidence_reservation",
     "reserved_evidence_inode",
+    "rollback_claimed_run_outputs",
     "write_bytes_at_exclusive",
     "write_text_at_exclusive",
 ]

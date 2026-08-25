@@ -118,6 +118,11 @@ def test_execute_gpqa_slice(tmp_path: Path) -> None:
     assert rows[0].instance_id.endswith("-aggregate")
     assert rows[0].provider_config_hash
     assert summary.passed_count == 1
+    run_plan_path = tmp_path / "art" / "run-plan.json"
+    assert run_plan_path.is_file()
+    persisted = json.loads(run_plan_path.read_text(encoding="utf-8"))
+    assert persisted["benchmark_id"] == "gpqa-diamond"
+    assert persisted["slice_id"] == "smoke"
 
 
 def test_execute_hle_slice(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -373,6 +373,51 @@ def _export_run_bundle(args: argparse.Namespace) -> int:
     return 0
 
 
+def _proof_export(args: argparse.Namespace) -> int:
+    from bencheval.proof_bundle import export_private_proof
+
+    exported = export_private_proof(
+        run_id=args.run_id,
+        evidence_path=Path(args.evidence),
+        artifacts_dir=Path(args.artifacts),
+        manifest_path=Path(args.manifest),
+        output_dir=Path(args.output),
+        capture_dir=Path(args.capture_dir) if args.capture_dir is not None else None,
+    )
+    sys.stdout.write(
+        json.dumps(
+            {
+                "proof_id": exported.proof_id,
+                "root": str(exported.root),
+                "classification": exported.classification,
+                "classification_reason": exported.classification_reason,
+            },
+            indent=2,
+        )
+        + "\n",
+    )
+    return 0
+
+
+def _proof_verify(args: argparse.Namespace) -> int:
+    from bencheval.proof_bundle import verify_private_proof
+
+    proof_id = verify_private_proof(Path(args.path), expected_proof_id=args.expected)
+    sys.stdout.write(json.dumps({"proof_id": proof_id, "ok": True}, indent=2) + "\n")
+    return 0
+
+
+def _proof_import(args: argparse.Namespace) -> int:
+    from bencheval.proof_bundle import default_proofs_dir, import_private_proof
+
+    installed = import_private_proof(
+        Path(args.path),
+        store_root=Path(args.store) if args.store is not None else default_proofs_dir(),
+    )
+    sys.stdout.write(json.dumps({"installed": str(installed)}, indent=2) + "\n")
+    return 0
+
+
 def _compare_run(args: argparse.Namespace) -> int:
     from bencheval.evidence_compare import (
         compare_evidence_runs,
@@ -855,6 +900,25 @@ def _build_parser() -> argparse.ArgumentParser:
     export_run.add_argument("--compare-current", default=None, type=Path)
     export_run.add_argument("--compare-report", default=None, type=Path)
     export_run.set_defaults(handler=_export_run_bundle)
+
+    proof = sub.add_parser("proof", help="Export, verify, or import a private proof")
+    proof_sub = proof.add_subparsers(dest="proof_command", required=True)
+    proof_export = proof_sub.add_parser("export", help="Export a private_proof_v1 directory")
+    proof_export.add_argument("--run-id", required=True)
+    proof_export.add_argument("--evidence", required=True)
+    proof_export.add_argument("--artifacts", required=True)
+    proof_export.add_argument("--manifest", required=True)
+    proof_export.add_argument("--output", required=True)
+    proof_export.add_argument("--capture-dir", default=None)
+    proof_export.set_defaults(handler=_proof_export)
+    proof_verify = proof_sub.add_parser("verify", help="Verify a private_proof_v1 directory")
+    proof_verify.add_argument("path")
+    proof_verify.add_argument("--expected", default=None)
+    proof_verify.set_defaults(handler=_proof_verify)
+    proof_import = proof_sub.add_parser("import", help="Verify and install a private proof")
+    proof_import.add_argument("path")
+    proof_import.add_argument("--store", default=None)
+    proof_import.set_defaults(handler=_proof_import)
 
     evidence = sub.add_parser("evidence", help="Evidence helpers")
     evidence_sub = evidence.add_subparsers(dest="evidence_command", required=True)

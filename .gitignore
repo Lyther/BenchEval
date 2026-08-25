@@ -35,6 +35,8 @@ results/reports/*
 !results/reports/.gitkeep
 results/manifests/*
 !results/manifests/README.md
+results/proofs/*
+!results/proofs/README.md
 config/selftest/**/runs/
 config/tasks/**/runs/
 

@@ -1,0 +1,18 @@
+schema_version: "0.1"
+slice:
+  id: "tier1-one"
+  benchmark_id: "terminal-bench"
+  purpose: "adapter_smoke"
+  selection_policy: "fixed_instance_ids"
+  instances:
+    - fix-git
+  valid_for: ["adapter_smoke", "runtime_comparison"]
+  invalid_for: ["benchmark_native_claim"]
+budget:
+  max_instances: 1
+  max_wall_clock_sec_per_instance: 600
+  max_total_cost_usd: 5
+labels:
+  contamination_warning: false
+  public_benchmark: true
+  full_suite_required_for_public_claim: true
