@@ -476,6 +476,8 @@ def _hle_worktree_dirty(root: Path) -> bool:
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=15,
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -551,6 +553,8 @@ def _hle_harness_version(root: Path, *, pin: HleHarnessPin | None = None) -> str
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=15,
         )
     except (OSError, subprocess.TimeoutExpired):

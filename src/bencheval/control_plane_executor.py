@@ -103,6 +103,8 @@ def _run_version_command(command: tuple[str, ...]) -> str | None:
             list(command),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=_VERSION_COMMAND_TIMEOUT_SEC,
         )
