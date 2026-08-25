@@ -55,6 +55,8 @@ def docker_available() -> bool:
             ["docker", "info"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=15,
         )
@@ -140,6 +142,8 @@ def harbor_revision() -> str | None:
             ["harbor", "--version"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=15,
         )
@@ -160,6 +164,8 @@ def _version_line(binary: str) -> str | None:
             [binary, "--version"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=15,
         )

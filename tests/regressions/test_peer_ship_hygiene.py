@@ -70,6 +70,45 @@ def test_roadmap_separates_current_from_historical_ledger() -> None:
     assert "run --config" not in current
 
 
+def test_pending_adapter_justification_records_closed_catalog_only_decision() -> None:
+    text = (
+        REPO / "tests" / "specs" / "test_pending_adapter_pre_admission_integrity_contracts.py"
+    ).read_text(encoding="utf-8")
+    assert "intended admission surfaces" not in text
+    assert "until the dual-use product boundary is decided" not in text
+    assert "catalog-only" in text
+    assert "v1 product decision" in text
+    assert "post-v1 product decision" in text
+
+
+def test_docs_mark_append_validation_and_pending_anchored_writes_complete() -> None:
+    readme = (REPO / "results" / "manifests" / "README.md").read_text(encoding="utf-8")
+    assert "Roadmap R2 will enforce" not in readme
+    assert "append_live_run" in readme
+    assert "last-event operational view" in readme or "last-valid-event" in readme
+
+    architecture = (REPO / "docs" / "architecture.md").read_text(encoding="utf-8")
+    assert "does not yet enforce lifecycle consistency" not in architecture
+    assert "may still be completed so dormant code" not in architecture
+    assert "append-time" in architecture
+    assert "last-valid-event operational-view" in architecture
+
+    roadmap = (REPO / "docs" / "roadmap.md").read_text(encoding="utf-8")
+    current, _, _historical = roadmap.partition("## Historical ledger (do not execute)")
+    r2 = current.split("### R2", maxsplit=1)[1].split("### R3", maxsplit=1)[0]
+    r4 = current.split("### R4", maxsplit=1)[1].split("### R5", maxsplit=1)[0]
+    assert "- [x]" in r2 and "append-time" in r2
+    assert "- [ ]" in r2 and "last-valid-event" in r2
+    assert "- [x]" in r4 and "anchored" in r4
+
+
+def test_architecture_swe_lifecycle_does_not_claim_local_verdict_authority() -> None:
+    architecture = (REPO / "docs" / "architecture.md").read_text(encoding="utf-8")
+    section = architecture.split("### 18.1", maxsplit=1)[1].split("### 18.2", maxsplit=1)[0]
+    assert "trusts local `verifier.json`" not in section
+    assert "`report.json" in section
+
+
 def test_architecture_has_no_deleted_workspace_staging() -> None:
     text = (REPO / "docs" / "architecture.md").read_text(encoding="utf-8")
     assert "workspace_staging.py" not in text

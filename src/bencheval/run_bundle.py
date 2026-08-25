@@ -50,6 +50,8 @@ def _collect_tool_versions() -> dict[str, str]:
                 check=False,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=15,
             )
             line = (proc.stdout or proc.stderr or "").strip().splitlines()

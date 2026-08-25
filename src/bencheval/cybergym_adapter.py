@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import time
@@ -14,6 +13,12 @@ from typing import Protocol
 from bencheval.domain import FailureLabel, RunPlan
 from bencheval.exceptions import AdapterFailureError, BenchEvalError
 from bencheval.path_safety import validate_control_plane_instance_id
+from bencheval.run_isolation import (
+    dir_identity_error,
+    open_owned_dir_fd,
+    read_json_at_nofollow,
+    write_text_at_exclusive,
+)
 
 CYBERGYM_ADAPTER_ID = "cybergym"
 _CYBERGYM_HOME_ENV = "BENCHEVAL_CYBERGYM_HOME"
@@ -100,6 +105,8 @@ def _default_process_runner(
             cwd=str(cwd) if cwd is not None else None,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=timeout_sec,
         )
@@ -128,6 +135,34 @@ def _default_process_runner(
     )
 
 
+def _write_owned_logs(
+    *,
+    instance_dir: Path,
+    instance_fd: int,
+    cli: CybergymCliResult,
+) -> tuple[Path, Path]:
+    role = "cybergym instance directory"
+    identity_error = dir_identity_error(instance_fd, instance_dir, role=role)
+    if identity_error is not None:
+        raise AdapterFailureError(
+            identity_error,
+            failure_label="evidence_corrupt",
+            latency_sec=cli.latency_sec,
+            adapter_metadata={"cybergym_command": " ".join(cli.command)},
+        )
+    write_text_at_exclusive(instance_fd, "stdout.log", cli.stdout)
+    write_text_at_exclusive(instance_fd, "stderr.log", cli.stderr)
+    identity_error = dir_identity_error(instance_fd, instance_dir, role=role)
+    if identity_error is not None:
+        raise AdapterFailureError(
+            identity_error,
+            failure_label="evidence_corrupt",
+            latency_sec=cli.latency_sec,
+            adapter_metadata={"cybergym_command": " ".join(cli.command)},
+        )
+    return instance_dir / "stdout.log", instance_dir / "stderr.log"
+
+
 def run_cybergym_instance(
     *,
     plan: RunPlan,
@@ -139,60 +174,76 @@ def run_cybergym_instance(
 ) -> CybergymInstanceOutcome:
     if plan.adapter_id != CYBERGYM_ADAPTER_ID:
         raise BenchEvalError(f"cybergym adapter cannot run adapter_id={plan.adapter_id!r}")
+    validate_control_plane_instance_id(instance_id)
     instance_dir = artifacts_dir / instance_id
-    instance_dir.mkdir(parents=True, exist_ok=True)
-    command = build_cybergym_run_command(
-        plan=plan,
-        instance_id=instance_id,
-        artifacts_dir=instance_dir,
-    )
-    wall = timeout_sec if timeout_sec is not None else max(1, plan.max_wall_clock_sec_per_instance)
-    root = _cybergym_root()
-    has_pkg = (root / "src" / "cybergym").is_dir() or (root / "cybergym").is_dir()
-    cwd = root if has_pkg else repo_root
-    runner = process_runner or _default_process_runner
-    cli = runner(command, cwd=cwd, timeout_sec=wall)
-    stdout_file = instance_dir / "stdout.log"
-    stderr_file = instance_dir / "stderr.log"
-    stdout_file.write_text(cli.stdout, encoding="utf-8")
-    stderr_file.write_text(cli.stderr, encoding="utf-8")
-    verdict = instance_dir / "verdict.json"
-    # gen_task exit 0 is not official CyberGym scoring — require explicit verdict.
-    primary_pass = False
-    if verdict.is_file():
-        try:
-            parsed = json.loads(verdict.read_text(encoding="utf-8"))
-            if isinstance(parsed, dict) and "primary_pass" in parsed:
-                value = parsed["primary_pass"]
-                # Fail closed: only an actual JSON boolean is scoring authority;
-                # strings like "false" must never coerce to a pass.
-                primary_pass = value if isinstance(value, bool) else False
-        except json.JSONDecodeError:
-            primary_pass = False
-    if cli.returncode != 0:
-        failure: FailureLabel | None = "harness_failure"
-    elif not verdict.is_file():
-        failure = "runtime_output_unparseable"
-    else:
-        failure = None if primary_pass else "model_wrong_solution"
-    return CybergymInstanceOutcome(
-        instance_id=instance_id,
-        primary_pass=primary_pass,
-        partial_score=1.0 if primary_pass else 0.0,
-        cost_usd=0.0,
-        latency_sec=cli.latency_sec,
-        native_score={"returncode": cli.returncode, "score_source": "verdict_or_missing"},
-        failure_class=failure,
-        stdout_path=str(stdout_file.resolve()),
-        stderr_path=str(stderr_file.resolve()),
-        verifier_log_path=str(verdict.resolve()) if verdict.is_file() else None,
-        adapter_metadata={
-            "adapter_id": CYBERGYM_ADAPTER_ID,
-            "harness_kind": "cybergym-native",
-            "cybergym_command": " ".join(cli.command),
-            "interpretation": "adapter_smoke",
-        },
-    )
+    instance_fd = open_owned_dir_fd(instance_dir, role="cybergym instance directory")
+    try:
+        command = build_cybergym_run_command(
+            plan=plan,
+            instance_id=instance_id,
+            artifacts_dir=instance_dir,
+        )
+        wall = (
+            timeout_sec if timeout_sec is not None else max(1, plan.max_wall_clock_sec_per_instance)
+        )
+        root = _cybergym_root()
+        has_pkg = (root / "src" / "cybergym").is_dir() or (root / "cybergym").is_dir()
+        cwd = root if has_pkg else repo_root
+        runner = process_runner or _default_process_runner
+        cli = runner(command, cwd=cwd, timeout_sec=wall)
+        stdout_file, stderr_file = _write_owned_logs(
+            instance_dir=instance_dir,
+            instance_fd=instance_fd,
+            cli=cli,
+        )
+        verdict = instance_dir / "verdict.json"
+        verdict_present, parsed = read_json_at_nofollow(instance_fd, verdict.name)
+        # gen_task exit 0 is not official CyberGym scoring — require explicit verdict.
+        primary_pass = False
+        if isinstance(parsed, dict) and "primary_pass" in parsed:
+            value = parsed["primary_pass"]
+            # Fail closed: only an actual JSON boolean is scoring authority;
+            # strings like "false" must never coerce to a pass.
+            primary_pass = value if isinstance(value, bool) else False
+        if cli.returncode != 0:
+            failure: FailureLabel | None = "harness_failure"
+        elif not verdict_present:
+            failure = "runtime_output_unparseable"
+        else:
+            failure = None if primary_pass else "model_wrong_solution"
+        outcome = CybergymInstanceOutcome(
+            instance_id=instance_id,
+            primary_pass=primary_pass,
+            partial_score=1.0 if primary_pass else 0.0,
+            cost_usd=0.0,
+            latency_sec=cli.latency_sec,
+            native_score={"returncode": cli.returncode, "score_source": "verdict_or_missing"},
+            failure_class=failure,
+            stdout_path=os.path.abspath(stdout_file),
+            stderr_path=os.path.abspath(stderr_file),
+            verifier_log_path=os.path.abspath(verdict) if verdict_present else None,
+            adapter_metadata={
+                "adapter_id": CYBERGYM_ADAPTER_ID,
+                "harness_kind": "cybergym-native",
+                "cybergym_command": " ".join(cli.command),
+                "interpretation": "adapter_smoke",
+            },
+        )
+        identity_error = dir_identity_error(
+            instance_fd,
+            instance_dir,
+            role="cybergym instance directory",
+        )
+        if identity_error is not None:
+            raise AdapterFailureError(
+                identity_error,
+                failure_label="evidence_corrupt",
+                latency_sec=cli.latency_sec,
+                adapter_metadata={"cybergym_command": " ".join(cli.command)},
+            )
+        return outcome
+    finally:
+        os.close(instance_fd)
 
 
 __all__ = [

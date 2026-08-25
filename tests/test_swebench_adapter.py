@@ -19,14 +19,19 @@ from bencheval.swebench_adapter import (
 )
 
 # SUBSTITUTE_JUSTIFICATION
-# - substitute: injected mini-SWE runner and disposable result files in
-#   test_run_instance_single
+# - substitute: injected mini-SWE runner and disposable leftover report.json or
+#   workspace.diff in test_run_instance_single,
+#   test_run_instance_clears_stale_official_report, and
+#   test_run_instance_clears_stale_workspace_diff
 # - replaces: live mini-SWE generation and official SWE-Bench evaluation
-# - necessity: deterministic local failure/result parsing is required while the official
-#   evaluate path is deliberately absent and the adapter is non-executable
+# - necessity: leftover-artifact and local parse cases must be forced without a
+#   Docker evaluator; the official path cannot safely produce stale artifacts
 # - real-option: official generation plus evaluation must be implemented first
-# - proof-limit: diagnostic parser coverage only; cannot qualify SWE-Bench execution
+# - proof-limit: diagnostic parser/wrapper coverage only; cannot qualify SWE-Bench
 # - real-proof: BLOCKED until the official evaluate path is implemented and run live
+# - covered tests: test_run_instance_single,
+#   test_run_instance_clears_stale_official_report,
+#   test_run_instance_clears_stale_workspace_diff
 
 
 def test_build_swebench_run_command() -> None:
@@ -46,11 +51,20 @@ def test_build_swebench_run_command() -> None:
     assert plan.model_binding == "runtime_configured"
 
 
-def test_parse_verifier_and_diff(tmp_path: Path) -> None:
+def test_parse_official_report_and_diff(tmp_path: Path) -> None:
     art = tmp_path / "inst"
     art.mkdir()
-    (art / "verifier.json").write_text(
-        json.dumps({"resolved": True, "tests_passed": True, "cost_usd": 0.25}),
+    report = art / "report.json"
+    report.write_text(
+        json.dumps(
+            {
+                "django__django-11099": {
+                    "resolved": True,
+                    "tests_passed": True,
+                    "cost_usd": 0.25,
+                },
+            },
+        ),
         encoding="utf-8",
     )
     (art / "workspace.diff").write_text("diff --git a/foo b/foo\n", encoding="utf-8")
@@ -64,7 +78,7 @@ def test_parse_verifier_and_diff(tmp_path: Path) -> None:
     )
     assert out.primary_pass is True
     assert out.workspace_diff_path is not None
-    assert out.verifier_log_path is not None
+    assert out.verifier_log_path == str(report.relative_to(tmp_path))
     assert out.native_score.get("resolved") is True
 
 
@@ -96,7 +110,10 @@ def test_run_instance_single(tmp_path: Path) -> None:
     def fake_runner(command, *, cwd, timeout_sec):
         out_dir = Path(command[command.index("--output-dir") + 1])
         out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "result.json").write_text('{"resolved": false}', encoding="utf-8")
+        (out_dir / "report.json").write_text(
+            json.dumps({"django__django-11099": {"resolved": False}}),
+            encoding="utf-8",
+        )
         return SwebenchCliResult(0, "", "", 0.1, tuple(command))
 
     out = run_swebench_instance(
@@ -110,7 +127,80 @@ def test_run_instance_single(tmp_path: Path) -> None:
     assert out.failure_class == "model_wrong_solution"
 
 
-def test_parse_missing_verifier_on_success_rc_fails(tmp_path: Path) -> None:
+def test_run_instance_clears_stale_official_report(tmp_path: Path) -> None:
+    plan = plan_control_plane(
+        benchmark_id="swe-bench-verified",
+        slice_id="swe-bench-verified-smoke-10",
+        runtime_id="claude-code",
+        model_id="kimi-k2.7-code",
+    )
+    instance_dir = tmp_path / "a" / "django__django-11099"
+    instance_dir.mkdir(parents=True)
+    (instance_dir / "report.json").write_text(
+        json.dumps({"django__django-11099": {"resolved": True}}),
+        encoding="utf-8",
+    )
+
+    def fake_runner(command, *, cwd, timeout_sec):
+        return SwebenchCliResult(0, "", "", 0.1, tuple(command))
+
+    out = run_swebench_instance(
+        plan=plan,
+        instance_id="django__django-11099",
+        artifacts_dir=tmp_path / "a",
+        repo_root=tmp_path,
+        process_runner=fake_runner,
+    )
+    assert out.primary_pass is False
+    assert out.failure_class == "runtime_output_unparseable"
+
+
+def test_run_instance_clears_stale_workspace_diff(tmp_path: Path) -> None:
+    plan = plan_control_plane(
+        benchmark_id="swe-bench-verified",
+        slice_id="swe-bench-verified-smoke-10",
+        runtime_id="claude-code",
+        model_id="kimi-k2.7-code",
+    )
+    instance_dir = tmp_path / "a" / "django__django-11099"
+    call_count = 0
+
+    def fake_runner(command, *, cwd, timeout_sec):
+        nonlocal call_count
+        call_count += 1
+        out_dir = Path(command[command.index("--output-dir") + 1])
+        (out_dir / "report.json").write_text(
+            json.dumps({"django__django-11099": {"resolved": False}}),
+            encoding="utf-8",
+        )
+        if call_count == 1:
+            (out_dir / "workspace.diff").write_text(
+                "STALE-FIRST-RUN",
+                encoding="utf-8",
+            )
+        return SwebenchCliResult(0, "", "", 0.1, tuple(command))
+
+    first = run_swebench_instance(
+        plan=plan,
+        instance_id="django__django-11099",
+        artifacts_dir=tmp_path / "a",
+        repo_root=tmp_path,
+        process_runner=fake_runner,
+    )
+    second = run_swebench_instance(
+        plan=plan,
+        instance_id="django__django-11099",
+        artifacts_dir=tmp_path / "a",
+        repo_root=tmp_path,
+        process_runner=fake_runner,
+    )
+
+    assert first.workspace_diff_path is not None
+    assert second.workspace_diff_path is None
+    assert not (instance_dir / "workspace.diff").exists()
+
+
+def test_parse_missing_official_report_on_success_rc_fails(tmp_path: Path) -> None:
     art = tmp_path / "empty"
     art.mkdir()
     cli = SwebenchCliResult(0, "", "", 0.1, ("claude-code",))
@@ -122,4 +212,4 @@ def test_parse_missing_verifier_on_success_rc_fails(tmp_path: Path) -> None:
         harness_version="v",
     )
     assert out.primary_pass is False
-    assert out.failure_class == "harness_failure"
+    assert out.failure_class == "runtime_output_unparseable"

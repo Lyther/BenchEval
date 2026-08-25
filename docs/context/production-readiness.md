@@ -1,8 +1,7 @@
 # Production Readiness Tiers (vNext v0.3)
 
 > **Role:** Canonical definition of what "production-ready" means for BenchEval and how a benchmark adapter graduates from *software* to *live evidence* to *Production v1*.
-> **Source of truth:** [`docs/context/concept-hld.md`](concept-hld.md) §11.2 / §14, [`docs/architecture.md`](../architecture.md) §13 (verification gates), [`docs/context/production-v1-pilot.md`](production-v1-pilot.md).
-> **Do not edit:** `concept-hld.md`. This document is a companion, not a replacement for the HLD.
+> **Source of truth:** [`docs/architecture.md`](../architecture.md) §13 (verification gates), this readiness checklist, and [`docs/context/production-v1-pilot.md`](production-v1-pilot.md). [`docs/context/concept-hld.md`](concept-hld.md) is a historical design ledger only.
 
 BenchEval is an evaluation **control plane**, not a benchmark author. "Production-ready" therefore has three tiers. A benchmark may sit at Tier 0 (software only) indefinitely; it is never promoted to Tier 2 (Production v1) without real live evidence. There is no partial credit.
 
@@ -80,7 +79,7 @@ A benchmark graduates to **Production v1** only when **all** of the following ho
 
 ### A. Catalog state
 
-- [ ] `execution_support` = `executable_adapter` in `config/benchmarks.yaml` (Tier 0 gate asserts exactly 3).
+- [ ] `execution_support` = `executable_adapter` in `config/benchmarks.yaml` (Tier 0 gate currently asserts exactly 4).
 - [ ] `adapter_status` flipped to `manifest_available` (not `cataloged` / `adapter_pending` / `unverified`).
 - [ ] Cybersecurity benchmarks use the same control-plane contract as other benchmarks. Authorization and environment policy belong to the operator host and the official harness; BenchEval does **not** add a separate policy or confirmation layer.
 
@@ -120,10 +119,10 @@ BenchEval 的"生产就绪"分三个层级，逐级递进，不可跳级：
 
 | 层级 | 名称 | 含义 | 退出标准 |
 |------|------|------|----------|
-| Tier 0 | Phase A 软件 | 不依赖真实基准服务、凭据或 sandbox 的本地控制平面检查 | 安装 dev/eval/analytics extras 后，`make check-production-v1` 全绿（真实 PyArrow/DuckDB 导出、全包 coverage、独立 15 ms 性能门槛、ruff / shellcheck / uv lock / 可执行适配器=3 / unknown benchmark 必须在执行前失败） |
+| Tier 0 | Phase A 软件 | 不依赖真实基准服务、凭据或 sandbox 的本地控制平面检查 | 安装 dev/eval/analytics extras 后，`make check-production-v1` 全绿（真实 PyArrow/DuckDB 导出、全包 coverage、独立 15 ms 性能门槛、ruff / shellcheck / uv lock / 可执行适配器=4 / unknown benchmark 必须在执行前失败） |
 | Tier 1 | Phase B 实证据 | 至少 1 个真实实例通过**基准原生 harness** 端到端跑通（凭据；sandbox 由 harness 按需提供） | 在 **dev-box** 上完成；Peer 锚点：Terminal-Bench `fix-git` 经 Harbor 产出完整 `EvidenceRecord` |
 | Tier 2 | Production v1 | 适配器被准入 + 实证据 + 全清单满足 | 上文 §A–§E 全部勾选，且无豁免 |
 
 **关键红线：** 没有 Phase B 真实运行，绝不能打 `benchmark_native_claim` 标签。受控注入 runner 的测试只能作为诊断证据，不能替代集成、准入、验收、安全、就绪或部署证明。smoke/lite 切片不得声称统计显著性；Calibration / Stretch / selftest 任务不得混入公开基准加权总分（architecture §14 VETO）。
 
-**不要编辑** `concept-hld.md`；本文档是其配套说明，非规格替代。
+`concept-hld.md` 是历史设计记录，不是当前操作或就绪规范；当前规范以上述 architecture、readiness checklist 和 pilot 文档为准。

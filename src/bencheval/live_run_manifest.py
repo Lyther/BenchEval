@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -57,6 +57,17 @@ _STR_FIELDS: tuple[str, ...] = (
     "status",
     "notes",
 )
+_FILL_ONCE_AXES: tuple[str, ...] = ("benchmark", "slice_id", "runtime")
+_ALLOWED_TRANSITIONS: dict[LiveRunStatus, frozenset[LiveRunStatus]] = {
+    "registered": frozenset(
+        {"registered", "running", "completed", "passed", "failed", "archived"},
+    ),
+    "running": frozenset({"running", "completed", "passed", "failed", "archived"}),
+    "completed": frozenset({"completed", "passed", "failed", "archived"}),
+    "passed": frozenset({"passed", "archived"}),
+    "failed": frozenset({"failed", "archived"}),
+    "archived": frozenset({"archived"}),
+}
 
 
 def _looks_secret(value: str) -> bool:
@@ -107,6 +118,51 @@ def default_runs_manifest_path() -> Path:
     return _repo_root() / _DEFAULT_MANIFEST_REL
 
 
+def _aware_event_time(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _prior_events(path: Path, run_id: str) -> list[LiveRunRecord]:
+    if not path.is_file():
+        return []
+    return [row for row in read_live_runs(path) if row.run_id == run_id]
+
+
+def _first_filled(rows: list[LiveRunRecord], field: str) -> str | None:
+    for row in rows:
+        value = getattr(row, field)
+        if isinstance(value, str):
+            return value
+    return None
+
+
+def _reject_inconsistent_history(path: Path, record: LiveRunRecord) -> None:
+    prior = _prior_events(path, record.run_id)
+    if not prior:
+        return
+    last = prior[-1]
+    if _aware_event_time(record.generated_at) < _aware_event_time(last.generated_at):
+        raise LiveRunManifestError(
+            f"run {record.run_id!r}: event time moves backward",
+        )
+    allowed = _ALLOWED_TRANSITIONS[last.status]
+    if record.status not in allowed:
+        raise LiveRunManifestError(
+            f"run {record.run_id!r}: cannot move from {last.status!r} to {record.status!r}",
+        )
+    if record.model_id != prior[0].model_id:
+        raise LiveRunManifestError(f"run {record.run_id!r}: model_id is immutable")
+    for field in _FILL_ONCE_AXES:
+        filled = _first_filled(prior, field)
+        incoming = getattr(record, field)
+        if filled is not None and incoming is not None and incoming != filled:
+            raise LiveRunManifestError(
+                f"run {record.run_id!r}: {field} is immutable once filled",
+            )
+
+
 def append_live_run(path: Path | str, record: LiveRunRecord) -> Path:
     """Append ``record`` as one JSON line to ``path`` (single-threaded).
 
@@ -118,6 +174,7 @@ def append_live_run(path: Path | str, record: LiveRunRecord) -> Path:
     target = Path(os.path.abspath(Path(path).expanduser()))
     if target.exists() and not target.is_file():
         raise LiveRunManifestError(f"path exists but is not a regular file: {target}")
+    _reject_inconsistent_history(target, record)
     target.parent.mkdir(parents=True, exist_ok=True)
     line = record.model_dump_json() + "\n"
     flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)

@@ -14,7 +14,7 @@ sequenceDiagram
     participant Ev as Evidence JSONL
 
     Op->>CLI: list / catalog …
-    CLI-->>Op: executable adapters (default 3)
+    CLI-->>Op: executable adapters (default 4)
 
     Op->>CLI: run gpqa-diamond/smoke --model … --dry-run
     CLI->>Reg: resolve scaffold (runtime XOR agent; else model-only)
@@ -41,4 +41,4 @@ sequenceDiagram
     end
 ```
 
-Notes: Harbor requires explicit `--runtime` (`claude-code` | `codex-cli`). GPQA/HLE omit runtime/agent. `--agent momo` is XOR with `--runtime`. Defaults for `--output` / `--artifacts-dir` under `results/`.
+Notes: Harbor requires explicit `--runtime` (`claude-code` | `codex-cli`). GPQA/HLE/BFCL omit runtime/agent. `--agent momo` is XOR with `--runtime`. Defaults for `--output` / `--artifacts-dir` under `results/`.

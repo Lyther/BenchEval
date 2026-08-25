@@ -149,3 +149,22 @@ def test_bfcl_process_capture_replaces_invalid_utf8(tmp_path: Path) -> None:
 
     assert result.returncode == 0
     assert result.stdout == "\ufffd"
+
+
+def test_external_agent_process_capture_replaces_invalid_utf8(tmp_path: Path) -> None:
+    from bencheval.external_agent_adapter import _default_process_runner
+
+    result = _default_process_runner(
+        _invalid_utf8_command(),
+        cwd=tmp_path,
+        timeout_sec=10,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == "\ufffd"
+
+
+def test_runtime_version_capture_replaces_invalid_utf8() -> None:
+    from bencheval.control_plane_executor import _run_version_command
+
+    assert _run_version_command(_invalid_utf8_command()) == "\ufffd"
