@@ -8,9 +8,6 @@ absent from `harbor run -h` (hidden deprecated alias).
 
 from __future__ import annotations
 
-import re
-import shutil
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -361,20 +358,25 @@ def test_claude_print_clears_forwarded_proxy(tmp_path: Path) -> None:
 
 
 def test_locked_harbor_help_matches_emitted_flags() -> None:
-    harbor = shutil.which("harbor")
-    if harbor is None:
-        pytest.skip("harbor CLI not on PATH")
-    result = subprocess.run(
-        [harbor, "run", "-h"],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=20,
-    )
-    help_text = f"{result.stdout}\n{result.stderr}"
-    assert result.returncode == 0, help_text[-500:]
-    assert "--include-task-name" in help_text
-    assert "module.path" in help_text
-    assert "ClassName" in help_text
-    assert re.search(r"(?<![A-Za-z-])--task-name(?![A-Za-z-])", help_text) is None
-    assert "--agent-import-path" not in help_text
+    try:
+        import click
+        from harbor.cli.main import app as harbor_app
+        from typer.main import get_command
+    except ImportError:
+        pytest.skip("harbor CLI not installed")
+
+    root = get_command(harbor_app)
+    run = root.get_command(click.Context(root), "run")
+    assert run is not None
+    options = {
+        option: parameter
+        for parameter in run.params
+        for option in (
+            tuple(getattr(parameter, "opts", ())) + tuple(getattr(parameter, "secondary_opts", ()))
+        )
+    }
+
+    assert "--include-task-name" in options
+    assert "--task-name" not in options
+    assert "module.path:ClassName" in (options["--agent"].help or "")
+    assert options["--agent-import-path"].hidden is True
