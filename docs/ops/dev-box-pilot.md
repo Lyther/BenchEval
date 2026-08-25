@@ -30,7 +30,7 @@ The minimum live proof this runbook targets (matches `scripts/run-live-pilot-mat
 uv sync --dev --extra eval --extra analytics  # Tier-0 gate + live harness dependencies
 ```
 
-BFCL/SWE lanes are not prerequisites for the minimum pilot (bfcl-v4 is executable but outside the TB matrix; swe-bench-verified stays demoted).
+BFCL/SWE lanes are not prerequisites for the minimum pilot. BFCL is executable but outside the TB matrix and needs the additional locked group (`uv sync --group bfcl`) when run; SWE-bench Verified stays demoted.
 
 Keep all artifacts under `results/` — it is gitignored. Do not commit live evidence, raw outputs, or bundles unless you explicitly intend to publish.
 

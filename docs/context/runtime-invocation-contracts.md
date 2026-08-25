@@ -29,12 +29,12 @@ adapter research; it is not a pilot prerequisite or a supported `run` path.
 |-------|----------|
 | Binary | `mini-extra` (mini-SWE-agent install) on PATH |
 | Version | package version via `pip show mini-swe-agent` or project pin |
-| Command shape | `mini-extra swebench` batch / single modes per adapter |
+| Command shape | Pinned mini-SWE batch generation for the exact typed slice ids, followed by a pinned official SWE-bench evaluator consuming the retained prediction JSONL |
 | Container | Docker or Singularity per upstream harness |
 | Env (names only) | Model provider env vars; no secrets in evidence export (`public` redaction) |
-| Outputs | SWE-bench harness logs under artifacts dir |
-| Timeout | Per-instance wall clock in adapter plan |
-| Parser | Harness pass/fail → `primary_pass`, `partial_score` |
+| Outputs | Prediction JSONL, official evaluator logs, and exact requested-instance `report.json` retained under the run-owned artifacts root |
+| Timeout | Generation and evaluation share one cumulative per-instance wall envelope; phase two receives only the remaining time |
+| Parser | Only boolean `report.json[instance_id]["resolved"]` is authoritative; local `verifier.json`/`result.json`, stdout, and exit code cannot grant a pass |
 
 Runtime profiles: `claude-code`, `codex-cli` (`config/runtimes/claude-code.yaml`, `config/runtimes/codex-cli.yaml`). mini-SWE-agent is the harness binary, not a BenchEval runtime profile — the old `mini-swe-agent` profile was removed from `config/runtimes/`.
 
@@ -46,13 +46,13 @@ Runtime profiles: `claude-code`, `codex-cli` (`config/runtimes/claude-code.yaml`
 |-------|----------|
 | Package | **`bfcl-eval`**; it installs the `bfcl` console script |
 | Version | `bfcl version` or package metadata |
-| Command shape | **Diagnostic:** `bfcl generate --test-category <category> --result-dir <results> --model <model>`, then `bfcl evaluate --test-category <category> --result-dir <results> --score-dir <scores> --model <model>` within one wall-clock envelope. |
+| Command shape | `bfcl generate --test-category <category> --result-dir <results> --model <model>`, then `bfcl evaluate --test-category <category> --result-dir <results> --score-dir <scores> --model <model>` within one wall-clock envelope. |
 | Docker | Usually not required for smoke-5; full suite per Gorilla docs |
 | Env (names only) | Provider credential env for generation (via model `provider_route`) |
-| Outputs | Diagnostic generation files plus the official `BFCL_v4_<category>_score.json` JSONL; no admitted live evidence lifecycle |
+| Outputs | Generation files plus the official `BFCL_v4_<category>_score.json` JSONL; registered Tier-1 evidence is documented in `docs/ops/benchmarks/bfcl-v4.md` |
 | Parser | Strict official score parser: coherent summary counts plus failure-only rows; generation-side verdict files have no authority |
 
-If admitted later, BFCL will be model-only (omit `--runtime` / `--agent`). Deleted profiles such as `native-api` remain unadmitted.
+BFCL is model-only (omit `--runtime` / `--agent`). Deleted profiles such as `native-api` remain unadmitted.
 
 ## Monitor semantics (target product)
 
