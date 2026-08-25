@@ -14,6 +14,11 @@ from typing import Protocol
 from bencheval.domain import FailureLabel, RunPlan
 from bencheval.exceptions import AdapterFailureError, BenchEvalError
 from bencheval.path_safety import validate_control_plane_instance_id
+from bencheval.run_isolation import (
+    dir_identity_error,
+    open_owned_dir_fd,
+    write_text_at_exclusive,
+)
 
 CYBERGYM_ADAPTER_ID = "cybergym"
 _CYBERGYM_HOME_ENV = "BENCHEVAL_CYBERGYM_HOME"
@@ -100,6 +105,8 @@ def _default_process_runner(
             cwd=str(cwd) if cwd is not None else None,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=timeout_sec,
         )
@@ -128,6 +135,34 @@ def _default_process_runner(
     )
 
 
+def _write_owned_logs(
+    *,
+    instance_dir: Path,
+    instance_fd: int,
+    cli: CybergymCliResult,
+) -> tuple[Path, Path]:
+    role = "cybergym instance directory"
+    identity_error = dir_identity_error(instance_fd, instance_dir, role=role)
+    if identity_error is not None:
+        raise AdapterFailureError(
+            identity_error,
+            failure_label="evidence_corrupt",
+            latency_sec=cli.latency_sec,
+            adapter_metadata={"cybergym_command": " ".join(cli.command)},
+        )
+    write_text_at_exclusive(instance_fd, "stdout.log", cli.stdout)
+    write_text_at_exclusive(instance_fd, "stderr.log", cli.stderr)
+    identity_error = dir_identity_error(instance_fd, instance_dir, role=role)
+    if identity_error is not None:
+        raise AdapterFailureError(
+            identity_error,
+            failure_label="evidence_corrupt",
+            latency_sec=cli.latency_sec,
+            adapter_metadata={"cybergym_command": " ".join(cli.command)},
+        )
+    return instance_dir / "stdout.log", instance_dir / "stderr.log"
+
+
 def run_cybergym_instance(
     *,
     plan: RunPlan,
@@ -139,23 +174,30 @@ def run_cybergym_instance(
 ) -> CybergymInstanceOutcome:
     if plan.adapter_id != CYBERGYM_ADAPTER_ID:
         raise BenchEvalError(f"cybergym adapter cannot run adapter_id={plan.adapter_id!r}")
+    validate_control_plane_instance_id(instance_id)
     instance_dir = artifacts_dir / instance_id
-    instance_dir.mkdir(parents=True, exist_ok=True)
-    command = build_cybergym_run_command(
-        plan=plan,
-        instance_id=instance_id,
-        artifacts_dir=instance_dir,
-    )
-    wall = timeout_sec if timeout_sec is not None else max(1, plan.max_wall_clock_sec_per_instance)
-    root = _cybergym_root()
-    has_pkg = (root / "src" / "cybergym").is_dir() or (root / "cybergym").is_dir()
-    cwd = root if has_pkg else repo_root
-    runner = process_runner or _default_process_runner
-    cli = runner(command, cwd=cwd, timeout_sec=wall)
-    stdout_file = instance_dir / "stdout.log"
-    stderr_file = instance_dir / "stderr.log"
-    stdout_file.write_text(cli.stdout, encoding="utf-8")
-    stderr_file.write_text(cli.stderr, encoding="utf-8")
+    instance_fd = open_owned_dir_fd(instance_dir, role="cybergym instance directory")
+    try:
+        command = build_cybergym_run_command(
+            plan=plan,
+            instance_id=instance_id,
+            artifacts_dir=instance_dir,
+        )
+        wall = (
+            timeout_sec if timeout_sec is not None else max(1, plan.max_wall_clock_sec_per_instance)
+        )
+        root = _cybergym_root()
+        has_pkg = (root / "src" / "cybergym").is_dir() or (root / "cybergym").is_dir()
+        cwd = root if has_pkg else repo_root
+        runner = process_runner or _default_process_runner
+        cli = runner(command, cwd=cwd, timeout_sec=wall)
+        stdout_file, stderr_file = _write_owned_logs(
+            instance_dir=instance_dir,
+            instance_fd=instance_fd,
+            cli=cli,
+        )
+    finally:
+        os.close(instance_fd)
     verdict = instance_dir / "verdict.json"
     # gen_task exit 0 is not official CyberGym scoring — require explicit verdict.
     primary_pass = False
