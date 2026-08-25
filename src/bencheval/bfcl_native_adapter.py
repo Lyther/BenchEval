@@ -875,23 +875,18 @@ def run_bfcl_instance(
     # Pin every run-owned directory by descriptor before the first subprocess:
     # each descriptor anchors the approved inode, and a swapped path fails
     # closed (never scored) at the phase boundaries below.
-    pins: list[tuple[int, Path, str]] = [
-        (
-            open_owned_dir_fd(instance_dir, role="bfcl instance artifacts directory"),
-            instance_dir,
-            "bfcl instance artifacts directory",
-        ),
-        (
-            open_owned_dir_fd(result_root, role="bfcl generate result directory"),
-            result_root,
-            "bfcl generate result directory",
-        ),
-        (
-            open_owned_dir_fd(score_root, role="bfcl evaluate score directory"),
-            score_root,
-            "bfcl evaluate score directory",
-        ),
-    ]
+    pins: list[tuple[int, Path, str]] = []
+    try:
+        for path, role in (
+            (instance_dir, "bfcl instance artifacts directory"),
+            (result_root, "bfcl generate result directory"),
+            (score_root, "bfcl evaluate score directory"),
+        ):
+            pins.append((open_owned_dir_fd(path, role=role), path, role))
+    except BaseException:
+        for fd, _path, _role in pins:
+            os.close(fd)
+        raise
     try:
         generate_command = build_bfcl_run_command(
             plan=plan,

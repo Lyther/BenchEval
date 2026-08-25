@@ -3,14 +3,18 @@
 SUBSTITUTE_JUSTIFICATION
 - substitute: stub `process_runner` callables in this module's run-phase,
   launch-env, and executor-dispatch tests; monkeypatched BFCL concurrency env
-  in the command-boundary tests
+  in the command-boundary tests; monkeypatched `open_owned_dir_fd` in the
+  partial pin-acquisition failure test
 - replaces: the external `bfcl` CLI process and its charged provider calls;
-  the host's ambient `BENCHEVAL_BFCL_NUM_THREADS` value
+  the host's ambient `BENCHEVAL_BFCL_NUM_THREADS` value; the second directory
+  open at the exact partial-acquisition failure boundary
 - necessity: the assertions target BenchEval-side phase sequencing, failure
   short-circuiting, and budget-envelope arithmetic at the subprocess boundary;
   a real bfcl install cannot deterministically manufacture a generate-phase
   failure or an exactly-exhausted inter-phase budget, while the environment
-  boundary must be controlled to prove exact accepted and rejected values
+  boundary must be controlled to prove exact accepted and rejected values; a
+  real filesystem cannot deterministically fail only the second pin open after
+  the first real descriptor has been acquired
 - real-option: an official bfcl-eval install plus registered model/provider
   credentials; unavailable in the local Tier-0 environment
 - proof-limit: proves orchestration and failure mapping only, not BFCL
@@ -25,11 +29,13 @@ SUBSTITUTE_JUSTIFICATION
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import pytest
 
+import bencheval.bfcl_native_adapter as bfcl_adapter
 from bencheval.adapter_admission import assess_bfcl_v4_admission
 from bencheval.benchmark_plan import plan_control_plane
 from bencheval.bfcl_native_adapter import (
@@ -225,6 +231,47 @@ def test_run_budget_exhausted_between_phases_raises(tmp_path: Path) -> None:
 
     assert excinfo.value.failure_label == "runtime_budget_exceeded"
     assert [command[1] for command in calls] == ["generate"]
+
+
+def test_run_pin_setup_closes_prior_descriptor_when_later_open_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = plan_control_plane(
+        benchmark_id="bfcl-v4",
+        slice_id="smoke-5",
+        runtime_id=None,
+        model_id="gpt-5.2-2025-12-11",
+    )
+    real_open_owned_dir_fd = bfcl_adapter.open_owned_dir_fd
+    opened_descriptors: list[int] = []
+    open_count = 0
+
+    def fail_second_open(path: Path, *, role: str) -> int:
+        nonlocal open_count
+        open_count += 1
+        if open_count == 2:
+            raise BenchEvalError("forced second directory-pin failure")
+        descriptor = real_open_owned_dir_fd(path, role=role)
+        opened_descriptors.append(descriptor)
+        return descriptor
+
+    monkeypatch.setattr(bfcl_adapter, "open_owned_dir_fd", fail_second_open)
+
+    with pytest.raises(BenchEvalError, match="forced second directory-pin failure"):
+        run_bfcl_instance(
+            plan=plan,
+            instance_id="simple_python",
+            artifacts_dir=tmp_path / "artifacts",
+            repo_root=tmp_path,
+            process_runner=lambda *_args, **_kwargs: pytest.fail("runner must not launch"),
+            harness_version="bfcl-eval@2026.3.23",
+            benchmark_identity=_BFCL_IDENTITY,
+        )
+
+    assert len(opened_descriptors) == 1
+    with pytest.raises(OSError):
+        os.fstat(opened_descriptors[0])
 
 
 def test_execute_bfcl_dispatches_when_admitted(
