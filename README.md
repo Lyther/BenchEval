@@ -16,7 +16,7 @@ Intent / HLD: [`docs/context/concept-hld.md`](docs/context/concept-hld.md) (v0.3
 # 1. Install
 uv sync
 
-# 2. List runnable benchmarks (expect 3)
+# 2. List runnable benchmarks (expect 4)
 uv run bencheval list --format json
 
 # 3. Catalog discovery
@@ -51,11 +51,7 @@ uv sync
 uv run bencheval list --format json
 ```
 
-Before the full contributor gate, install its real export and harness dependencies with
-`uv sync --dev --extra eval --extra analytics`. Use `uv sync --extra eval` for live
-Inspect / Harbor runs that do not need the analytics gate. Pilot gates:
-[`docs/context/production-v1-pilot.md`](docs/context/production-v1-pilot.md)
-(`make check-production-v1`).
+Before the full contributor gate, install its real export and harness dependencies with `uv sync --dev --extra eval --extra analytics`. Use `uv sync --extra eval` for live Inspect / Harbor runs that do not need the analytics gate, and `uv sync --group bfcl` for the pinned BFCL CLI plus its required audio import dependency. BFCL is a repository-owned group because its model-handler graph is large and its audited dependency overrides must travel with the checkout; it can be combined with `eval` when one host needs both harness families. Pilot gates: [`docs/context/production-v1-pilot.md`](docs/context/production-v1-pilot.md) (`make check-production-v1`).
 
 ## CLI overview
 

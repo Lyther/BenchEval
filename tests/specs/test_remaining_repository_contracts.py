@@ -140,6 +140,18 @@ def test_ci_installs_and_checks_the_eval_dependency_surface() -> None:
     assert "--extra eval" in workflow or "--all-extras" in workflow
 
 
+def test_bfcl_executable_has_a_pinned_installable_runtime_group() -> None:
+    project = tomllib.loads((_REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    bfcl_group = project["dependency-groups"]["bfcl"]
+
+    assert "bfcl-eval==2026.3.23" in bfcl_group
+    assert any(requirement.startswith("soundfile>=") for requirement in bfcl_group)
+    assert set(project["tool"]["uv"]["override-dependencies"]) >= {
+        "datamodel-code-generator==0.64.0",
+        "filelock==3.32.4",
+    }
+
+
 def test_ci_runs_a_locked_dependency_advisory_scan() -> None:
     workflow = (
         (_REPO_ROOT / ".github" / "workflows" / "ci.yml")

@@ -810,12 +810,15 @@ def test_capture_hle_identity_binds_snapshot_and_cache(tmp_path: Path) -> None:
     snapshot = tmp_path / "snapshot"
     cache = tmp_path / "datasets"
 
-    def fetcher(*, repo: str, revision: str) -> Path:
+    def fetcher(*, repo: str, revision: str, datasets_cache: Path) -> Path:
         assert repo == _HLE_REPO
         target = snapshot / _HLE_PARQUET_RELPATH
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(payload)
-        (cache / "cais___hle" / "default" / "0.0.0" / revision).mkdir(parents=True)
+        assert datasets_cache == cache
+        (datasets_cache / "cais___hle" / "default" / "0.0.0" / revision).mkdir(
+            parents=True,
+        )
         return snapshot
 
     captured = capture_hle_benchmark_identity(identity, fetcher=fetcher, datasets_cache=cache)
@@ -824,7 +827,32 @@ def test_capture_hle_identity_binds_snapshot_and_cache(tmp_path: Path) -> None:
     assert captured == f"hle@{revision[:16]}+data-{data_tag}"
 
 
+def test_capture_hle_identity_rejects_preexisting_materialized_cache(tmp_path: Path) -> None:
+    """An ambient cache with plausible directory names is never trusted."""
+    from bencheval.hle_adapter import _prepare_fresh_hle_datasets_cache
+
+    cache = tmp_path / "datasets"
+    corrupt = cache / "cais___hle" / "default" / "0.0.0" / _HLE_REVISION / "hle-test.arrow"
+    corrupt.parent.mkdir(parents=True)
+    corrupt.write_bytes(b"corrupted materialized rows\n")
+
+    with pytest.raises(BenchEvalError, match=r"(?i)(empty|pre-existing|fresh)"):
+        _prepare_fresh_hle_datasets_cache(cache)
+
+
 def test_capture_hle_identity_fails_closed_on_snapshot_drift(tmp_path: Path) -> None:
+    """Drifted bytes fail the real verifier after a controlled network seam.
+
+    SUBSTITUTE_JUSTIFICATION
+    - substitute: ``fetcher`` callable materializing the returned snapshot dir
+    - replaces: gated Hugging Face snapshot download and datasets pre-warm
+    - necessity: deterministically supplying a wrong pinned file without a
+      charged external fetch is required to exercise the digest failure
+    - real-option: a real pinned snapshot cannot safely be made to return
+      corrupt bytes, and changing the remote revision would test another input
+    - proof-limit: proves local digest rejection, not Hub transport integrity
+    - real-proof: the retained dev-box HLE lane verified the real official pin
+    """
     from bencheval.benchmark_registry import HfDatasetSnapshotIdentity
     from bencheval.hle_adapter import capture_hle_benchmark_identity
 
@@ -837,7 +865,8 @@ def test_capture_hle_identity_fails_closed_on_snapshot_drift(tmp_path: Path) -> 
     )
     snapshot = tmp_path / "snapshot"
 
-    def fetcher(*, repo: str, revision: str) -> Path:
+    def fetcher(*, repo: str, revision: str, datasets_cache: Path) -> Path:
+        del repo, revision, datasets_cache
         target = snapshot / _HLE_PARQUET_RELPATH
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(b"drifted\n")
@@ -888,7 +917,12 @@ def test_default_fetcher_addresses_the_dataset_repo_type(
     monkeypatch.setattr(huggingface_hub, "snapshot_download", fake_snapshot_download)
     monkeypatch.setattr(datasets, "load_dataset", fake_load_dataset)
 
-    snapshot = _fetch_hle_snapshot_and_prewarm(repo=_HLE_REPO, revision=_HLE_REVISION)
+    datasets_cache = tmp_path / "datasets-cache"
+    snapshot = _fetch_hle_snapshot_and_prewarm(
+        repo=_HLE_REPO,
+        revision=_HLE_REVISION,
+        datasets_cache=datasets_cache,
+    )
 
     assert snapshot == tmp_path
     download_kwargs = calls["snapshot_download"]
@@ -896,6 +930,198 @@ def test_default_fetcher_addresses_the_dataset_repo_type(
     assert download_kwargs["repo_id"] == _HLE_REPO
     assert download_kwargs["revision"] == _HLE_REVISION
     assert download_kwargs["repo_type"] == "dataset"
+    load_args, load_kwargs = calls["load_dataset"]
+    assert load_args == (_HLE_REPO,)
+    assert load_kwargs["revision"] == _HLE_REVISION
+    assert load_kwargs["cache_dir"] == str(datasets_cache)
+
+
+def test_default_hle_runner_uses_run_owned_datasets_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The production runner never sees the ambient materialized cache.
+
+    SUBSTITUTE_JUSTIFICATION
+    - substitute: patched identity gate and default HLE subprocess runner
+    - replaces: gated Hugging Face download plus charged candidate/judge calls
+    - necessity: the assertion targets environment wiring on the real
+      default-runner branch; live provider calls are charged and cannot be
+      deterministic, while the isolated cache path must be observed in-process
+    - real-option: official dev-box HLE run with provider credentials
+    - proof-limit: proves cache-path ownership and propagation, not dataset
+      materialization correctness or live scoring
+    - real-proof: dev-box-cpu run hle-isolated-cache-live-20260825T072129Z;
+      real candidate and official judge calls used the fresh run-owned cache,
+      qualified as one eligible native attempt, and cleanup removed the cache
+    """
+    import bencheval.hle_adapter as hle_adapter
+    from bencheval.benchmark_registry import HfDatasetSnapshotIdentity
+
+    home = _plain_hle_home(tmp_path)
+    monkeypatch.setenv("BENCHEVAL_HLE_HOME", str(home))
+    monkeypatch.setenv("BYTELLM_API_KEY", "test-credential-placeholder")
+    monkeypatch.delenv("BENCHEVAL_HLE_DATASET", raising=False)
+    plan = _hle_plan()
+    artifacts_dir = tmp_path / "artifacts"
+    paths = hle_run_paths(
+        artifacts_dir=artifacts_dir,
+        run_id="hle-cache",
+        provider_id=plan.provider_id,
+        model_id=plan.model_id,
+    )
+    identity = HfDatasetSnapshotIdentity(
+        kind="hf-dataset-snapshot",
+        repo=_HLE_REPO,
+        revision=_HLE_REVISION,
+        files={_HLE_PARQUET_RELPATH: _HLE_PARQUET_SHA},
+    )
+    observed_cache: list[Path] = []
+    observed_envs: list[dict[str, str]] = []
+
+    def capture_for_default_runner(
+        *,
+        plan,
+        process_runner,
+        benchmark_identity,
+        datasets_cache: Path,
+    ):
+        del plan, benchmark_identity
+        assert process_runner is None
+        observed_cache.append(datasets_cache)
+        pinned = datasets_cache / "cais___hle" / "default" / "0.0.0" / _HLE_REVISION
+        pinned.mkdir(parents=True)
+        (pinned / "hle-test.arrow").write_bytes(b"materialized rows\n")
+        return _HLE_IDENTITY, identity
+
+    def default_runner(command, *, cwd, timeout_sec, env=None) -> HleCliResult:
+        del cwd, timeout_sec
+        observed_envs.append(dict(env or {}))
+        if len(observed_envs) == 1:
+            paths.default_predictions_path.write_text("{}\n", encoding="utf-8")
+        else:
+            judged = {
+                f"row-{index}": {"judge_response": {"correct": "yes"}}
+                for index in range(len(plan.instances))
+            }
+            paths.judged_path.write_text(json.dumps(judged), encoding="utf-8")
+        return HleCliResult(0, "", "", 0.1, tuple(command))
+
+    monkeypatch.setattr(
+        hle_adapter,
+        "_hle_prelaunch_benchmark_identity",
+        capture_for_default_runner,
+    )
+    monkeypatch.setattr(hle_adapter, "_default_process_runner", default_runner)
+
+    outcomes = run_hle_slice(
+        plan=plan,
+        artifacts_dir=artifacts_dir,
+        repo_root=tmp_path,
+        run_id="hle-cache",
+    )
+
+    expected_cache = artifacts_dir.resolve() / "hle-datasets-cache"
+    assert observed_cache == [expected_cache]
+    assert observed_envs
+    assert all(env["HF_DATASETS_CACHE"] == str(expected_cache) for env in observed_envs)
+    assert all(env["HF_DATASETS_OFFLINE"] == "1" for env in observed_envs)
+    assert outcomes
+
+
+def test_default_hle_runner_rejects_materialized_cache_file_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A same-root Arrow replacement invalidates the run after subprocess use.
+
+    SUBSTITUTE_JUSTIFICATION
+    - substitute: patched identity gate and default HLE subprocess runner
+    - replaces: gated Hugging Face pre-warm plus charged candidate/judge calls
+    - necessity: the assertion requires a deterministic mutation between
+      pre-launch capture and post-command verification; a real charged run
+      cannot safely or reliably expose that race
+    - real-option: official dev-box HLE run, which proves the normal lifecycle
+      but not a deliberately concurrent cache mutation
+    - proof-limit: proves local mutation detection, not the remote dataset or
+      model/judge behavior
+    - real-proof: dev-box-cpu run hle-isolated-cache-live-20260825T072129Z;
+      real candidate and official judge calls used the fresh run-owned cache,
+      qualified as one eligible native attempt, and cleanup removed the cache
+    """
+    import bencheval.hle_adapter as hle_adapter
+    from bencheval.benchmark_registry import HfDatasetSnapshotIdentity
+
+    home = _plain_hle_home(tmp_path)
+    monkeypatch.setenv("BENCHEVAL_HLE_HOME", str(home))
+    monkeypatch.setenv("BYTELLM_API_KEY", "test-credential-placeholder")
+    monkeypatch.delenv("BENCHEVAL_HLE_DATASET", raising=False)
+    plan = _hle_plan()
+    artifacts_dir = tmp_path / "artifacts"
+    paths = hle_run_paths(
+        artifacts_dir=artifacts_dir,
+        run_id="hle-cache-mutation",
+        provider_id=plan.provider_id,
+        model_id=plan.model_id,
+    )
+    identity = HfDatasetSnapshotIdentity(
+        kind="hf-dataset-snapshot",
+        repo=_HLE_REPO,
+        revision=_HLE_REVISION,
+        files={_HLE_PARQUET_RELPATH: _HLE_PARQUET_SHA},
+    )
+    materialized = (
+        artifacts_dir.resolve()
+        / "hle-datasets-cache"
+        / "cais___hle"
+        / "default"
+        / "0.0.0"
+        / _HLE_REVISION
+        / "hle-test.arrow"
+    )
+
+    def capture_for_default_runner(
+        *,
+        plan,
+        process_runner,
+        benchmark_identity,
+        datasets_cache: Path,
+    ):
+        del plan, benchmark_identity
+        assert process_runner is None
+        assert datasets_cache == artifacts_dir.resolve() / "hle-datasets-cache"
+        materialized.parent.mkdir(parents=True)
+        materialized.write_bytes(b"official materialized rows\n")
+        return _HLE_IDENTITY, identity
+
+    calls = 0
+
+    def mutating_runner(command, *, cwd, timeout_sec, env=None) -> HleCliResult:
+        nonlocal calls
+        del cwd, timeout_sec, env
+        calls += 1
+        paths.default_predictions_path.write_text("{}\n", encoding="utf-8")
+        materialized.write_bytes(b"forged materialized rows\n")
+        return HleCliResult(0, "", "", 0.1, tuple(command))
+
+    monkeypatch.setattr(
+        hle_adapter,
+        "_hle_prelaunch_benchmark_identity",
+        capture_for_default_runner,
+    )
+    monkeypatch.setattr(hle_adapter, "_default_process_runner", mutating_runner)
+
+    with pytest.raises(AdapterFailureError) as excinfo:
+        run_hle_slice(
+            plan=plan,
+            artifacts_dir=artifacts_dir,
+            repo_root=tmp_path,
+            run_id="hle-cache-mutation",
+        )
+
+    assert excinfo.value.failure_label == "evidence_corrupt"
+    assert "datasets cache" in str(excinfo.value).lower()
+    assert calls == 1
 
 
 # ---------------------------------------------------------------------------

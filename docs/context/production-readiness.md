@@ -90,7 +90,7 @@ A benchmark graduates to **Production v1** only when **all** of the following ho
 - [ ] Version capture on every `EvidenceRecord`: benchmark, harness, adapter, runtime, model.
 - [ ] Evidence completeness: raw result, stdout, stderr, verifier logs, candidate artifacts, run config.
 - [ ] Failure separation: failed attempts written with a failure label, never silently dropped.
-- [ ] Cleanup replay: `--cleanup always|on-success` removes transient dirs (`agent-workspace`, `harbor-package`, `materialized-workspace`) **without** deleting evidence; Docker image pruning deliberately **not** owned by BenchEval (external adapters must document it).
+- [ ] Cleanup replay: `--cleanup always|on-success` removes transient dirs (`agent-workspace`, `harbor-package`, `hle-datasets-cache`, `materialized-workspace`) **without** deleting evidence; Docker image pruning deliberately **not** owned by BenchEval (external adapters must document it).
 - [ ] ≥1 typed slice with instance ids committed under `config/slices/`.
 - [ ] Dry-run accuracy: `run --dry-run` plan matches the real envelope (instance count, cost, caveats).
 - [ ] Caveat labels attached (e.g. `contaminated_or_legacy` for SWE-bench-family).
