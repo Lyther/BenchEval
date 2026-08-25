@@ -63,7 +63,7 @@ log-summary-date-ranges
 
 A "Peer TB `fix-git` pass" means: `fix-git` ran through `harbor run --dataset terminal-bench/terminal-bench-2-1 ...` and produced an `EvidenceRecord` whose `native_score`, raw result, stdout/stderr, verifier log, and workspace diff are all present and non-fake. This satisfies architecture §13.1's "native harness invocation ≥1 instance" requirement at the minimum bar. The remaining four instances extend smoke coverage but are **not** required for the single-instance admission floor.
 
-> Reference unit coverage for the `fix-git` command shape: [`tests/test_terminal_bench_harbor.py`](../../tests/test_terminal_bench_harbor.py) asserts the `--task-name fix-git` argument, version-capture fields, and Harbor agent/import-path wiring. These are Tier 0 (software) proofs of the *plumbing*; the Peer pass is the Tier 1 proof of the *live run*.
+> Reference unit coverage for the `fix-git` command shape: [`tests/test_terminal_bench_harbor.py`](../../tests/test_terminal_bench_harbor.py) asserts the `--include-task-name terminal-bench/fix-git` argument, version-capture fields, and Harbor `--agent module:Class` wiring. These are Tier 0 (software) proofs of the *plumbing*; the Peer pass is the Tier 1 proof of the *live run*.
 
 ### Phase B comparison rule
 
@@ -110,19 +110,3 @@ A benchmark graduates to **Production v1** only when **all** of the following ho
 - [ ] **No `benchmark_native_claim` label without a real Phase B run.** Controlled injected-runner tests are diagnostic only: they may exercise local failure/normalization behavior, but cannot satisfy integration, admission, acceptance, security, readiness, or deployment evidence.
 - [ ] No statistical-significance claim from smoke/lite slices alone (VETO, architecture §14).
 - [ ] No mixing of Calibration / Stretch / selftest tasks into weighted public-benchmark totals.
-
----
-
-## 中文摘要（bilingual summary）
-
-BenchEval 的"生产就绪"分三个层级，逐级递进，不可跳级：
-
-| 层级 | 名称 | 含义 | 退出标准 |
-|------|------|------|----------|
-| Tier 0 | Phase A 软件 | 不依赖真实基准服务、凭据或 sandbox 的本地控制平面检查 | 安装 dev/eval/analytics extras 后，`make check-production-v1` 全绿（真实 PyArrow/DuckDB 导出、全包 coverage、独立 15 ms 性能门槛、ruff / shellcheck / uv lock / 可执行适配器=4 / unknown benchmark 必须在执行前失败） |
-| Tier 1 | Phase B 实证据 | 至少 1 个真实实例通过**基准原生 harness** 端到端跑通（凭据；sandbox 由 harness 按需提供） | 在 **dev-box** 上完成；Peer 锚点：Terminal-Bench `fix-git` 经 Harbor 产出完整 `EvidenceRecord` |
-| Tier 2 | Production v1 | 适配器被准入 + 实证据 + 全清单满足 | 上文 §A–§E 全部勾选，且无豁免 |
-
-**关键红线：** 没有 Phase B 真实运行，绝不能打 `benchmark_native_claim` 标签。受控注入 runner 的测试只能作为诊断证据，不能替代集成、准入、验收、安全、就绪或部署证明。smoke/lite 切片不得声称统计显著性；Calibration / Stretch / selftest 任务不得混入公开基准加权总分（architecture §14 VETO）。
-
-`concept-hld.md` 是历史设计记录，不是当前操作或就绪规范；当前规范以上述 architecture、readiness checklist 和 pilot 文档为准。

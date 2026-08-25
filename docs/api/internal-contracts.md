@@ -33,7 +33,8 @@ bencheval run <benchmark>/<slice> --model <id>
             [--runtime <id> | --agent <id>] [--provider <id>]
             [--dry-run | -y] [--output …] [--artifacts-dir …]
 bencheval report|compare|export|export-run …
-bencheval evidence register …
+bencheval evidence register … | list --current
+bencheval proof export|verify|import …
 ```
 
 `run` is two-phase: print envelope → confirm (`-y` skips) → execute. `--dry-run` stops after phase 1.

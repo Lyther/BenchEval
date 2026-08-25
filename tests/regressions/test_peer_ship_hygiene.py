@@ -99,7 +99,7 @@ def test_docs_mark_append_validation_and_pending_anchored_writes_complete() -> N
     r2 = current.split("### R2", maxsplit=1)[1].split("### R3", maxsplit=1)[0]
     r4 = current.split("### R4", maxsplit=1)[1].split("### R5", maxsplit=1)[0]
     assert "- [x]" in r2 and "append-time" in r2
-    assert "- [ ]" in r2 and "last-valid-event" in r2
+    assert "- [x]" in r2 and "last-valid-event" in r2
     assert "- [x]" in r4 and "anchored" in r4
 
 

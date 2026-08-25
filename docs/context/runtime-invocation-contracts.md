@@ -20,23 +20,23 @@
 
 Runtimes using Harbor agents: `claude-code`, `codex-cli` (`config/runtimes/claude-code.yaml`, `codex-cli.yaml`).
 
-## Diagnostic only: mini-SWE-agent + SWE-bench
+## Diagnostic only: Inspect Evals + official SWE-bench
 
 `swe-bench-verified` is cataloged but non-executable. The table documents retained
 adapter research; it is not a pilot prerequisite or a supported `run` path.
 
 | Field | Contract |
 |-------|----------|
-| Binary | `mini-extra` (mini-SWE-agent install) on PATH |
-| Version | package version via `pip show mini-swe-agent` or project pin |
-| Command shape | Pinned mini-SWE batch generation for the exact typed slice ids, followed by a pinned official SWE-bench evaluator consuming the retained prediction JSONL |
-| Container | Docker or Singularity per upstream harness |
+| Binary | `inspect` plus `swebench` (official evaluator, not in the product lock yet) |
+| Version | locked Inspect Evals / Inspect SWE pins; official `swebench==5.0.1` |
+| Command shape | `inspect eval inspect_evals/swe_bench` with the selected runtime solver, then `swebench eval verified -p <preds> -i <id> -j 1 --run-id <id> --report-dir <dir>` |
+| Container | Docker per the official SWE-bench evaluator |
 | Env (names only) | Model provider env vars; no secrets in evidence export (`public` redaction) |
 | Outputs | Prediction JSONL, official evaluator logs, and exact requested-instance `report.json` retained under the run-owned artifacts root |
 | Timeout | Generation and evaluation share one cumulative per-instance wall envelope; phase two receives only the remaining time |
 | Parser | Only boolean `report.json[instance_id]["resolved"]` is authoritative; local `verifier.json`/`result.json`, stdout, and exit code cannot grant a pass |
 
-Runtime profiles: `claude-code`, `codex-cli` (`config/runtimes/claude-code.yaml`, `config/runtimes/codex-cli.yaml`). mini-SWE-agent is the harness binary, not a BenchEval runtime profile — the old `mini-swe-agent` profile was removed from `config/runtimes/`.
+Runtime profiles: `claude-code`, `codex-cli` (`config/runtimes/claude-code.yaml`, `config/runtimes/codex-cli.yaml`). mini-SWE-agent remains a separately named future agent scaffold, not this diagnostic path.
 
 ## BFCL v4 (executable)
 
