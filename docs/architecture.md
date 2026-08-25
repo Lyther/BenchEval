@@ -124,6 +124,10 @@ Live product paths use upstream-owned harnesses: Harbor/Docker for Terminal-Benc
 | E4 | Stretch sandbox | Expensive official-harness runs | Explicit review; research unless admitted |
 
 Dry-run planning reports `requires_harbor` / `requires_sandbox` when needed. Those flags are operator preflight signals, not a BenchEval-owned Docker plane.
+`recommended_profile` is catalog planning vocabulary: E3 does not itself imply
+a sandbox, while E4 does. New evidence normalizes the concrete launch to E0
+(model-only), E1 (non-Harbor sandbox), or E2 (Harbor); E3/E4 remain valid when
+reading historical evidence.
 
 ## 7. Data Contracts
 

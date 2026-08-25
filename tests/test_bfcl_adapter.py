@@ -2,12 +2,15 @@
 
 SUBSTITUTE_JUSTIFICATION
 - substitute: stub `process_runner` callables in this module's run-phase,
-  launch-env, and executor-dispatch tests
-- replaces: the external `bfcl` CLI process and its charged provider calls
+  launch-env, and executor-dispatch tests; monkeypatched BFCL concurrency env
+  in the command-boundary tests
+- replaces: the external `bfcl` CLI process and its charged provider calls;
+  the host's ambient `BENCHEVAL_BFCL_NUM_THREADS` value
 - necessity: the assertions target BenchEval-side phase sequencing, failure
   short-circuiting, and budget-envelope arithmetic at the subprocess boundary;
   a real bfcl install cannot deterministically manufacture a generate-phase
-  failure or an exactly-exhausted inter-phase budget
+  failure or an exactly-exhausted inter-phase budget, while the environment
+  boundary must be controlled to prove exact accepted and rejected values
 - real-option: an official bfcl-eval install plus registered model/provider
   credentials; unavailable in the local Tier-0 environment
 - proof-limit: proves orchestration and failure mapping only, not BFCL
@@ -37,6 +40,7 @@ from bencheval.bfcl_native_adapter import (
     run_bfcl_instance,
 )
 from bencheval.control_plane_executor import execute_control_plane_run
+from bencheval.evidence import read_evidence_jsonl
 from bencheval.exceptions import AdapterFailureError, BenchEvalError
 
 
@@ -93,7 +97,7 @@ def test_build_bfcl_run_command_pins_num_threads_default(
 ) -> None:
     # Hosted-model generation defaults to 1 thread upstream; the smoke slice's
     # 300s per-instance cap can only be met with bounded concurrency, and the
-    # value must land in argv (and thereby in evidence adapter_metadata).
+    # value must land in argv and the run path stamps it into evidence metadata.
     cmd = _bfcl_generate_cmd(monkeypatch, None)
     assert "--num-threads" in cmd
     assert cmd[cmd.index("--num-threads") + 1] == "16"
@@ -106,12 +110,15 @@ def test_build_bfcl_run_command_num_threads_env_override(
     assert cmd[cmd.index("--num-threads") + 1] == "48"
 
 
-@pytest.mark.parametrize("bad", ["abc", "0", "-3", "1.5", ""])
+@pytest.mark.parametrize("bad", ["abc", "0", "-3", "1.5", "", "49", "1000000"])
 def test_build_bfcl_run_command_num_threads_env_invalid(
     monkeypatch: pytest.MonkeyPatch,
     bad: str,
 ) -> None:
-    with pytest.raises(BenchEvalError, match="BENCHEVAL_BFCL_NUM_THREADS"):
+    with pytest.raises(
+        BenchEvalError,
+        match=r"BENCHEVAL_BFCL_NUM_THREADS must be an integer between 1 and 48 inclusive",
+    ):
         _bfcl_generate_cmd(monkeypatch, bad)
 
 
@@ -220,7 +227,10 @@ def test_run_budget_exhausted_between_phases_raises(tmp_path: Path) -> None:
     assert [command[1] for command in calls] == ["generate"]
 
 
-def test_execute_bfcl_dispatches_when_admitted(tmp_path: Path) -> None:
+def test_execute_bfcl_dispatches_when_admitted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # Admitted contract: a non-diagnostic bfcl plan dispatches through the
     # executor and produces scored rows. Refusal-while-demoted coverage stays
     # with swe-bench-verified (test_review_r1_native_honesty.py).
@@ -231,6 +241,7 @@ def test_execute_bfcl_dispatches_when_admitted(tmp_path: Path) -> None:
         model_id="gpt-5.2-2025-12-11",
     )
     plan = plan.model_copy(update={"instances": plan.instances[:1]})
+    monkeypatch.setenv("BENCHEVAL_BFCL_NUM_THREADS", "17")
 
     def runner(
         command: Sequence[str],
@@ -264,6 +275,55 @@ def test_execute_bfcl_dispatches_when_admitted(tmp_path: Path) -> None:
 
     assert summary.instance_count == 1
     assert summary.passed_count == 1
+    row = read_evidence_jsonl(tmp_path / "evidence.jsonl")[0]
+    assert row.adapter_metadata["bfcl_num_threads"] == "17"
+    assert "--num-threads" not in row.adapter_metadata["bfcl_command"]
+
+
+def test_execute_bfcl_failure_retains_generation_concurrency(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = plan_control_plane(
+        benchmark_id="bfcl-v4",
+        slice_id="smoke-5",
+        runtime_id=None,
+        model_id="gpt-5.2-2025-12-11",
+    )
+    plan = plan.model_copy(update={"instances": plan.instances[:1]})
+    monkeypatch.setenv("BENCHEVAL_BFCL_NUM_THREADS", "17")
+
+    def failing_evaluate(
+        command: Sequence[str],
+        *,
+        cwd: Path | None,
+        timeout_sec: int,
+        env: Mapping[str, str],
+    ) -> BfclCliResult:
+        del cwd, timeout_sec, env
+        call = tuple(command)
+        if call[1] == "generate":
+            return BfclCliResult(0, "", "", 0.1, call)
+        raise AdapterFailureError(
+            "evaluate launch failed",
+            failure_label="runtime_launch_failure",
+            adapter_metadata={"bfcl_command": " ".join(call)},
+        )
+
+    summary = execute_control_plane_run(
+        plan=plan,
+        output_path=tmp_path / "evidence.jsonl",
+        artifacts_dir=tmp_path / "art",
+        run_id="bfcl-failed-run",
+        bfcl_process_runner=failing_evaluate,
+        bfcl_benchmark_identity=_BFCL_IDENTITY,
+    )
+
+    assert summary.failed_count == 1
+    row = read_evidence_jsonl(tmp_path / "evidence.jsonl")[0]
+    assert row.failure_class == "runtime_launch_failure"
+    assert row.adapter_metadata["bfcl_num_threads"] == "17"
+    assert row.adapter_metadata["bfcl_command"].startswith("bfcl evaluate ")
 
 
 # ---------------------------------------------------------------------------

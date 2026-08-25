@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
+
 from bencheval.benchmark_plan import ControlPlanePlanner, plan_control_plane, resolve_runtime_id
+from bencheval.control_plane_executor import _execution_profile_for_plan
 from bencheval.exceptions import BenchEvalError
 
 
@@ -19,6 +22,9 @@ def test_plan_terminal_bench_smoke() -> None:
     assert plan.comparison_validity == "adapter_smoke"
     assert plan.provider_id == "bytellm"
     assert len(plan.instances) == 5
+    assert plan.requires_harbor is True
+    assert plan.requires_sandbox is True
+    assert _execution_profile_for_plan(plan) == "E2"
 
 
 def test_plan_swe_smoke_claude_code() -> None:
@@ -31,6 +37,9 @@ def test_plan_swe_smoke_claude_code() -> None:
     assert plan.harness_kind == "swebench-native"
     assert plan.runtime_id == "claude-code"
     assert len(plan.instances) == 10
+    assert plan.requires_harbor is False
+    assert plan.requires_sandbox is True
+    assert _execution_profile_for_plan(plan) == "E1"
 
 
 def test_harness_mismatch_rejected() -> None:
@@ -57,6 +66,33 @@ def test_plan_bfcl_smoke_adapter_smoke_validity() -> None:
     assert plan.comparison_validity == "adapter_smoke"
     assert plan.adapter_id == "bfcl"
     assert plan.runtime_id is None
+    assert plan.requires_harbor is False
+    assert plan.requires_sandbox is False
+    assert _execution_profile_for_plan(plan) == "E0"
+
+
+@pytest.mark.parametrize(
+    ("benchmark_id", "slice_id", "model_id"),
+    [
+        ("gpqa-diamond", "smoke", "kimi-k2.7-code"),
+        ("hle", "smoke", "gpt-5.4-2026-03-05"),
+    ],
+)
+def test_plan_model_only_harness_does_not_claim_sandbox(
+    benchmark_id: str,
+    slice_id: str,
+    model_id: str,
+) -> None:
+    plan = plan_control_plane(
+        benchmark_id=benchmark_id,
+        slice_id=slice_id,
+        runtime_id=None,
+        model_id=model_id,
+    )
+
+    assert plan.requires_harbor is False
+    assert plan.requires_sandbox is False
+    assert _execution_profile_for_plan(plan) == "E0"
 
 
 def test_resolve_runtime_null_for_bfcl() -> None:

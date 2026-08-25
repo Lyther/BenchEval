@@ -5,12 +5,10 @@ SUBSTITUTE_JUSTIFICATION
   process results and the synthetic artifact payloads written below (including
   official-format BFCL ``BFCL_v4_*_score.json`` JSONL artifacts, Harbor
   result.json files, SWE verifier.json files, HLE judged-output files, and GPQA
-  inspect log payloads); the monkeypatched ``bfcl_harness_version`` in
-  ``test_f004_bfcl_provisional_benchmark_version_and_swe_demotion_refusal``; and the
-  proxy-env monkeypatching in ``test_f006_proxy_route_identity_in_runtime_hash``
+  inspect log payloads); and the proxy-env monkeypatching in
+  ``test_f006_proxy_route_identity_in_runtime_hash``
 - replaces: the external mini-SWE-agent/Harbor/BFCL/inspect harness processes,
-  the artifacts they would author, the installed bfcl distribution's version
-  output, and the host proxy environment
+  the artifacts they would author and the host proxy environment
 - necessity: the assertions require deterministic malformed/incoherent artifact
   states and controlled env identities that the real harnesses and host cannot
   safely and deterministically produce on demand
@@ -340,22 +338,9 @@ def test_f003_malformed_bfcl_official_score_fails_closed(
     assert out.failure_class == "runtime_output_unparseable"
 
 
-def test_f004_bfcl_provisional_benchmark_version_and_swe_demotion_refusal(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Covered by the file-scope SUBSTITUTE_JUSTIFICATION: the monkeypatched
-    # bfcl_harness_version substitutes the installed distribution's version
-    # output; the test asserts provisional benchmark-identity provenance when
-    # the harness identity is uncaptured, and (with BFCL admitted) keeps the
-    # demotion fail-closed coverage on swe-bench-verified.
-    from bencheval.bfcl_native_adapter import bfcl_benchmark_version
-
-    monkeypatch.setattr(
-        "bencheval.bfcl_native_adapter.bfcl_harness_version",
-        lambda: "bfcl version: 9.9.9",
-    )
-    assert bfcl_benchmark_version() is None
+def test_f004_bfcl_planning_version_and_swe_demotion_refusal(tmp_path: Path) -> None:
+    # Planning metadata remains provisional until the adapter verifies the
+    # pinned package data and replaces it with captured benchmark evidence.
     plan = plan_control_plane(
         benchmark_id="bfcl-v4",
         slice_id="smoke-5",

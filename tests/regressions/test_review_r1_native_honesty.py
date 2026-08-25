@@ -30,10 +30,14 @@ from pathlib import Path
 import pytest
 
 from bencheval.benchmark_plan import plan_control_plane
-from bencheval.benchmark_registry import execution_support_label, load_benchmark_catalog
+from bencheval.benchmark_registry import (
+    BfclPackageDataIdentity,
+    execution_support_label,
+    load_benchmark_catalog,
+)
 from bencheval.bfcl_native_adapter import (
     BfclCliResult,
-    bfcl_benchmark_version,
+    bfcl_pinned_harness_version,
     parse_bfcl_instance_outcome,
 )
 from bencheval.control_plane_executor import execute_control_plane_run
@@ -41,6 +45,7 @@ from bencheval.evidence import EvidenceRecord, JsonlEvidenceSink
 from bencheval.exceptions import BenchEvalError
 from bencheval.gpqa_adapter import parse_gpqa_official_score
 from bencheval.hle_adapter import parse_hle_official_score
+from bencheval.identity_strings import bfcl_benchmark_identity
 from bencheval.lifecycle import cleanup_transient_artifacts
 from bencheval.model_compare import assess_model_comparison_validity
 from bencheval.provenance_gates import is_captured_axis, is_captured_harness_version
@@ -90,7 +95,15 @@ def test_f001_f002_execute_refuses_demoted_adapters(tmp_path: Path) -> None:
 
 
 def test_f003_bfcl_package_version_is_not_benchmark_identity() -> None:
-    assert bfcl_benchmark_version() is None
+    identity = load_benchmark_catalog().by_id_or_alias("bfcl-v4").identity
+    assert isinstance(identity, BfclPackageDataIdentity)
+
+    harness_version = bfcl_pinned_harness_version()
+    benchmark_version = bfcl_benchmark_identity(identity)
+
+    assert harness_version == "bfcl-eval@2026.3.23"
+    assert "+data-" in benchmark_version
+    assert benchmark_version != harness_version
 
 
 def test_f004_process_failure_dominates_boolean_artifacts(tmp_path: Path) -> None:

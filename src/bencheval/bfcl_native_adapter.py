@@ -68,9 +68,10 @@ _SCORE_FILE_PREFIX = "BFCL_v4"
 _SUPPORTED_MODELS_MANIFEST = Path("config") / "bfcl-v4-supported-models.yaml"
 # Hosted-model generation defaults to 1 thread upstream; bounded concurrency is
 # required to finish a category inside the slice's per-instance wall cap. The
-# effective value is stamped into evidence via the logged command argv.
+# effective value is stamped explicitly into evidence metadata.
 _NUM_THREADS_ENV = "BENCHEVAL_BFCL_NUM_THREADS"
 _DEFAULT_NUM_THREADS = 16
+_MAX_NUM_THREADS = 48
 
 
 def bfcl_harness_version() -> str | None:
@@ -97,16 +98,6 @@ def bfcl_harness_version() -> str | None:
             line = (proc.stdout or proc.stderr).strip().splitlines()
             if line and line[0].strip():
                 return line[0].strip()
-    return None
-
-
-def bfcl_benchmark_version() -> str | None:
-    """BFCL dataset/category revision — not capturable from package version alone.
-
-    Package/CLI output belongs in ``harness_version``. Until an upstream git
-    commit plus dataset/category-map revision is captured, return None so the
-    planner's provisional benchmark label is retained.
-    """
     return None
 
 
@@ -164,11 +155,13 @@ def _bfcl_num_threads() -> int:
         value = int(raw.strip())
     except ValueError as e:
         raise BenchEvalError(
-            f"{_NUM_THREADS_ENV} must be a positive integer, got {raw!r}",
+            f"{_NUM_THREADS_ENV} must be an integer between 1 and "
+            f"{_MAX_NUM_THREADS} inclusive, got {raw!r}",
         ) from e
-    if value < 1:
+    if not 1 <= value <= _MAX_NUM_THREADS:
         raise BenchEvalError(
-            f"{_NUM_THREADS_ENV} must be a positive integer, got {raw!r}",
+            f"{_NUM_THREADS_ENV} must be an integer between 1 and "
+            f"{_MAX_NUM_THREADS} inclusive, got {raw!r}",
         )
     return value
 
@@ -227,6 +220,16 @@ def build_bfcl_evaluate_command(
     return tuple(cmd)
 
 
+def _bfcl_command_metadata(command: Sequence[str]) -> dict[str, str]:
+    metadata = {"bfcl_command": " ".join(command)}
+    try:
+        num_threads = command[command.index("--num-threads") + 1]
+    except (ValueError, IndexError):
+        return metadata
+    metadata["bfcl_num_threads"] = num_threads
+    return metadata
+
+
 def _default_process_runner(
     command: Sequence[str],
     *,
@@ -253,7 +256,7 @@ def _default_process_runner(
             f"bfcl harness timed out after {timeout_sec}s",
             failure_label="runtime_budget_exceeded",
             latency_sec=elapsed,
-            adapter_metadata={"bfcl_command": " ".join(command)},
+            adapter_metadata=_bfcl_command_metadata(command),
         ) from e
     except OSError as e:
         elapsed = time.monotonic() - start
@@ -261,7 +264,7 @@ def _default_process_runner(
             f"bfcl harness launch failed: {e}",
             failure_label="runtime_launch_failure",
             latency_sec=elapsed,
-            adapter_metadata={"bfcl_command": " ".join(command)},
+            adapter_metadata=_bfcl_command_metadata(command),
         ) from e
     return BfclCliResult(
         returncode=proc.returncode,
@@ -426,10 +429,21 @@ def _bfcl_prelaunch_benchmark_identity(
 
 @dataclass(frozen=True, slots=True)
 class _ScoreCandidate:
-    """Located official score artifact plus its locate-time inode identity."""
+    """Located score artifact whose inode stays pinned by an open descriptor."""
 
     path: Path
     identity: tuple[int, int]
+    descriptor: int
+
+
+def _close_score_candidates(candidates: Sequence[_ScoreCandidate]) -> None:
+    for candidate in candidates:
+        try:
+            os.close(candidate.descriptor)
+        except OSError:
+            # Cleanup must not replace the evidence-integrity failure that led
+            # here; the process will reclaim an already-invalid descriptor.
+            pass
 
 
 def _find_official_score_candidates(
@@ -460,19 +474,35 @@ def _find_official_score_candidates(
         ) from e
     candidates: list[_ScoreCandidate] = []
     for path in matches:
+        descriptor: int | None = None
         try:
             info = os.lstat(path)
+            descriptor = os.open(
+                path,
+                os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0),
+            )
+            opened = os.fstat(descriptor)
         except OSError as e:
+            if descriptor is not None:
+                os.close(descriptor)
+            _close_score_candidates(candidates)
             raise AdapterFailureError(
-                f"bfcl score artifact vanished after locate: {path}: {e}",
+                f"bfcl score artifact cannot be pinned after locate: {path}: {e}",
                 failure_label="evidence_corrupt",
             ) from e
-        if not stat.S_ISREG(info.st_mode):
+        identity = (info.st_dev, info.st_ino)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or not stat.S_ISREG(opened.st_mode)
+            or (opened.st_dev, opened.st_ino) != identity
+        ):
+            os.close(descriptor)
+            _close_score_candidates(candidates)
             raise AdapterFailureError(
-                f"bfcl score artifact is not a plain file: {path}",
+                f"bfcl score artifact is not a stable plain file: {path}",
                 failure_label="evidence_corrupt",
             )
-        candidates.append(_ScoreCandidate(path=path, identity=(info.st_dev, info.st_ino)))
+        candidates.append(_ScoreCandidate(path=path, identity=identity, descriptor=descriptor))
     return candidates
 
 
@@ -634,6 +664,7 @@ def parse_bfcl_instance_outcome(
     model_id: str,
     latency_sec: float | None = None,
     benchmark_version: str | None = None,
+    num_threads: int | None = None,
 ) -> BfclInstanceOutcome:
     """Score one instance from the official ``bfcl evaluate`` artifact only.
 
@@ -668,6 +699,7 @@ def parse_bfcl_instance_outcome(
     if cli.returncode != 0:
         failure_class = "harness_failure"
     else:
+        candidates: list[_ScoreCandidate] = []
         try:
             candidates = _find_official_score_candidates(
                 score_dir=score_dir,
@@ -679,50 +711,57 @@ def parse_bfcl_instance_outcome(
             # it fails closed as corrupt evidence instead of propagating.
             candidates = []
             failure_class = "evidence_corrupt"
-        if not candidates:
-            # Evaluate exited 0 without writing the official score artifact.
-            if failure_class is None:
-                failure_class = "harness_failure"
-        elif len(candidates) > 1:
-            # Duplicate exact-name artifacts cannot be disambiguated; scoring
-            # either would be an invented verdict.
-            failure_class = "runtime_output_unparseable"
-        else:
-            candidate = candidates[0]
-            score_fd = open_owned_dir_fd(score_dir, role="bfcl evaluate score directory")
-            try:
-                score_bytes = _read_score_candidate_bytes(
-                    score_root_fd=score_fd,
-                    score_dir=score_dir,
-                    candidate=candidate,
-                )
-            except AdapterFailureError:
-                # Locate→read swap: the bytes cannot be trusted, so no verdict.
-                failure_class = "evidence_corrupt"
+        try:
+            if not candidates:
+                # Evaluate exited 0 without writing the official score artifact.
+                if failure_class is None:
+                    failure_class = "harness_failure"
+            elif len(candidates) > 1:
+                # Duplicate exact-name artifacts cannot be disambiguated; scoring
+                # either would be an invented verdict.
+                failure_class = "runtime_output_unparseable"
             else:
-                verifier_path = str(candidate.path.resolve())
-                score = _parse_official_score(score_bytes)
-                if score is None:
-                    failure_class = "runtime_output_unparseable"
+                candidate = candidates[0]
+                score_fd = open_owned_dir_fd(score_dir, role="bfcl evaluate score directory")
+                try:
+                    score_bytes = _read_score_candidate_bytes(
+                        score_root_fd=score_fd,
+                        score_dir=score_dir,
+                        candidate=candidate,
+                    )
+                except AdapterFailureError:
+                    # Locate→read swap: the bytes cannot be trusted, so no verdict.
+                    failure_class = "evidence_corrupt"
                 else:
-                    primary_pass, partial_score = score
-                    native["accuracy"] = partial_score
-                    native["score_file"] = verifier_path
-            finally:
-                os.close(score_fd)
+                    verifier_path = str(candidate.path.resolve())
+                    score = _parse_official_score(score_bytes)
+                    if score is None:
+                        failure_class = "runtime_output_unparseable"
+                    else:
+                        primary_pass, partial_score = score
+                        native["accuracy"] = partial_score
+                        native["score_file"] = verifier_path
+                finally:
+                    os.close(score_fd)
+        finally:
+            _close_score_candidates(candidates)
 
     if not primary_pass and failure_class is None:
         failure_class = "model_wrong_solution"
 
-    metadata = {
-        "adapter_id": BFCL_ADAPTER_ID,
-        "harness_kind": "bfcl-native",
-        "bfcl_command": " ".join(cli.command),
-    }
+    metadata = _bfcl_command_metadata(cli.command)
+    metadata.update(
+        {
+            "adapter_id": BFCL_ADAPTER_ID,
+            "harness_kind": "bfcl-native",
+        },
+    )
     if harness_version:
         metadata["harness_version"] = harness_version
     if benchmark_version:
         metadata["benchmark_version"] = benchmark_version
+    if num_threads is not None:
+        metadata["bfcl_num_threads"] = str(num_threads)
 
     return BfclInstanceOutcome(
         instance_id=instance_id,
@@ -859,6 +898,9 @@ def run_bfcl_instance(
             instance_id=instance_id,
             artifacts_dir=result_root,
         )
+        effective_num_threads = int(
+            generate_command[generate_command.index("--num-threads") + 1],
+        )
         evaluate_command = build_bfcl_evaluate_command(
             plan=plan,
             instance_id=instance_id,
@@ -887,6 +929,7 @@ def run_bfcl_instance(
                 score_dir=score_root,
                 model_id=plan.model_id,
                 benchmark_version=benchmark_version,
+                num_threads=effective_num_threads,
             )
         remaining = remaining_timeout_sec(deadline)
         if remaining <= 0:
@@ -894,7 +937,7 @@ def run_bfcl_instance(
                 f"bfcl harness timed out after {wall}s",
                 failure_label="runtime_budget_exceeded",
                 latency_sec=generate_cli.latency_sec,
-                adapter_metadata={"bfcl_command": " ".join(generate_command)},
+                adapter_metadata=_bfcl_command_metadata(generate_command),
             )
         # The evaluate phase consumes mutable possible_answer bytes from the
         # installed package; re-verify the pin on both sides of the subprocess.
@@ -927,7 +970,14 @@ def run_bfcl_instance(
             model_id=plan.model_id,
             latency_sec=generate_cli.latency_sec + evaluate_cli.latency_sec,
             benchmark_version=benchmark_version,
+            num_threads=effective_num_threads,
         )
+    except AdapterFailureError as error:
+        # The generate concurrency remains part of the effective launch even
+        # when evaluate, post-run verification, or a directory-integrity gate
+        # fails after generation. Preserve it on every failure evidence row.
+        error.adapter_metadata.setdefault("bfcl_num_threads", str(effective_num_threads))
+        raise
     finally:
         for fd, _path, _role in pins:
             os.close(fd)
@@ -939,7 +989,6 @@ __all__ = [
     "BfclCliResult",
     "BfclInstanceOutcome",
     "BfclProcessRunner",
-    "bfcl_benchmark_version",
     "bfcl_harness_version",
     "bfcl_pinned_harness_version",
     "bfcl_supported_models",

@@ -378,7 +378,10 @@ def plan_control_plane(
     max_wall_total = max_wall_per_instance * len(instance_ids)
     requires_harbor = harness_kind == "harbor"
     profile = benchmark.recommended_profile
-    requires_sandbox = harness_kind in ("harbor", "swebench-native") or profile in ("E3", "E4")
+    # E3 is catalog planning vocabulary for external calibration; it does not
+    # claim that the concrete launch is sandboxed. E4 does, as do the harnesses
+    # whose execution contract explicitly owns a sandbox.
+    requires_sandbox = harness_kind in ("harbor", "swebench-native") or profile == "E4"
 
     caveats: list[str] = []
     if slice_manifest.labels.contamination_warning:
