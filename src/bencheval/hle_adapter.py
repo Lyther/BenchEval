@@ -7,6 +7,7 @@ import json
 import math
 import os
 import re
+import stat
 import subprocess
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -14,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from bencheval.benchmark_registry import HfDatasetSnapshotIdentity
 from bencheval.domain import FailureLabel, RunPlan
 from bencheval.exceptions import AdapterFailureError, BenchEvalError
 from bencheval.path_safety import validate_control_plane_instance_id
@@ -115,12 +117,325 @@ _DEFAULT_HLE_DATASET = "cais/hle"
 def _hle_dataset_name() -> str:
     """Dataset argument passed to the official scripts (default ``cais/hle``).
 
-    Air-gapped or mirror environments can point the official harness at a
-    local parquet export via ``BENCHEVAL_HLE_DATASET``; the pinned script
-    bytes are untouched either way, and the value is stamped into evidence
-    metadata so a non-official source is never hidden.
+    Legacy path used only when the catalog entry carries no pinned identity;
+    see `_resolve_hle_dataset_name` for the pinned path.
     """
     return os.environ.get(_HLE_DATASET_ENV, "").strip() or _DEFAULT_HLE_DATASET
+
+
+# --- Pinned dataset identity (catalog ``identity:`` block) ------------------
+
+
+def _resolve_hle_dataset_name(identity: HfDatasetSnapshotIdentity | None) -> str:
+    """Dataset argument passed to the official scripts.
+
+    With a pinned catalog identity the launched dataset IS the pinned repo:
+    ``BENCHEVAL_HLE_DATASET`` may only restate it exactly; any other value is
+    source drift and fails closed. Without an identity block the legacy env
+    mirror override (default ``cais/hle``) is unchanged.
+    """
+    override = os.environ.get(_HLE_DATASET_ENV, "").strip()
+    if identity is None:
+        return override or _DEFAULT_HLE_DATASET
+    if override and override != identity.repo:
+        raise BenchEvalError(
+            f"{_HLE_DATASET_ENV}={override!r} diverges from the pinned hle dataset "
+            f"{identity.repo!r}; refusing to launch a non-pinned source",
+        )
+    return identity.repo
+
+
+def verify_hle_snapshot_files(*, snapshot_dir: Path, files: Mapping[str, str]) -> None:
+    """sha256-check every pinned file inside a downloaded HF snapshot.
+
+    Pure verification core: local snapshot path in, digest compare against the
+    pin; a missing or drifted file fails closed. A real hub cache stores
+    snapshot entries as symlinks into the repo's own ``blobs/`` store, so a
+    link is followed only when it resolves strictly inside the same repo cache
+    root to a plain file; a link escaping that root (or one that does not end
+    in a plain file) fails closed as a foreign target. The digest is always
+    computed on the resolved bytes.
+    """
+    from bencheval.identity_strings import file_sha256
+
+    cache_root = snapshot_dir.parent.parent
+    for relpath, pin in sorted(files.items()):
+        target = snapshot_dir / relpath
+        read_path = target
+        if target.is_symlink():
+            try:
+                resolved = target.resolve(strict=True)
+            except OSError as e:
+                raise BenchEvalError(
+                    f"hle snapshot file symlink does not resolve: {target}",
+                ) from e
+            if not resolved.is_file() or not _path_is_under(resolved, cache_root):
+                raise BenchEvalError(
+                    f"hle snapshot symlink escapes the pinned cache root: {target} -> {resolved}",
+                )
+            read_path = resolved
+        elif not target.is_file():
+            raise BenchEvalError(f"hle snapshot file missing or not a plain file: {target}")
+        actual = f"sha256:{file_sha256(read_path)}"
+        if actual != pin:
+            raise BenchEvalError(
+                f"hle snapshot sha256 drift at {target}: expected {pin}, got {actual}",
+            )
+
+
+def hle_datasets_cache_error(*, datasets_cache: Path, repo: str, revision: str) -> str | None:
+    """None iff the datasets cache holds exactly the pinned revision.
+
+    Layout: ``<cache>/<org>___<name>/default/<version-dir>/<revision>/``. Any
+    other cached revision means a drifted dataset was once materialized.
+    """
+    module_dir = datasets_cache / repo.replace("/", "___") / "default"
+    if not module_dir.is_dir():
+        return f"hle datasets cache is missing the pinned module dir {module_dir}"
+    version_dirs = [d for d in module_dir.iterdir() if d.is_dir()]
+    if len(version_dirs) != 1:
+        return (
+            f"hle datasets cache must hold exactly one version dir under {module_dir}, "
+            f"found {len(version_dirs)}"
+        )
+    revisions = sorted(d.name for d in version_dirs[0].iterdir() if d.is_dir())
+    if revisions != [revision]:
+        return (
+            f"hle datasets cache must contain exactly the pinned revision {revision}, "
+            f"found {revisions}"
+        )
+    return None
+
+
+def _prepare_fresh_hle_datasets_cache(cache: Path) -> None:
+    """Create an empty cache root and reject any pre-existing materialization."""
+    try:
+        if cache.is_symlink():
+            raise BenchEvalError(f"hle datasets cache must not be a symlink: {cache}")
+        cache.mkdir(parents=True, exist_ok=True)
+        if any(cache.iterdir()):
+            raise BenchEvalError(
+                f"hle datasets cache must be fresh and empty before pre-warm: {cache}",
+            )
+    except BenchEvalError:
+        raise
+    except OSError as e:
+        raise BenchEvalError(f"cannot prepare hle datasets cache {cache}: {e}") from e
+
+
+def _read_regular_file_digest_no_follow(path: Path) -> str:
+    """Hash a plain leaf without following a symlink substituted at open time."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError as e:
+        raise BenchEvalError(f"cannot open hle datasets cache file {path}: {e}") from e
+    try:
+        file_stat = os.fstat(fd)
+        if not stat.S_ISREG(file_stat.st_mode):
+            raise BenchEvalError(f"hle datasets cache entry is not a plain file: {path}")
+        digest = hashlib.sha256()
+        while chunk := os.read(fd, 1024 * 1024):
+            digest.update(chunk)
+        return digest.hexdigest()
+    except OSError as e:
+        raise BenchEvalError(f"cannot read hle datasets cache file {path}: {e}") from e
+    finally:
+        os.close(fd)
+
+
+def _hle_materialized_cache_manifest(
+    *,
+    datasets_cache: Path,
+    repo: str,
+    revision: str,
+) -> tuple[tuple[str, str], ...]:
+    """Capture the exact file set and bytes consumed from the pinned revision."""
+    try:
+        cache_error = hle_datasets_cache_error(
+            datasets_cache=datasets_cache,
+            repo=repo,
+            revision=revision,
+        )
+    except OSError as e:
+        raise BenchEvalError(f"cannot inspect hle datasets cache {datasets_cache}: {e}") from e
+    if cache_error is not None:
+        raise BenchEvalError(cache_error)
+    module_dir = datasets_cache / repo.replace("/", "___") / "default"
+    try:
+        version_dirs = [
+            path for path in module_dir.iterdir() if not path.is_symlink() and path.is_dir()
+        ]
+        if len(version_dirs) != 1:
+            raise BenchEvalError(
+                f"hle datasets cache version directory changed before capture: {module_dir}",
+            )
+        revision_dir = version_dirs[0] / revision
+        if revision_dir.is_symlink() or not revision_dir.is_dir():
+            raise BenchEvalError(
+                f"hle datasets cache pinned revision changed before capture: {revision_dir}",
+            )
+        entries = sorted(revision_dir.rglob("*"), key=lambda path: path.as_posix())
+    except BenchEvalError:
+        raise
+    except OSError as e:
+        raise BenchEvalError(f"cannot enumerate hle datasets cache {module_dir}: {e}") from e
+    manifest: list[tuple[str, str]] = []
+    for entry in entries:
+        relative = entry.relative_to(revision_dir).as_posix()
+        try:
+            if entry.is_symlink():
+                raise BenchEvalError(
+                    f"hle datasets cache entry must not be a symlink: {entry}",
+                )
+            if entry.is_dir():
+                continue
+            if not entry.is_file():
+                raise BenchEvalError(f"hle datasets cache entry is not plain: {entry}")
+        except OSError as e:
+            raise BenchEvalError(f"cannot inspect hle datasets cache entry {entry}: {e}") from e
+        manifest.append((relative, _read_regular_file_digest_no_follow(entry)))
+    if not manifest:
+        raise BenchEvalError(
+            f"hle datasets cache pinned revision has no materialized files: {revision_dir}",
+        )
+    return tuple(manifest)
+
+
+def _hle_materialized_cache_manifest_error(
+    *,
+    datasets_cache: Path,
+    repo: str,
+    revision: str,
+    expected: tuple[tuple[str, str], ...],
+) -> str | None:
+    try:
+        actual = _hle_materialized_cache_manifest(
+            datasets_cache=datasets_cache,
+            repo=repo,
+            revision=revision,
+        )
+    except BenchEvalError as e:
+        return str(e)
+    if actual != expected:
+        return "hle materialized datasets cache changed during execution"
+    return None
+
+
+def _hle_datasets_cache_root() -> Path:
+    """The datasets cache root the harness subprocess resolves (HF-aware)."""
+    from datasets.config import HF_DATASETS_CACHE
+
+    return Path(HF_DATASETS_CACHE)
+
+
+def _fetch_hle_snapshot_and_prewarm(
+    *,
+    repo: str,
+    revision: str,
+    datasets_cache: Path,
+) -> Path:
+    """Download the pinned HF snapshot and pre-warm the datasets cache (online).
+
+    A cold-cache fully-offline ``load_dataset`` fails, so the pre-warm is
+    mandatory before the offline launch. Honors HF_ENDPOINT/HF_HOME.
+    """
+    try:
+        from datasets import load_dataset
+        from huggingface_hub import snapshot_download
+    except ImportError as e:
+        raise BenchEvalError(
+            f"hle identity verification requires huggingface-hub and datasets: {e}",
+        ) from e
+    try:
+        # repo_type="dataset" is mandatory: the default "model" endpoint 404s
+        # dataset repos such as cais/hle (observed against the live hub).
+        snapshot = Path(snapshot_download(repo_id=repo, revision=revision, repo_type="dataset"))
+    except Exception as e:
+        raise BenchEvalError(
+            f"cannot download pinned hle snapshot {repo}@{revision}: {e}",
+        ) from e
+    try:
+        load_dataset(repo, revision=revision, cache_dir=str(datasets_cache))
+    except Exception as e:
+        raise BenchEvalError(
+            f"cannot pre-warm pinned hle dataset {repo}@{revision}: {e}",
+        ) from e
+    return snapshot
+
+
+def capture_hle_benchmark_identity(
+    identity: HfDatasetSnapshotIdentity,
+    *,
+    fetcher: Callable[..., Path] | None = None,
+    datasets_cache: Path | None = None,
+) -> str:
+    """Verify the pinned snapshot bytes and cache singleness, then return the
+    capturable identity string. Fails closed on any drift.
+
+    ``fetcher`` is the network seam (snapshot download + pre-warm); the digest
+    and cache checks always run against real local state.
+    """
+    from bencheval.identity_strings import hle_benchmark_identity
+
+    cache = datasets_cache if datasets_cache is not None else _hle_datasets_cache_root()
+    _prepare_fresh_hle_datasets_cache(cache)
+
+    snapshot = (fetcher or _fetch_hle_snapshot_and_prewarm)(
+        repo=identity.repo,
+        revision=identity.revision,
+        datasets_cache=cache,
+    )
+    verify_hle_snapshot_files(snapshot_dir=Path(snapshot), files=identity.files)
+    cache_error = hle_datasets_cache_error(
+        datasets_cache=cache,
+        repo=identity.repo,
+        revision=identity.revision,
+    )
+    if cache_error is not None:
+        raise BenchEvalError(cache_error)
+    return hle_benchmark_identity(identity)
+
+
+def _hle_prelaunch_benchmark_identity(
+    *,
+    plan: RunPlan,
+    process_runner: HleProcessRunner | None,
+    benchmark_identity: str | None,
+    datasets_cache: Path,
+) -> tuple[str | None, HfDatasetSnapshotIdentity | None]:
+    """Fail closed before launch when the catalog pins a benchmark identity.
+
+    Returns ``(captured_version_or_None, identity_in_force_or_None)``. The
+    real/default runner always verifies local bytes against the pin; a
+    supplied identity belongs to an injected runner's controlled test boundary
+    and must equal the config-derived expectation. Even at the test boundary
+    the pinned identity decides the launched ``--dataset``.
+    """
+    from bencheval.identity_strings import catalog_benchmark_identity, hle_benchmark_identity
+
+    identity = catalog_benchmark_identity(plan.benchmark_id)
+    if identity is None:
+        return None, None
+    if not isinstance(identity, HfDatasetSnapshotIdentity):
+        raise AdapterFailureError(
+            f"hle benchmark identity kind drift: {identity.kind!r}",
+            failure_label="runtime_config_drift",
+        )
+    expected = hle_benchmark_identity(identity)
+    if process_runner is not None:
+        if benchmark_identity is None:
+            return None, identity
+        if benchmark_identity != expected:
+            raise AdapterFailureError(
+                f"hle benchmark identity drift: expected {expected!r}, "
+                f"supplied {benchmark_identity!r}",
+                failure_label="runtime_config_drift",
+            )
+        return benchmark_identity, identity
+    try:
+        return capture_hle_benchmark_identity(identity, datasets_cache=datasets_cache), identity
+    except BenchEvalError as e:
+        raise AdapterFailureError(str(e), failure_label="runtime_config_drift") from e
 
 
 def _hle_scripts(root: Path) -> tuple[Path, Path] | None:
@@ -393,12 +708,16 @@ def build_hle_run_commands(
         provider_id=plan.provider_id,
         model_id=plan.model_id,
     )
+    from bencheval.identity_strings import catalog_benchmark_identity
+
     return _build_hle_commands(
         plan=plan,
         scripts=scripts,
         paths=paths,
         max_samples=max_samples,
-        dataset_name=_hle_dataset_name(),
+        dataset_name=_resolve_hle_dataset_name(
+            catalog_benchmark_identity(plan.benchmark_id),
+        ),
     )
 
 
@@ -451,7 +770,12 @@ def _clear_path(path: Path) -> None:
 
 def prepare_hle_work_dir(paths: HleRunPaths) -> None:
     """Create run-local work dir and clear prior outputs for this run identity."""
-    paths.work_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        paths.work_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise BenchEvalError(
+            f"cannot prepare hle work directory {paths.work_dir}: {e}",
+        ) from e
     for path in (
         paths.predictions_path,
         paths.judged_path,
@@ -528,7 +852,7 @@ def parse_hle_official_score(
                     parsed = json.load(handle)
             else:
                 parsed = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             continue
         if isinstance(parsed, dict) and parsed:
             correct = 0
@@ -602,6 +926,8 @@ def _default_process_runner(
             cwd=str(cwd) if cwd is not None else None,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=timeout_sec,
             env=dict(env),
@@ -641,6 +967,7 @@ def run_hle_slice(
     run_id: str = "hle-run",
     monotonic_clock: Callable[[], float] | None = None,
     harness_pin: HleHarnessPin | None = None,
+    benchmark_identity: str | None = None,
 ) -> list[HleInstanceOutcome]:
     if plan.adapter_id != HLE_ADAPTER_ID:
         raise BenchEvalError(f"hle adapter cannot run adapter_id={plan.adapter_id!r}")
@@ -650,12 +977,14 @@ def run_hle_slice(
         plan.provider_id,
         require_api_key=process_runner is None,
     )
-    artifacts_dir.mkdir(parents=True, exist_ok=True)
-    # Pin the artifacts directory inode before launching the harness: every
+    # open_owned_dir_fd creates the artifacts directory (converting OSError to
+    # BenchEvalError) and pins its inode before launching the harness: every
     # BenchEval-owned write below is anchored to this descriptor, and the
     # post-run identity check proves the path still names the pinned inode.
     artifacts_fd = open_owned_dir_fd(artifacts_dir, role="hle artifacts directory")
     work_fd: int | None = None
+    datasets_cache_fd: int | None = None
+    datasets_cache_manifest: tuple[tuple[str, str], ...] | None = None
     try:
         paths = hle_run_paths(
             artifacts_dir=artifacts_dir,
@@ -681,7 +1010,63 @@ def run_hle_slice(
             scripts,
             artifacts_dir.resolve() / "hle-src",
         )
-        dataset_name = _hle_dataset_name()
+        datasets_cache = artifacts_dir.resolve() / "hle-datasets-cache"
+        if process_runner is None:
+            datasets_cache_fd = open_owned_dir_fd(
+                datasets_cache,
+                role="hle run-owned datasets cache",
+            )
+        # Identity gate BEFORE any launch: verify the pinned HF snapshot bytes
+        # and cache singleness (or validate a test-boundary-supplied identity);
+        # the pinned repo then decides the launched --dataset, and drift or a
+        # divergent BENCHEVAL_HLE_DATASET override aborts the run here.
+        benchmark_version, pinned_identity = _hle_prelaunch_benchmark_identity(
+            plan=plan,
+            process_runner=process_runner,
+            benchmark_identity=benchmark_identity,
+            datasets_cache=datasets_cache,
+        )
+        if datasets_cache_fd is not None:
+            cache_identity_error = dir_identity_error(
+                datasets_cache_fd,
+                datasets_cache,
+                role="hle run-owned datasets cache",
+            )
+            if cache_identity_error is not None:
+                raise AdapterFailureError(
+                    cache_identity_error,
+                    failure_label="runtime_config_drift",
+                )
+            if pinned_identity is None:
+                raise AdapterFailureError(
+                    "hle default runner requires a pinned dataset identity",
+                    failure_label="runtime_config_drift",
+                )
+            try:
+                datasets_cache_manifest = _hle_materialized_cache_manifest(
+                    datasets_cache=datasets_cache,
+                    repo=pinned_identity.repo,
+                    revision=pinned_identity.revision,
+                )
+            except BenchEvalError as e:
+                raise AdapterFailureError(
+                    str(e),
+                    failure_label="runtime_config_drift",
+                ) from e
+        try:
+            dataset_name = _resolve_hle_dataset_name(pinned_identity)
+        except BenchEvalError as e:
+            raise AdapterFailureError(str(e), failure_label="runtime_config_drift") from e
+        launch_env = launch.environment
+        if pinned_identity is not None and process_runner is None:
+            # The pinned snapshot is verified and pre-warmed above; the harness
+            # runs strictly offline against it.
+            launch_env = {
+                **launch.environment,
+                "HF_HUB_OFFLINE": "1",
+                "HF_DATASETS_OFFLINE": "1",
+                "HF_DATASETS_CACHE": str(datasets_cache),
+            }
         commands = _build_hle_commands(
             plan=plan,
             scripts=copies,
@@ -717,7 +1102,7 @@ def run_hle_slice(
                     latency_sec=total_latency,
                     adapter_metadata={"hle_command": " ".join(command)},
                 )
-            cli = runner(command, cwd=cwd, timeout_sec=remaining, env=launch.environment)
+            cli = runner(command, cwd=cwd, timeout_sec=remaining, env=launch_env)
             work_identity_error = dir_identity_error(
                 work_fd,
                 paths.work_dir,
@@ -730,6 +1115,39 @@ def run_hle_slice(
                     latency_sec=total_latency + cli.latency_sec,
                     adapter_metadata={"hle_command": " ".join(cli.command)},
                 )
+            if datasets_cache_fd is not None:
+                cache_identity_error = dir_identity_error(
+                    datasets_cache_fd,
+                    datasets_cache,
+                    role="hle run-owned datasets cache",
+                )
+                if cache_identity_error is not None:
+                    raise AdapterFailureError(
+                        cache_identity_error,
+                        failure_label="evidence_corrupt",
+                        latency_sec=total_latency + cli.latency_sec,
+                        adapter_metadata={"hle_command": " ".join(cli.command)},
+                    )
+                if pinned_identity is None or datasets_cache_manifest is None:
+                    raise AdapterFailureError(
+                        "hle datasets cache identity was not captured before launch",
+                        failure_label="evidence_corrupt",
+                        latency_sec=total_latency + cli.latency_sec,
+                        adapter_metadata={"hle_command": " ".join(cli.command)},
+                    )
+                cache_content_error = _hle_materialized_cache_manifest_error(
+                    datasets_cache=datasets_cache,
+                    repo=pinned_identity.repo,
+                    revision=pinned_identity.revision,
+                    expected=datasets_cache_manifest,
+                )
+                if cache_content_error is not None:
+                    raise AdapterFailureError(
+                        cache_content_error,
+                        failure_label="evidence_corrupt",
+                        latency_sec=total_latency + cli.latency_sec,
+                        adapter_metadata={"hle_command": " ".join(cli.command)},
+                    )
             stdout_parts.append(cli.stdout)
             stderr_parts.append(cli.stderr)
             total_latency += cli.latency_sec
@@ -858,6 +1276,22 @@ def run_hle_slice(
             "hle_summary.json",
             json.dumps(summary_payload, indent=2) + "\n",
         )
+        # Final work-dir identity check immediately before outcome stamping:
+        # the judged content is read dirfd-pinned, but `source` /
+        # `verifier_log_path` resolve by pathname below — fail closed if the
+        # pinned inode was swapped anywhere in the post-parse window.
+        work_identity_final = dir_identity_error(
+            work_fd,
+            paths.work_dir,
+            role="hle work directory",
+        )
+        if work_identity_final is not None:
+            raise AdapterFailureError(
+                work_identity_final,
+                failure_label="evidence_corrupt",
+                latency_sec=total_latency,
+                adapter_metadata={"hle_command": " ".join(last_cmd)},
+            )
         meta = {
             "adapter_id": HLE_ADAPTER_ID,
             "harness_kind": "hle-native",
@@ -867,8 +1301,9 @@ def run_hle_slice(
             "evidence_shape": "aggregate_slice",
             "effective_model_id": plan.model_id,
             "judge_model_id": plan.judge_model_id,
-            # Honest dataset identity: default cais/hle, or the mirror/local source
-            # selected via BENCHEVAL_HLE_DATASET (never hidden from evidence).
+            # Honest dataset identity: the pinned catalog repo when an identity
+            # is bound, else the legacy cais/hle default or the
+            # BENCHEVAL_HLE_DATASET mirror (never hidden from evidence).
             "hle_dataset": dataset_name,
             "provider_config_hash": launch.config_hash,
             # One aggregate subprocess chain: per-instance wall is not enforceable.
@@ -876,6 +1311,8 @@ def run_hle_slice(
         }
         if harness_version is not None:
             meta["harness_version"] = harness_version
+        if benchmark_version is not None:
+            meta["benchmark_version"] = benchmark_version
         if accepted_post_artifact_failure:
             meta["judge_exit_interpretation"] = (
                 "known_post_artifact_small_slice_calibration_failure"
@@ -930,6 +1367,8 @@ def run_hle_slice(
             ),
         ]
     finally:
+        if datasets_cache_fd is not None:
+            os.close(datasets_cache_fd)
         if work_fd is not None:
             os.close(work_fd)
         os.close(artifacts_fd)
@@ -944,6 +1383,8 @@ __all__ = [
     "HleProcessRunner",
     "HleRunPaths",
     "build_hle_run_commands",
+    "capture_hle_benchmark_identity",
+    "hle_datasets_cache_error",
     "hle_output_stem",
     "hle_run_paths",
     "hle_work_dir",
@@ -952,4 +1393,5 @@ __all__ = [
     "prepare_hle_work_dir",
     "remaining_timeout_sec",
     "run_hle_slice",
+    "verify_hle_snapshot_files",
 ]

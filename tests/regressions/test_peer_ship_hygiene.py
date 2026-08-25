@@ -80,7 +80,7 @@ def test_external_catalog_is_research_only_without_dead_cli() -> None:
     assert "Research only" in text or "research only" in text
     assert "8** executables" not in text
     assert "cybergym`, `exploitgym`). Rows below" not in text
-    assert "3** Tier-0 executable" in text
+    assert "4** Tier-0 executable" in text
     assert "`swe-bench-pro`, `cybergym`, and `exploitgym` remain" in text
     assert "doctor --backend inspect" not in text
     assert "harbor_adapter.py" not in text

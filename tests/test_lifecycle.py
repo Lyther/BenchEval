@@ -26,19 +26,23 @@ def test_cleanup_on_success_skips_failed_run(tmp_path: Path) -> None:
 def test_cleanup_always_removes_only_known_transient_dirs(tmp_path: Path) -> None:
     agent = tmp_path / "agent-workspace"
     harbor = tmp_path / "harbor-package"
+    hle_cache = tmp_path / "hle-datasets-cache"
     verifier = tmp_path / "verifier.json"
     unrelated = tmp_path / "debug"
     agent.mkdir()
     harbor.mkdir()
+    hle_cache.mkdir()
+    (hle_cache / "materialized.arrow").write_bytes(b"dataset rows\n")
     unrelated.mkdir()
     verifier.write_text("{}", encoding="utf-8")
 
     report = cleanup_transient_artifacts(tmp_path, policy="always", primary_pass=False)
 
     assert report.attempted is True
-    assert len(report.removed_paths) == 2
+    assert len(report.removed_paths) == 3
     assert not agent.exists()
     assert not harbor.exists()
+    assert not hle_cache.exists()
     assert verifier.is_file()
     assert unrelated.is_dir()
 

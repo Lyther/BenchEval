@@ -1,8 +1,8 @@
 """RED contracts for remaining run-control and provenance obligations.
 
 SUBSTITUTE_JUSTIFICATION
-- substitute: injected Harbor and SWE-bench process runners in the effective-config, budget, and
-  cleanup tests
+- substitute: injected Harbor, SWE-bench, and BFCL process runners in the effective-config, budget,
+  and cleanup tests
 - replaces: external harness CLIs, the container runtime, provider calls, and billed model execution
 - necessity: the assertions require deterministic charged-cost boundaries and controlled transient
   artifacts; a real provider run cannot safely guarantee an exact cost crossing or filesystem shape
@@ -18,15 +18,75 @@ SUBSTITUTE_JUSTIFICATION
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import pytest
 
 from bencheval.benchmark_plan import plan_control_plane
+from bencheval.bfcl_native_adapter import BfclCliResult
 from bencheval.control_plane_executor import _hash_config_inputs, execute_control_plane_run
 from bencheval.evidence import read_evidence_jsonl
-from bencheval.exceptions import BenchEvalError
-from bencheval.terminal_bench_harbor import HarborCliResult
+from bencheval.exceptions import AdapterFailureError, BenchEvalError
+from bencheval.runtime_registry import load_runtime_catalog
+from bencheval.terminal_bench_harbor import HarborCliResult, harbor_agent_for_runtime
+
+_BFCL_MODEL = "gpt-5.2-2025-12-11"
+_BFCL_IDENTITY = "bfcl-v4@bfcl-eval-2026.3.23+data-79bb46df7e8c7d7b"
+
+
+class _BfclLifecycleRunner:
+    """Fabricates the pinned official score artifact on each evaluate call.
+
+    Covered by the file-scope SUBSTITUTE_JUSTIFICATION: the injected runner
+    replaces the real ``bfcl`` CLI so the budget/cleanup boundaries are
+    deterministic (per-phase latency is a constructor knob).
+    """
+
+    def __init__(self, *, latency_sec: float = 2.0, transient: bool = False) -> None:
+        self._latency_sec = latency_sec
+        self._transient = transient
+
+    def __call__(
+        self,
+        command: Sequence[str],
+        *,
+        cwd: Path | None,
+        timeout_sec: int,
+        env: Mapping[str, str],
+    ) -> BfclCliResult:
+        del cwd, timeout_sec, env
+        call = tuple(command)
+        if call[1] == "evaluate":
+            category = call[list(call).index("--test-category") + 1]
+            score_root = Path(call[list(call).index("--score-dir") + 1])
+            score_file = score_root / _BFCL_MODEL / "non_live" / f"BFCL_v4_{category}_score.json"
+            score_file.parent.mkdir(parents=True, exist_ok=True)
+            score_file.write_text(
+                json.dumps({"accuracy": 1.0, "correct_count": 1, "total_count": 1}) + "\n",
+                encoding="utf-8",
+            )
+            if self._transient:
+                transient_dir = score_root.parent / "agent-workspace"
+                transient_dir.mkdir(exist_ok=True)
+                (transient_dir / "scratch.txt").write_text("ephemeral\n", encoding="utf-8")
+        return BfclCliResult(0, "", "", self._latency_sec, call)
+
+
+def _legacy_pass_result(runtime_id: str, **extra: object) -> str:
+    """Legacy-verdict result.json carrying the agent_info identity the run path requires."""
+    pin = load_runtime_catalog().by_id(runtime_id).versioning.agent_version_pin
+    return json.dumps(
+        {
+            "resolved": True,
+            "agent_info": {
+                "name": harbor_agent_for_runtime(runtime_id),
+                "version": pin,
+                "model_info": None,
+            },
+            **extra,
+        },
+    )
 
 
 def test_runtime_config_hash_is_order_independent_and_content_sensitive(
@@ -86,7 +146,9 @@ def test_evidence_hashes_the_effective_runtime_configuration(
     def resolved_runner(command, *, cwd: Path | None, timeout_sec: int) -> HarborCliResult:
         jobs_dir = Path(command[command.index("--jobs-dir") + 1])
         jobs_dir.mkdir(parents=True, exist_ok=True)
-        (jobs_dir / "result.json").write_text('{"resolved": true}\n', encoding="utf-8")
+        (jobs_dir / "result.json").write_text(
+            _legacy_pass_result(runtime_id) + "\n", encoding="utf-8"
+        )
         return HarborCliResult(0, "", "", 0.1, tuple(command))
 
     hashes: list[str | None] = []
@@ -128,7 +190,7 @@ def test_control_plane_stops_before_launching_past_the_cost_budget(tmp_path: Pat
         jobs_dir = Path(command[command.index("--jobs-dir") + 1])
         jobs_dir.mkdir(parents=True, exist_ok=True)
         (jobs_dir / "result.json").write_text(
-            json.dumps({"resolved": True, "cost_usd": 0.20}) + "\n",
+            _legacy_pass_result("claude-code", cost_usd=0.20) + "\n",
             encoding="utf-8",
         )
         return HarborCliResult(0, "", "", 0.1, tuple(command))
@@ -180,7 +242,9 @@ def test_control_plane_stops_before_launching_past_the_wall_budget(tmp_path: Pat
         calls.append(instance_id)
         jobs_dir = Path(command[command.index("--jobs-dir") + 1])
         jobs_dir.mkdir(parents=True, exist_ok=True)
-        (jobs_dir / "result.json").write_text('{"resolved": true}\n', encoding="utf-8")
+        (jobs_dir / "result.json").write_text(
+            _legacy_pass_result("claude-code") + "\n", encoding="utf-8"
+        )
         return HarborCliResult(0, "", "", 2.0, tuple(command))
 
     evidence_path = tmp_path / "evidence.jsonl"
@@ -249,36 +313,86 @@ def test_swebench_stops_before_launching_past_the_wall_budget(tmp_path: Path) ->
         )
 
 
-@pytest.mark.parametrize(
-    ("budget_update", "cost_usd", "latency_sec"),
-    [
-        ({"max_cost_usd": 0.10}, 0.20, 0.1),
-        ({"max_wall_clock_sec": 1}, 0.0, 2.0),
-    ],
-)
-def test_bfcl_applies_run_wide_budget_before_next_category(
-    tmp_path: Path,
-    budget_update: dict[str, float | int],
-    cost_usd: float,
-    latency_sec: float,
-) -> None:
-    """Demoted BFCL adapters refuse execute_control_plane_run."""
+def test_bfcl_applies_run_wide_budget_before_next_category(tmp_path: Path) -> None:
+    """The run-wide wall budget skips the next category with a budget row.
+
+    BFCL outcomes always carry cost_usd 0.0 (the ``bfcl`` CLI reports no cost),
+    so the cost axis can never exhaust for bfcl; only the wall axis is exercised.
+    """
     base_plan = plan_control_plane(
         benchmark_id="bfcl-v4",
         slice_id="smoke-5",
         runtime_id=None,
-        model_id="kimi-k2.7-code",
+        model_id=_BFCL_MODEL,
     )
     plan = base_plan.model_copy(
-        update={"instances": base_plan.instances[:3], **budget_update},
+        update={"instances": base_plan.instances[:2], "max_wall_clock_sec": 1},
     )
-    with pytest.raises(BenchEvalError, match="executable_adapter"):
-        execute_control_plane_run(
-            plan=plan,
-            output_path=tmp_path / "evidence.jsonl",
-            artifacts_dir=tmp_path / "artifacts",
-            run_id="bfcl-budget-contract",
+    runner = _BfclLifecycleRunner(latency_sec=2.0)  # 4.0s per category (generate+evaluate)
+
+    summary = execute_control_plane_run(
+        plan=plan,
+        output_path=tmp_path / "evidence.jsonl",
+        artifacts_dir=tmp_path / "artifacts",
+        run_id="bfcl-budget-contract",
+        bfcl_process_runner=runner,
+        bfcl_benchmark_identity=_BFCL_IDENTITY,
+    )
+
+    rows = read_evidence_jsonl(tmp_path / "evidence.jsonl")
+    assert [row.instance_id for row in rows] == ["simple_python", "irrelevance"]
+    assert rows[0].primary_pass is True
+    assert rows[1].failure_class == "runtime_budget_exceeded"
+    # Backend stamp consistency (review F004): scored bfcl rows stamp "inspect"
+    # via _evidence_from_bfcl_outcome; the budget-skip row must match.
+    assert rows[0].backend == "inspect"
+    assert rows[1].backend == "inspect"
+    assert summary.passed_count == 1
+    assert summary.failed_count == 1
+
+
+def test_bfcl_adapter_failure_row_stamps_inspect_backend(tmp_path: Path) -> None:
+    """A bfcl adapter-exception row must stamp the same backend as scored rows.
+
+    Review F004: the exception path derives the backend from ``_backend_for_plan``,
+    which omitted bfcl and stamped ``harbor`` while scored bfcl rows stamp
+    ``inspect``.
+    """
+    base_plan = plan_control_plane(
+        benchmark_id="bfcl-v4",
+        slice_id="smoke-5",
+        runtime_id=None,
+        model_id=_BFCL_MODEL,
+    )
+    plan = base_plan.model_copy(update={"instances": base_plan.instances[:1]})
+
+    def failing_runner(
+        command: Sequence[str],
+        *,
+        cwd: Path | None,
+        timeout_sec: int,
+        env: Mapping[str, str],
+    ) -> BfclCliResult:
+        del cwd, timeout_sec, env
+        raise AdapterFailureError(
+            "bfcl harness timed out after 1s",
+            failure_label="runtime_budget_exceeded",
         )
+
+    summary = execute_control_plane_run(
+        plan=plan,
+        output_path=tmp_path / "evidence.jsonl",
+        artifacts_dir=tmp_path / "artifacts",
+        run_id="bfcl-backend-stamp",
+        bfcl_process_runner=failing_runner,
+        bfcl_benchmark_identity=_BFCL_IDENTITY,
+    )
+
+    rows = read_evidence_jsonl(tmp_path / "evidence.jsonl")
+    assert len(rows) == 1
+    assert rows[0].failure_class == "runtime_budget_exceeded"
+    assert rows[0].backend == "inspect"
+    assert summary.failed_count == 1
 
 
 def test_control_plane_applies_cleanup_policy_and_records_the_result(tmp_path: Path) -> None:
@@ -298,7 +412,7 @@ def test_control_plane_applies_cleanup_policy_and_records_the_result(tmp_path: P
         jobs_dir = Path(command[command.index("--jobs-dir") + 1])
         jobs_dir.mkdir(parents=True, exist_ok=True)
         result_path = jobs_dir / "result.json"
-        result_path.write_text('{"resolved": true}\n', encoding="utf-8")
+        result_path.write_text(_legacy_pass_result("claude-code") + "\n", encoding="utf-8")
         transient_path = jobs_dir / "agent-workspace"
         transient_path.mkdir()
         (transient_path / "scratch.txt").write_text("ephemeral\n", encoding="utf-8")
@@ -343,19 +457,28 @@ def test_swebench_applies_cleanup_policy_without_deleting_verifier(tmp_path: Pat
 
 
 def test_bfcl_applies_cleanup_policy_without_deleting_verdict(tmp_path: Path) -> None:
-    """Demoted BFCL adapters refuse execute_control_plane_run."""
+    """Admitted BFCL dispatch removes transient dirs but keeps the official score artifact."""
     base_plan = plan_control_plane(
         benchmark_id="bfcl-v4",
         slice_id="smoke-5",
         runtime_id=None,
-        model_id="kimi-k2.7-code",
+        model_id=_BFCL_MODEL,
         cleanup_policy="always",
     )
     plan = base_plan.model_copy(update={"instances": base_plan.instances[:1]})
-    with pytest.raises(BenchEvalError, match="executable_adapter"):
-        execute_control_plane_run(
-            plan=plan,
-            output_path=tmp_path / "evidence.jsonl",
-            artifacts_dir=tmp_path / "artifacts",
-            run_id="bfcl-cleanup-contract",
-        )
+    execute_control_plane_run(
+        plan=plan,
+        output_path=tmp_path / "evidence.jsonl",
+        artifacts_dir=tmp_path / "artifacts",
+        run_id="bfcl-cleanup-contract",
+        bfcl_process_runner=_BfclLifecycleRunner(transient=True),
+        bfcl_benchmark_identity=_BFCL_IDENTITY,
+    )
+
+    rows = read_evidence_jsonl(tmp_path / "evidence.jsonl")
+    assert len(rows) == 1
+    assert rows[0].primary_pass is True
+    assert rows[0].cleanup_result == "success"
+    instance_artifacts = tmp_path / "artifacts" / "simple_python"
+    assert not (instance_artifacts / "agent-workspace").exists()
+    assert list(instance_artifacts.rglob("BFCL_v4_simple_python_score.json"))

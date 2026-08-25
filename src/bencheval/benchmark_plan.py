@@ -252,6 +252,7 @@ def plan_control_plane(
     agent_id: str | None = None,
     provider_id: str | None = None,
     cleanup_policy: CleanupPolicy = "always",
+    diagnostic: bool = False,
 ) -> RunPlan:
     """Build a frozen :class:`~bencheval.domain.RunPlan` for ``run`` phase 1."""
     runtime_arg = runtime_id.strip() if runtime_id and runtime_id.strip() else None
@@ -377,7 +378,10 @@ def plan_control_plane(
     max_wall_total = max_wall_per_instance * len(instance_ids)
     requires_harbor = harness_kind == "harbor"
     profile = benchmark.recommended_profile
-    requires_sandbox = harness_kind in ("harbor", "swebench-native") or profile in ("E3", "E4")
+    # E3 is catalog planning vocabulary for external calibration; it does not
+    # claim that the concrete launch is sandboxed. E4 does, as do the harnesses
+    # whose execution contract explicitly owns a sandbox.
+    requires_sandbox = harness_kind in ("harbor", "swebench-native") or profile == "E4"
 
     caveats: list[str] = []
     if slice_manifest.labels.contamination_warning:
@@ -420,6 +424,7 @@ def plan_control_plane(
         cleanup_policy=cleanup_policy,
         caveats=tuple(caveats),
         comparison_validity=validity,
+        diagnostic=diagnostic,
     )
 
 

@@ -17,7 +17,7 @@ from bencheval.paths import repo_root, validate_config_bundle
 def _copy_control_plane_bundle(src_repo: Path, dest: Path) -> None:
     for sub in ("runtimes", "providers", "agents", "slices"):
         shutil.copytree(src_repo / "config" / sub, dest / "config" / sub, dirs_exist_ok=True)
-    for name in ("benchmarks.yaml", "models.yaml"):
+    for name in ("benchmarks.yaml", "models.yaml", "bfcl-v4-supported-models.yaml"):
         src = src_repo / "config" / name
         if src.is_file():
             shutil.copy2(src, dest / "config" / name)
@@ -71,6 +71,34 @@ def test_repo_root_matches_checkout_marker() -> None:
     assert (root / "config" / "benchmarks.yaml").is_file()
 
 
+@pytest.mark.skipif(shutil.which("rsync") is None, reason="rsync required by bundle exporter")
+def test_exported_config_bundle_contains_bfcl_supported_models(tmp_path: Path) -> None:
+    repo = Path(__file__).resolve().parents[1]
+    bundle = tmp_path / "bundle"
+    proc = subprocess.run(
+        [str(repo / "scripts" / "export-config-bundle.sh"), str(bundle)],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    validate_config_bundle(bundle)
+    command = (
+        "from bencheval.bfcl_native_adapter import bfcl_supported_models; "
+        "assert 'gpt-5.2-2025-12-11' in bfcl_supported_models()"
+    )
+    run = subprocess.run(
+        [sys.executable, "-c", command],
+        cwd=tmp_path,
+        env={**os.environ, "BENCHEVAL_HOME": str(bundle)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert run.returncode == 0, run.stderr
+
+
 @pytest.mark.skipif(shutil.which("uv") is None, reason="uv required to build/install the wheel")
 def test_wheel_install_is_self_contained_without_bencheval_home(tmp_path: Path) -> None:
     """F003 acceptance: from a clean cwd, installed wheel only, no BENCHEVAL_HOME —
@@ -119,3 +147,23 @@ def test_wheel_install_is_self_contained_without_bencheval_home(tmp_path: Path) 
     assert ids  # non-empty: the bundled catalog resolved
     assert all(b["execution_support"] == "executable_adapter" for b in payload["benchmarks"])
     assert {"terminal-bench", "gpqa-diamond", "hle"} <= ids
+
+    bfcl = subprocess.run(
+        [
+            "uv",
+            "run",
+            "--no-project",
+            "--with",
+            str(wheels[0]),
+            "python",
+            "-c",
+            "from bencheval.bfcl_native_adapter import bfcl_supported_models; "
+            "assert 'gpt-5.2-2025-12-11' in bfcl_supported_models()",
+        ],
+        cwd=str(workdir),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert bfcl.returncode == 0, bfcl.stderr

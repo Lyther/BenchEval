@@ -317,6 +317,9 @@ def test_write_bytes_at_exclusive_converts_oserror_to_bencheval_error(tmp_path: 
 
 
 def test_open_owned_dir_fd_rejects_a_symlink_path_with_bencheval_error(tmp_path: Path) -> None:
+    # Evidence record (nit F111): round 6 was 7 red->green plus this one
+    # pre-existing guard - the explicit symlink rejection already raised
+    # BenchEvalError before the F103 patch; the test is kept as a guard.
     from bencheval.run_isolation import open_owned_dir_fd
 
     real = tmp_path / "real"
@@ -335,11 +338,17 @@ def test_hle_dataset_identity_is_captured_once_per_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Contract (pinned OFFICIAL dataset identity, product option (a) after the
+    # review-F002 mirror revert): the launched dataset is the pinned catalog
+    # repo ``cais/hle``. The capture-once guard is preserved — a concurrent env
+    # edit must not change the launched or stamped identity; the flipped value
+    # is drift that would fail closed if it were re-resolved (see the
+    # divergence tests in test_benchmark_identity_contracts).
     from bencheval.hle_adapter import HleCliResult, hle_run_paths, run_hle_slice
 
     home = _plain_hle_home(tmp_path)
     monkeypatch.setenv("BENCHEVAL_HLE_HOME", str(home))
-    monkeypatch.setenv("BENCHEVAL_HLE_DATASET", "mirror/hle-v1")
+    monkeypatch.delenv("BENCHEVAL_HLE_DATASET", raising=False)
     plan = _hle_plan()
     artifacts_dir = tmp_path / "artifacts"
     paths = hle_run_paths(
@@ -378,6 +387,6 @@ def test_hle_dataset_identity_is_captured_once_per_run(
         run_id="hle-r6-dataset",
     )
 
-    assert argv_datasets == ["mirror/hle-v1", "mirror/hle-v1"]
+    assert argv_datasets == ["cais/hle", "cais/hle"]
     assert outcomes
-    assert outcomes[0].adapter_metadata["hle_dataset"] == "mirror/hle-v1"
+    assert outcomes[0].adapter_metadata["hle_dataset"] == "cais/hle"

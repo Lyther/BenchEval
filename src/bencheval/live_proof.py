@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -153,6 +154,10 @@ def _row_disqualifiers(
         categories.append(f"missing-provenance({','.join(missing_axes)})")
     if is_provisional_benchmark_version(record.benchmark_version):
         categories.append("provisional-benchmark-identity")
+    if record.interpretation_label == "diagnostic":
+        # Diagnostic rows are opt-in evidence from demoted benchmarks; they can
+        # never count as live proof, regardless of the catalog executable flag.
+        categories.append("diagnostic-interpretation")
     if not is_captured_harness_version(record.harness_version):
         # Missing harness_version is already covered by missing-provenance; when
         # present but placeholder, name the fallback explicitly.
@@ -229,6 +234,30 @@ def qualify_lane(
         eligible_rows=tuple(eligible),
         row_count=len(rows),
     )
+
+
+def registration_identity_mismatch(
+    rows: Iterable[EvidenceRecord],
+    *,
+    run_id: str,
+    model_id: str,
+    runtime_id: str | None,
+) -> str | None:
+    """First axis on which an evidence row disagrees with the CLI claim; None when bound.
+
+    A proof-bearing ``passed`` registration must cite evidence carrying exactly
+    the run/model/runtime identity given on the command line. Benchmark and
+    slice binding is enforced separately by :func:`qualify_lane`'s
+    identity-mismatch disqualifier.
+    """
+    for row in rows:
+        if row.run_id != run_id:
+            return f"run_id: evidence has {row.run_id!r}, CLI claims {run_id!r}"
+        if row.model_id != model_id:
+            return f"model_id: evidence has {row.model_id!r}, CLI claims {model_id!r}"
+        if row.runtime_id != runtime_id:
+            return f"runtime_id: evidence has {row.runtime_id!r}, CLI claims {runtime_id!r}"
+    return None
 
 
 def eligible_native_instance_ids(
@@ -353,5 +382,6 @@ __all__ = [
     "is_native_harness_attempt",
     "main",
     "qualify_lane",
+    "registration_identity_mismatch",
     "shared_eligible_instances",
 ]

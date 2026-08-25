@@ -52,20 +52,19 @@ def test_admission_fails_without_adapter_files(tmp_path: Path) -> None:
     assert by_name.get("control_plane_executor") is False
 
 
-def test_bfcl_v4_admission_fails_closed_while_demoted() -> None:
-    # Round-1 F008 contract: demoted (executable: false) adapters must not pass
-    # the Tier-0 wiring gate even when slices and module files exist.
-    import pytest
-
-    from bencheval.exceptions import BenchEvalError
-
+def test_bfcl_v4_admission_passes_after_live_qualification() -> None:
+    # Round-1 F008 contract, inverted: the wired generate+evaluate lifecycle
+    # ran live on the dev-box (diagnostic-labeled demonstration
+    # run-20260824-040631-228703-4756f857, then registered `passed` run
+    # run-20260824-045622-854659-a46ae44d), so
+    # the Tier-0 wiring gate must report passed. Demoted fail-closed coverage
+    # stays with swe-bench-verified below.
     report = assess_bfcl_v4_admission()
-    assert report.passed is False
-    with pytest.raises(BenchEvalError, match="bfcl-v4 admission failed"):
-        assert_bfcl_v4_admitted()
+    assert report.passed is True
+    assert_bfcl_v4_admitted()
     by_name = {name: ok for name, ok, _ in report.checks}
     assert by_name.get("catalog_adapter_status") is True
-    assert by_name.get("catalog_executable") is False
+    assert by_name.get("catalog_executable") is True
     assert by_name.get("typed_slice_smoke_5") is True
     assert by_name.get("bfcl_adapter_module") is True
 

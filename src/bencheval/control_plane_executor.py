@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import subprocess
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -17,7 +18,18 @@ from bencheval.backends import (
     INSPECT_BACKEND,
     ExecutionBackend,
 )
-from bencheval.benchmark_registry import execution_support_label, load_benchmark_catalog
+from bencheval.benchmark_registry import (
+    BenchmarkEntry,
+    execution_support_label,
+    load_benchmark_catalog,
+)
+from bencheval.bfcl_native_adapter import (
+    BFCL_ADAPTER_ID,
+    BfclInstanceOutcome,
+    BfclProcessRunner,
+    bfcl_pinned_harness_version,
+    run_bfcl_instance,
+)
 from bencheval.doctor import require_doctor_ok, run_doctor
 from bencheval.domain import (
     CleanupResult,
@@ -25,6 +37,7 @@ from bencheval.domain import (
     FailureLabel,
     InterpretationLabel,
     RunPlan,
+    RuntimeProfile,
 )
 from bencheval.evidence import EvidenceRecord, JsonlEvidenceSink
 from bencheval.exceptions import AdapterFailureError, BenchEvalError
@@ -224,20 +237,37 @@ def _combine_config_hashes(*parts: str | None) -> str | None:
     return f"sha256:{digest.hexdigest()}"
 
 
-def _capture_runtime_provenance(plan: RunPlan) -> _RuntimeProvenance | None:
-    """Best-effort runtime version + config hash; leave None on any capture failure."""
+def _capture_runtime_provenance(
+    plan: RunPlan,
+    *,
+    profile: RuntimeProfile | None = None,
+) -> _RuntimeProvenance | None:
+    """Best-effort runtime version + config hash; leave None on any capture failure.
+
+    Harbor runtimes execute the agent inside the harness container, so the host
+    ``version_command`` cannot prove what ran: skip the host probe and fold the
+    profile's ``agent_version_pin`` into the config hash instead. The evidence
+    row's ``runtime_version`` for Harbor runs is stamped from the trial
+    result's ``agent_info`` (see :func:`_evidence_from_outcome`).
+    """
     if plan.runtime_id is None:
         return None
-    try:
-        profile = load_runtime_catalog().by_id(plan.runtime_id)
-    except BenchEvalError:
-        return _RuntimeProvenance(runtime_version=None, runtime_config_hash=None)
-    version = _run_version_command(profile.versioning.version_command)
+    if profile is None:
+        try:
+            profile = load_runtime_catalog().by_id(plan.runtime_id)
+        except BenchEvalError:
+            return _RuntimeProvenance(runtime_version=None, runtime_config_hash=None)
+    env_hash = _hash_effective_runtime_options(plan=plan)
     file_hash = _hash_config_inputs(
         profile.versioning.config_hash_inputs,
         root=_repo_root(),
     )
-    env_hash = _hash_effective_runtime_options(plan=plan)
+    if plan.requires_harbor:
+        pin = profile.versioning.agent_version_pin
+        pin_part = f"agent_version_pin={pin.strip()}" if pin and pin.strip() else None
+        config_hash = _combine_config_hashes(file_hash, env_hash, pin_part)
+        return _RuntimeProvenance(runtime_version=None, runtime_config_hash=config_hash)
+    version = _run_version_command(profile.versioning.version_command)
     config_hash = _combine_config_hashes(file_hash, env_hash)
     return _RuntimeProvenance(runtime_version=version, runtime_config_hash=config_hash)
 
@@ -249,12 +279,12 @@ def _apply_provenance(
 ) -> EvidenceRecord:
     update: dict[str, str | None] = {"provider_config_hash": provider_config_hash}
     if provenance is not None:
-        update.update(
-            {
-                "runtime_version": provenance.runtime_version,
-                "runtime_config_hash": provenance.runtime_config_hash,
-            },
-        )
+        update["runtime_config_hash"] = provenance.runtime_config_hash
+        # Keep a row-carried runtime_version (Harbor rows carry the
+        # container-side agent_info version); the host probe only fills rows
+        # that carry none.
+        if record.runtime_version is None:
+            update["runtime_version"] = provenance.runtime_version
     return record.model_copy(
         update=update,
     )
@@ -301,6 +331,8 @@ def control_plane_interpretation_label(plan: RunPlan) -> InterpretationLabel:
 
 
 def _interpretation_label(plan: RunPlan) -> InterpretationLabel:
+    if plan.diagnostic:
+        return "diagnostic"
     if plan.benchmark_id == "swe-bench-verified":
         return "contaminated_or_legacy"
     validity = plan.comparison_validity
@@ -320,7 +352,11 @@ def _contamination_label(plan: RunPlan) -> str | None:
 
 
 def _backend_for_plan(plan: RunPlan) -> ExecutionBackend:
-    if plan.adapter_id in (GPQA_ADAPTER_ID, HLE_ADAPTER_ID):
+    # BFCL/GPQA/HLE are all model-only inspect-driven adapters; their scored
+    # rows stamp INSPECT_BACKEND, so budget-skip and adapter-failure rows must
+    # stamp the same backend (review F004: bfcl was omitted here and mixed
+    # "harbor" failure rows into "inspect" runs).
+    if plan.adapter_id in (GPQA_ADAPTER_ID, HLE_ADAPTER_ID, BFCL_ADAPTER_ID):
         return INSPECT_BACKEND
     return HARBOR_BACKEND
 
@@ -363,13 +399,17 @@ def _evidence_from_outcome(
         adapter_metadata=outcome.adapter_metadata,
         created_at=datetime.now(tz=UTC),
         benchmark_id=plan.benchmark_id,
-        benchmark_version=_evidence_benchmark_version(plan),
+        benchmark_version=_evidence_benchmark_version(plan, outcome.adapter_metadata),
         slice_id=plan.slice_id,
         adapter_id=plan.adapter_id,
         harness_kind=plan.harness_kind,
         harness_version=outcome.adapter_metadata.get("harness_version"),
         runtime_id=plan.runtime_id,
         runtime_kind=plan.runtime_kind,
+        # Harbor rows carry the container-side agent version from the trial
+        # result's agent_info; _apply_provenance keeps it (the host probe is
+        # skipped for Harbor plans and only fills rows that carry none).
+        runtime_version=outcome.agent_version,
         agent_id=plan.agent_id,
         provider_id=plan.provider_id,
         judge_model_id=plan.judge_model_id,
@@ -449,10 +489,24 @@ def _apply_cleanup(
     return "success" if report.removed_paths else "skipped"
 
 
-def _evidence_benchmark_version(plan: RunPlan) -> str | None:
-    """Prefer captured release identity over provisional planner labels."""
+def _evidence_benchmark_version(
+    plan: RunPlan,
+    adapter_metadata: Mapping[str, str] | None = None,
+) -> str | None:
+    """Prefer captured release/adapter identity over provisional planner labels.
+
+    Terminal-Bench stamps its pinned release; the gpqa/hle/bfcl adapters stamp
+    their verified pinned identity into ``adapter_metadata["benchmark_version"]``
+    after pre-launch verification, which wins over the plan's provisional label.
+    When the adapter captured nothing, the provisional plan label stands and
+    qualification keeps failing closed on it.
+    """
     if plan.adapter_id == TERMINAL_BENCH_ADAPTER_ID:
         return TERMINAL_BENCH_RELEASE_VERSION
+    if adapter_metadata:
+        captured = adapter_metadata.get("benchmark_version")
+        if captured:
+            return captured
     return plan.benchmark_version
 
 
@@ -473,10 +527,12 @@ def _record_instance_failure(
     cleanup_result: CleanupResult | None = None,
 ) -> EvidenceRecord:
     failure_log = artifacts_dir / "adapter_failure.json"
-    failure_log.parent.mkdir(parents=True, exist_ok=True)
-    # Anchored, no-follow, exclusive recreate: a symlink or hard link planted
-    # at the failure-log path is unlinked (never opened, truncated, or
-    # followed) and replaced by a fresh regular file.
+    # open_owned_dir_fd creates the parent when missing and converts OSError
+    # to BenchEvalError (e.g. FileExistsError when the agent swapped the
+    # instance dir to a regular file) instead of leaking a raw traceback out
+    # of this failure handler. The anchored, no-follow, exclusive recreate
+    # then unlinks a planted symlink or hard link (never opening, truncating,
+    # or following it) and replaces it with a fresh regular file.
     failure_log_fd = open_owned_dir_fd(
         failure_log.parent,
         role="instance failure-log directory",
@@ -522,7 +578,7 @@ def _record_instance_failure(
         adapter_metadata=metadata,
         created_at=datetime.now(tz=UTC),
         benchmark_id=plan.benchmark_id,
-        benchmark_version=_evidence_benchmark_version(plan),
+        benchmark_version=_evidence_benchmark_version(plan, metadata),
         slice_id=plan.slice_id,
         adapter_id=plan.adapter_id,
         harness_kind=plan.harness_kind,
@@ -582,7 +638,7 @@ def _evidence_from_scored_instance(
         adapter_metadata=adapter_metadata,
         created_at=datetime.now(tz=UTC),
         benchmark_id=plan.benchmark_id,
-        benchmark_version=_evidence_benchmark_version(plan),
+        benchmark_version=_evidence_benchmark_version(plan, adapter_metadata),
         slice_id=plan.slice_id,
         adapter_id=plan.adapter_id,
         harness_kind=plan.harness_kind,
@@ -660,15 +716,66 @@ def _evidence_from_hle_outcome(
     )
 
 
+def _evidence_from_bfcl_outcome(
+    *,
+    plan: RunPlan,
+    run_id: str,
+    outcome: BfclInstanceOutcome,
+    execution_profile: ExecutionProfile,
+    cleanup_result: CleanupResult | None = None,
+) -> EvidenceRecord:
+    return _evidence_from_scored_instance(
+        plan=plan,
+        run_id=run_id,
+        instance_id=outcome.instance_id,
+        execution_profile=execution_profile,
+        backend=INSPECT_BACKEND,
+        primary_pass=outcome.primary_pass,
+        partial_score=outcome.partial_score,
+        cost_usd=outcome.cost_usd,
+        latency_sec=outcome.latency_sec,
+        failure_class=outcome.failure_class,
+        native_score=outcome.native_score,
+        adapter_metadata=outcome.adapter_metadata,
+        paths=(outcome.verifier_log_path, outcome.stdout_path, outcome.stderr_path),
+        verifier_log_path=outcome.verifier_log_path,
+        cleanup_result=cleanup_result,
+    )
+
+
+# Adapters with a real executor dispatch in this module; ``--diagnostic`` may
+# relax the catalog ``executable`` gate only for these.
+_DIAGNOSTIC_CAPABLE_ADAPTER_IDS = frozenset(
+    {TERMINAL_BENCH_ADAPTER_ID, GPQA_ADAPTER_ID, HLE_ADAPTER_ID, BFCL_ADAPTER_ID},
+)
+
+
+def diagnostic_capable_benchmark(benchmark: BenchmarkEntry) -> bool:
+    """True when a demoted benchmark still has a wired executor dispatch."""
+    return benchmark.adapter_id in _DIAGNOSTIC_CAPABLE_ADAPTER_IDS
+
+
 def _require_executable_benchmark(plan: RunPlan) -> None:
     catalog = load_benchmark_catalog()
     benchmark = catalog.by_id_or_alias(plan.benchmark_id)
     support = execution_support_label(benchmark)
-    if support != "executable_adapter":
-        raise BenchEvalError(
-            f"benchmark {plan.benchmark_id!r} has execution_support={support!r}; "
-            "control-plane execute requires executable_adapter",
-        )
+    if support == "executable_adapter":
+        return
+    # Explicitly opted-in diagnostic runs may execute a demoted benchmark, but
+    # only when its adapter has a real dispatch path below — a diagnostic run
+    # is still a real launch, never an invented one, and its evidence can never
+    # register ``passed`` (the registration gate re-checks ``executable``).
+    if plan.diagnostic and plan.adapter_id in _DIAGNOSTIC_CAPABLE_ADAPTER_IDS:
+        return
+    hint = (
+        "; opt in with --diagnostic for a labeled, non-registering run"
+        if plan.adapter_id in _DIAGNOSTIC_CAPABLE_ADAPTER_IDS
+        else ""
+    )
+    raise BenchEvalError(
+        f"benchmark {plan.benchmark_id!r} has execution_support={support!r}; "
+        f"control-plane execute requires executable_adapter{hint}",
+    )
 
 
 def _claim_control_plane_outputs(
@@ -692,8 +799,12 @@ def execute_control_plane_run(
     harbor_process_runner: HarborProcessRunner | None = None,
     gpqa_process_runner: GpqaProcessRunner | None = None,
     hle_process_runner: HleProcessRunner | None = None,
+    bfcl_process_runner: BfclProcessRunner | None = None,
     agent_process_runner: ExternalAgentProcessRunner | None = None,
     momo_process_runner: ExternalAgentProcessRunner | None = None,
+    gpqa_benchmark_identity: str | None = None,
+    hle_benchmark_identity: str | None = None,
+    bfcl_benchmark_identity: str | None = None,
     run_id: str | None = None,
 ) -> ControlPlaneRunSummary:
     """Dispatch a ``RunPlan`` to the matching adapter and append evidence rows."""
@@ -704,6 +815,7 @@ def execute_control_plane_run(
             output_path=output_path,
             artifacts_dir=artifacts_dir,
             gpqa_process_runner=gpqa_process_runner,
+            gpqa_benchmark_identity=gpqa_benchmark_identity,
             run_id=run_id,
         )
     if plan.adapter_id == HLE_ADAPTER_ID:
@@ -712,6 +824,16 @@ def execute_control_plane_run(
             output_path=output_path,
             artifacts_dir=artifacts_dir,
             hle_process_runner=hle_process_runner,
+            hle_benchmark_identity=hle_benchmark_identity,
+            run_id=run_id,
+        )
+    if plan.adapter_id == BFCL_ADAPTER_ID:
+        return _execute_bfcl(
+            plan=plan,
+            output_path=output_path,
+            artifacts_dir=artifacts_dir,
+            bfcl_process_runner=bfcl_process_runner,
+            bfcl_benchmark_identity=bfcl_benchmark_identity,
             run_id=run_id,
         )
     if plan.agent_id is not None:
@@ -741,7 +863,7 @@ def execute_control_plane_run(
     raise BenchEvalError(
         f"no executor for adapter_id={plan.adapter_id!r}; "
         f"supported: {TERMINAL_BENCH_ADAPTER_ID!r}, {GPQA_ADAPTER_ID!r}, "
-        f"{HLE_ADAPTER_ID!r}",
+        f"{HLE_ADAPTER_ID!r}, {BFCL_ADAPTER_ID!r}",
     )
 
 
@@ -847,6 +969,7 @@ def _execute_gpqa(
     output_path: Path,
     artifacts_dir: Path | None,
     gpqa_process_runner: GpqaProcessRunner | None,
+    gpqa_benchmark_identity: str | None = None,
     run_id: str | None,
 ) -> ControlPlaneRunSummary:
     root = _repo_root()
@@ -868,6 +991,7 @@ def _execute_gpqa(
                 artifacts_dir=run_artifacts,
                 repo_root=root,
                 process_runner=gpqa_process_runner,
+                benchmark_identity=gpqa_benchmark_identity,
             )
         except AdapterFailureError as e:
             cleanup_result = _apply_cleanup(
@@ -929,6 +1053,7 @@ def _execute_hle(
     output_path: Path,
     artifacts_dir: Path | None,
     hle_process_runner: HleProcessRunner | None,
+    hle_benchmark_identity: str | None = None,
     run_id: str | None,
 ) -> ControlPlaneRunSummary:
     root = _repo_root()
@@ -949,6 +1074,7 @@ def _execute_hle(
                 repo_root=root,
                 process_runner=hle_process_runner,
                 run_id=rid,
+                benchmark_identity=hle_benchmark_identity,
             )
         except AdapterFailureError as e:
             cleanup_result = _apply_cleanup(
@@ -1004,8 +1130,111 @@ def _execute_hle(
         release_evidence_reservation(output_path)
 
 
+def _execute_bfcl(
+    *,
+    plan: RunPlan,
+    output_path: Path,
+    artifacts_dir: Path | None,
+    bfcl_process_runner: BfclProcessRunner | None,
+    bfcl_benchmark_identity: str | None = None,
+    run_id: str | None,
+) -> ControlPlaneRunSummary:
+    root = _repo_root()
+    rid = run_id or new_run_id()
+    run_artifacts = _claim_control_plane_outputs(
+        output_path=output_path,
+        artifacts_dir=artifacts_dir,
+        rid=rid,
+        root=root,
+    )
+    try:
+        sink = _evidence_sink(plan)
+        execution_profile = _execution_profile_for_plan(plan)
+        # Injected-runner boundary: the caller owns the test seam, so the
+        # executor supplies the manifest-pinned harness label for it; the real
+        # path recaptures the installed distribution identity inside the
+        # adapter immediately before launch.
+        harness_version = bfcl_pinned_harness_version() if bfcl_process_runner is not None else None
+
+        passed = 0
+        spent_cost_usd = 0.0
+        spent_wall_sec = 0.0
+        for inst in plan.instances:
+            instance_id = inst.instance_id
+            if _budget_exhausted(
+                plan,
+                spent_cost_usd=spent_cost_usd,
+                spent_wall_sec=spent_wall_sec,
+            ):
+                record = _record_budget_skip(
+                    plan=plan,
+                    run_id=rid,
+                    instance_id=instance_id,
+                    execution_profile=execution_profile,
+                    spent_cost_usd=spent_cost_usd,
+                    spent_wall_sec=spent_wall_sec,
+                )
+                sink.append_jsonl(output_path, record)
+                continue
+            instance_artifacts = run_artifacts / instance_id
+            try:
+                outcome = run_bfcl_instance(
+                    plan=plan,
+                    instance_id=instance_id,
+                    artifacts_dir=run_artifacts,
+                    repo_root=root,
+                    process_runner=bfcl_process_runner,
+                    harness_version=harness_version,
+                    benchmark_identity=bfcl_benchmark_identity,
+                )
+                cleanup_result = _apply_cleanup(
+                    plan=plan,
+                    instance_artifacts=instance_artifacts,
+                    primary_pass=outcome.primary_pass,
+                )
+                record = _evidence_from_bfcl_outcome(
+                    plan=plan,
+                    run_id=rid,
+                    outcome=outcome,
+                    execution_profile=execution_profile,
+                    cleanup_result=cleanup_result,
+                )
+            except AdapterFailureError as e:
+                cleanup_result = _apply_cleanup(
+                    plan=plan,
+                    instance_artifacts=instance_artifacts,
+                    primary_pass=False,
+                )
+                record = _record_instance_failure(
+                    plan=plan,
+                    run_id=rid,
+                    instance_id=instance_id,
+                    execution_profile=execution_profile,
+                    error=e,
+                    artifacts_dir=instance_artifacts,
+                    cleanup_result=cleanup_result,
+                )
+            spent_cost_usd += record.cost_usd
+            spent_wall_sec += record.latency_sec
+            if record.primary_pass:
+                passed += 1
+            sink.append_jsonl(output_path, record)
+
+        total = len(plan.instances)
+        return ControlPlaneRunSummary(
+            run_id=rid,
+            instance_count=total,
+            passed_count=passed,
+            failed_count=total - passed,
+            output_path=output_path.resolve(),
+        )
+    finally:
+        release_evidence_reservation(output_path)
+
+
 __all__ = [
     "ControlPlaneRunSummary",
     "control_plane_interpretation_label",
+    "diagnostic_capable_benchmark",
     "execute_control_plane_run",
 ]

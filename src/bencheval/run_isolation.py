@@ -316,7 +316,16 @@ def write_text_at_exclusive(dir_fd: int, name: str, text: str) -> None:
     """
     fd = _exclusive_recreate_fd(dir_fd, name)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle = os.fdopen(fd, "w", encoding="utf-8")
+    except OSError as e:
+        # fdopen failed before taking ownership: close fd so it never leaks.
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        raise BenchEvalError(f"cannot write dirfd-relative file {name!r}: {e}") from e
+    try:
+        with handle:
             handle.write(text)
     except OSError as e:
         raise BenchEvalError(f"cannot write dirfd-relative file {name!r}: {e}") from e
@@ -326,7 +335,16 @@ def write_bytes_at_exclusive(dir_fd: int, name: str, data: bytes) -> None:
     """Bytes variant of ``write_text_at_exclusive`` (same anchoring contract)."""
     fd = _exclusive_recreate_fd(dir_fd, name)
     try:
-        with os.fdopen(fd, "wb") as handle:
+        handle = os.fdopen(fd, "wb")
+    except OSError as e:
+        # fdopen failed before taking ownership: close fd so it never leaks.
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        raise BenchEvalError(f"cannot write dirfd-relative file {name!r}: {e}") from e
+    try:
+        with handle:
             handle.write(data)
     except OSError as e:
         raise BenchEvalError(f"cannot write dirfd-relative file {name!r}: {e}") from e

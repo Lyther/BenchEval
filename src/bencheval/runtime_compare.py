@@ -289,6 +289,12 @@ def assess_runtime_comparison_validity(
         reasons.append("each file must have exactly one runtime_id")
     elif runtimes_b == runtimes_c:
         reasons.append("runtime_id must differ between baseline and current for runtime comparison")
+    # Diagnostic rows are opt-in evidence from demoted benchmarks; they never
+    # qualify a comparison regardless of provenance completeness.
+    if any(r.interpretation_label == "diagnostic" for r in baseline + current):
+        reasons.append(
+            "diagnostic interpretation_label rows cannot qualify a runtime comparison",
+        )
 
     eligible_b = [r for r in baseline if eligible_for_pass_at_k(r)]
     eligible_c = [r for r in current if eligible_for_pass_at_k(r)]

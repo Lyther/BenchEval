@@ -1,7 +1,7 @@
 # External benchmark catalog
 
 > **Status:** Research only (updated 2026-07-14). **Not** the product catalog.
-> **Live product YAML:** [`config/benchmarks.yaml`](../../config/benchmarks.yaml) has **8** catalog rows and **3** Tier-0 executable rows (`terminal-bench`, `gpqa-diamond`, `hle`). `swe-bench-verified` and `bfcl-v4` are demoted until official evaluate paths are wired; `swe-bench-pro`, `cybergym`, and `exploitgym` remain `adapter_pending`. Rows below that are not yet admitted remain a planning shortlist.
+> **Live product YAML:** [`config/benchmarks.yaml`](../../config/benchmarks.yaml) has **8** catalog rows and **4** Tier-0 executable rows (`terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4` — BFCL admitted 2026-08-24 on the diagnostic-labeled dev-box lifecycle demonstration `run-20260824-040631-228703-4756f857` plus the registered `passed` run `run-20260824-045622-854659-a46ae44d`). `swe-bench-verified` is demoted until official evaluation is wired. `swe-bench-pro`, `cybergym`, and `exploitgym` remain `adapter_pending`. Rows below that are not yet admitted remain a planning shortlist.
 > **Do not** treat entries here as runnable via BenchEval CLI.
 
 Third-party suites popular in coding-agent, tool-use, and security evaluation. Prefer official harnesses when a future adapter is designed.
@@ -79,7 +79,7 @@ Priority for **future** adapter design only. None of these become product until 
 1. SWE-bench Verified Mini or Lite — cheap SWE regression research; current catalog row is non-executable
 2. Cybench (5–10 task smoke) — security appendix — **research only; not admitted**
 3. τ-bench — stateful tool patterns — **research only; not admitted**
-4. BFCL v4 official `generate` + `evaluate` lifecycle — current catalog row is non-executable
+4. BFCL v4 official `generate` + `evaluate` lifecycle — wired and admitted (executable since 2026-08-24)
 5. Terminal-Bench larger slices — smoke is Tier-0 executable via Harbor; live proof remains separate
 
 ## Integration posture (research only)

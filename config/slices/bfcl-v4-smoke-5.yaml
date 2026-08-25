@@ -5,7 +5,7 @@ slice:
   purpose: "adapter_smoke"
   selection_policy: "fixed_instance_ids"
   instances:
-    - simple
+    - simple_python
     - irrelevance
     - parallel
     - multiple

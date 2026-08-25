@@ -6,7 +6,7 @@ Evidence-based evaluation control plane. Product spine:
 benchmark  →  (runtime | agent)?  →  model via provider  →  evidence
 ```
 
-Tier-0 executable software entries: **3** (`terminal-bench`, `gpqa-diamond`, `hle`). `swe-bench-verified` and `bfcl-v4` stay cataloged but non-executable until official evaluate paths are wired. Catalog also keeps `swe-bench-pro`, `cybergym`, and `exploitgym` as `adapter_pending`. Runtimes `claude-code` / `codex-cli`; agent `momo`; providers `bytellm` / `ollama-cloud`. Runtime XOR agent; omit both for model-only (GPQA / HLE). Bare `run <benchmark>` uses each executable row’s `default_slice` (smoke). Ops: [`docs/ops/benchmarks/`](docs/ops/benchmarks/README.md).
+Tier-0 executable software entries: **4** (`terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4` — BFCL admitted 2026-08-24 on the diagnostic-labeled dev-box lifecycle demonstration `run-20260824-040631-228703-4756f857` plus the registered `passed` run `run-20260824-045622-854659-a46ae44d`). `swe-bench-verified` stays cataloged but non-executable until its official evaluate path is wired. Catalog also keeps `swe-bench-pro`, `cybergym`, and `exploitgym` as `adapter_pending`. Runtimes `claude-code` / `codex-cli`; agent `momo`; providers `bytellm` / `ollama-cloud`. Runtime XOR agent; omit both for model-only (GPQA / HLE / BFCL). Bare `run <benchmark>` uses each executable row’s `default_slice` (smoke). Ops: [`docs/ops/benchmarks/`](docs/ops/benchmarks/README.md).
 
 Intent / HLD: [`docs/context/concept-hld.md`](docs/context/concept-hld.md) (v0.3). Architecture: [`docs/architecture.md`](docs/architecture.md). Diagrams: [`docs/diagrams/`](docs/diagrams/README.md).
 
@@ -16,7 +16,7 @@ Intent / HLD: [`docs/context/concept-hld.md`](docs/context/concept-hld.md) (v0.3
 # 1. Install
 uv sync
 
-# 2. List runnable benchmarks (expect 3)
+# 2. List runnable benchmarks (expect 4)
 uv run bencheval list --format json
 
 # 3. Catalog discovery
@@ -36,7 +36,7 @@ Unknown benchmark/runtime/agent/provider ids fail before subprocess. Datasets/im
 
 ## Layout
 
-- `config/benchmarks.yaml` — product catalog (**8** rows; **3** Tier-0 executables)
+- `config/benchmarks.yaml` — product catalog (**8** rows; **4** Tier-0 executables)
 - `config/runtimes/` · `config/agents/` · `config/providers/` · `config/slices/` · `config/models.yaml`
 - Wheel install is self-contained: public config ships as `bencheval/_bundled/config/`; `BENCHEVAL_HOME` is an optional override
 - `src/bencheval/` — library + CLI
@@ -51,11 +51,7 @@ uv sync
 uv run bencheval list --format json
 ```
 
-Before the full contributor gate, install its real export and harness dependencies with
-`uv sync --dev --extra eval --extra analytics`. Use `uv sync --extra eval` for live
-Inspect / Harbor runs that do not need the analytics gate. Pilot gates:
-[`docs/context/production-v1-pilot.md`](docs/context/production-v1-pilot.md)
-(`make check-production-v1`).
+Before the full contributor gate, install its real export and harness dependencies with `uv sync --dev --extra eval --extra analytics`. Use `uv sync --extra eval` for live Inspect / Harbor runs that do not need the analytics gate, and `uv sync --group bfcl` for the pinned BFCL CLI plus its required audio import dependency. BFCL is a repository-owned group because its model-handler graph is large and its audited dependency overrides must travel with the checkout; it can be combined with `eval` when one host needs both harness families. Pilot gates: [`docs/context/production-v1-pilot.md`](docs/context/production-v1-pilot.md) (`make check-production-v1`).
 
 ## CLI overview
 
@@ -84,6 +80,6 @@ uv run bencheval export-run \
 
 ## Production readiness
 
-Tiers and honesty gates: [`docs/context/production-readiness.md`](docs/context/production-readiness.md). Tier-0 executable count must stay **3** until another adapter is deliberately admitted in config. Tier-0 ≠ Production v1 live proof for every row.
+Tiers and honesty gates: [`docs/context/production-readiness.md`](docs/context/production-readiness.md). Tier-0 executable count must stay **4** until another adapter is deliberately admitted in config. Tier-0 ≠ Production v1 live proof for every row.
 
 Research catalog (docs only, not product YAML): [`docs/context/external-benchmark-catalog.md`](docs/context/external-benchmark-catalog.md).

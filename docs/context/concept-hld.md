@@ -6,7 +6,7 @@
 **Date:** 2026-06-17 (revised 2026-06-17 — benchmark research + factual corrections, see §16 Changelog)
 **Primary decision:** Reframe BenchEval from a private Core benchmark project into a public benchmark × model × runtime evaluation control plane.
 
-> **Current product contract (2026-07):** Prefer [`docs/architecture.md`](../architecture.md), [`docs/api/internal-contracts.md`](../api/internal-contracts.md), and the root [`README.md`](../../README.md). Live spine is `benchmark → (runtime | agent)? → model via provider → evidence`. Tier-0 executables: `terminal-bench`, `gpqa-diamond`, `hle`; `swe-bench-verified` and `bfcl-v4` are demoted until official evaluate paths are wired; `swe-bench-pro`, `cybergym`, and `exploitgym` remain pending. CLI is `bencheval run <benchmark>/<slice> --model <id> [--runtime|--agent] [--provider] [--dry-run|-y]`. Commands documented below such as `plan`, `run --config`, `run --benchmark/--slice`, `task`, and `replay` are **historical** and must not be used as operator instructions.
+> **Current product contract (2026-07):** Prefer [`docs/architecture.md`](../architecture.md), [`docs/api/internal-contracts.md`](../api/internal-contracts.md), and the root [`README.md`](../../README.md). Live spine is `benchmark → (runtime | agent)? → model via provider → evidence`. Tier-0 executables: `terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4` (BFCL admitted 2026-08-24 on the diagnostic-labeled dev-box lifecycle demonstration `run-20260824-040631-228703-4756f857` plus the registered `passed` run `run-20260824-045622-854659-a46ae44d`); `swe-bench-verified` is demoted until official evaluation is wired; `swe-bench-pro`, `cybergym`, and `exploitgym` remain pending. CLI is `bencheval run <benchmark>/<slice> --model <id> [--runtime|--agent] [--provider] [--dry-run|-y]`. Commands documented below such as `plan`, `run --config`, `run --benchmark/--slice`, `task`, and `replay` are **historical** and must not be used as operator instructions.
 
 ---
 
@@ -220,7 +220,7 @@ Core suite only as internal self-test/private regression
 
 ## 5. Benchmark Strategy
 
-BenchEval should classify benchmarks by execution role, not by marketing importance. **Live product YAML** (`config/benchmarks.yaml`) has **8** catalog rows and **3** Tier-0 executables (`swe-bench-verified` / `bfcl-v4` demoted; `cybergym` remains pending full official lifecycle); the broader research catalog is docs-only (`docs/context/external-benchmark-catalog.md`). Historical drafts of this HLD assumed a large metadata catalog (~81 ids) for adapter planning — that count is no longer the product registry.
+BenchEval should classify benchmarks by execution role, not by marketing importance. **Live product YAML** (`config/benchmarks.yaml`) has **8** catalog rows and **4** Tier-0 executables (`swe-bench-verified` demoted; `cybergym` remains pending full official lifecycle); the broader research catalog is docs-only (`docs/context/external-benchmark-catalog.md`). Historical drafts of this HLD assumed a large metadata catalog (~81 ids) for adapter planning — that count is no longer the product registry.
 
 ### 5.1 Benchmark Classes
 

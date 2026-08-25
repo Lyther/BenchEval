@@ -8,6 +8,7 @@ import pytest
 
 from bencheval.cli import main
 from bencheval.doctor import PILOT_DOCTOR_BACKEND, run_doctor, run_pilot_doctor
+from bencheval.domain import ExecutionProfile
 
 # SUBSTITUTE_JUSTIFICATION
 # - substitute: pytest monkeypatch controls for binary discovery, version/command probes,
@@ -20,8 +21,8 @@ from bencheval.doctor import PILOT_DOCTOR_BACKEND, run_doctor, run_pilot_doctor
 # - proof-limit: proves doctor decision logic only, not real host/provider availability
 # - real-proof: BLOCKED until scripts/doctor-pilot.sh runs on the provisioned dev-box
 # - covered tests: test_pilot_doctor_all_present,
-#   test_pilot_doctor_ignores_demoted_bfcl_dependency,
-#   test_pilot_doctor_ignores_broken_demoted_bfcl_cli,
+#   test_pilot_doctor_ignores_bfcl_dependency,
+#   test_pilot_doctor_ignores_broken_bfcl_cli,
 #   test_pilot_doctor_ignores_demoted_swe_dependency,
 #   test_pilot_doctor_missing_harbor, test_pilot_doctor_docker_unavailable,
 #   test_pilot_doctor_version_probe_failure_still_pass,
@@ -29,7 +30,8 @@ from bencheval.doctor import PILOT_DOCTOR_BACKEND, run_doctor, run_pilot_doctor
 #   test_pilot_doctor_bytellm_route_missing_key, test_pilot_doctor_model_credentials_fail,
 #   test_pilot_doctor_requires_provider_credentials, test_cli_doctor_profile_pilot_json,
 #   test_cli_doctor_pilot_requires_no_backend, and
-#   test_run_doctor_provider_check_unchanged_after_refactor
+#   test_run_doctor_provider_check_unchanged_after_refactor,
+#   test_inspect_doctor_docker_requirement_matches_profile
 
 _PILOT_BINARIES = ("harbor",)
 
@@ -77,7 +79,7 @@ def test_pilot_doctor_all_present(monkeypatch: pytest.MonkeyPatch) -> None:
     assert [c.name for c in report.checks] == ["harbor_cli", "docker"]
 
 
-def test_pilot_doctor_ignores_demoted_bfcl_dependency(
+def test_pilot_doctor_ignores_bfcl_dependency(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_pilot_host(monkeypatch, present={"harbor"})
@@ -86,7 +88,7 @@ def test_pilot_doctor_ignores_demoted_bfcl_dependency(
     assert report.ok is True
 
 
-def test_pilot_doctor_ignores_broken_demoted_bfcl_cli(
+def test_pilot_doctor_ignores_broken_bfcl_cli(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_pilot_host(monkeypatch, present={"harbor"})
@@ -223,3 +225,21 @@ def test_run_doctor_provider_check_unchanged_after_refactor(
     cred = next(c for c in report.checks if c.name == "provider_credentials")
     assert cred.status == "pass"
     assert report.backend == "inspect"
+
+
+@pytest.mark.parametrize(
+    ("profile", "expected_status"),
+    [("E0", "skip"), ("E1", "fail"), ("E3", "skip"), ("E4", "fail")],
+)
+def test_inspect_doctor_docker_requirement_matches_profile(
+    monkeypatch: pytest.MonkeyPatch,
+    profile: ExecutionProfile,
+    expected_status: str,
+) -> None:
+    monkeypatch.setattr("bencheval.doctor._try_import_inspect_ai", lambda: ("0.3.0", None))
+    monkeypatch.setattr("bencheval.doctor.docker_available", lambda: False)
+
+    report = run_doctor("inspect", execution_profile=profile)
+
+    docker = next(check for check in report.checks if check.name == "docker")
+    assert docker.status == expected_status

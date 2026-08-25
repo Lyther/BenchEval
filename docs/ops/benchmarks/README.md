@@ -8,7 +8,7 @@ Operator notes for product catalog rows. BenchEval ships control-plane glue and,
 | `gpqa-diamond` | Inspect Evals (Tier-0) | model-only; parse official Inspect scores |
 | `hle` | CAIS scripts (Tier-0) | model-only; `BENCHEVAL_HLE_HOME`; parse judge metrics |
 | `swe-bench-verified` | **demoted** | not executable until official SWE-bench evaluate is wired |
-| `bfcl-v4` | **demoted** | not executable until `bfcl generate`+`evaluate` lifecycle is wired |
+| `bfcl-v4` | BFCL eval (Tier-0) | model-only; official `bfcl generate`+`evaluate` lifecycle, gated on the supported-model manifest |
 | `swe-bench-pro` | **pending** | needs real official task selector from Harbor dataset |
 | `exploitgym` | **pending** | needs real official task id/source from host harness |
 | `cybergym` | **not executable** | catalog/`adapter_pending` until full official server+submit lifecycle |

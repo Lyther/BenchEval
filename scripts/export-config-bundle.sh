@@ -27,6 +27,7 @@ mkdir -p \
 rsync -a \
   "${REPO_ROOT}/config/benchmarks.yaml" \
   "${REPO_ROOT}/config/models.yaml" \
+  "${REPO_ROOT}/config/bfcl-v4-supported-models.yaml" \
   "${DEST}/config/"
 rsync -a "${REPO_ROOT}/config/runtimes/" "${DEST}/config/runtimes/"
 rsync -a "${REPO_ROOT}/config/agents/" "${DEST}/config/agents/"

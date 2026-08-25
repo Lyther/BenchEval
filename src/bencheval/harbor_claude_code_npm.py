@@ -11,6 +11,9 @@ from harbor.environments.base import BaseEnvironment
 _NODE_VERSION = "22.16.0"
 _NODE_DIST = f"node-v{_NODE_VERSION}-linux-x64"
 _NODE_TARBALL_URL = f"https://nodejs.org/dist/v{_NODE_VERSION}/{_NODE_DIST}.tar.gz"
+# nodejs.org SHASUMS256.txt for node-v22.16.0-linux-x64.tar.gz; the install
+# downloads the tarball to a file and verifies it before extracting.
+_NODE_TARBALL_SHA256 = "fb870226119d47378fa9c92c4535389c72dae14fcc7b47e6fdcc82c43de5a547"
 _NPM_REGISTRY_ENV = "BENCHEVAL_CLAUDE_CODE_NPM_REGISTRY"
 _NPM_FETCH_TIMEOUT_ENV = "BENCHEVAL_CLAUDE_CODE_NPM_FETCH_TIMEOUT_MS"
 _NPM_FETCH_RETRIES_ENV = "BENCHEVAL_CLAUDE_CODE_NPM_FETCH_RETRIES"
@@ -18,6 +21,14 @@ _NPM_FETCH_RETRIES_ENV = "BENCHEVAL_CLAUDE_CODE_NPM_FETCH_RETRIES"
 
 class ClaudeCodeNpmInstall(ClaudeCode):
     """Claude Code agent that installs the CLI from npm on every Linux base image."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        if not self._version:
+            raise ValueError(
+                "ClaudeCodeNpmInstall requires an explicit pinned version "
+                "(version=...); an unpinned npm install is not reproducible",
+            )
 
     async def install(self, environment: BaseEnvironment) -> None:
         await self.exec_as_root(
@@ -48,7 +59,7 @@ class ClaudeCodeNpmInstall(ClaudeCode):
             ),
             env={"DEBIAN_FRONTEND": "noninteractive"},
         )
-        version_spec = f"@{self._version}" if self._version else ""
+        version_spec = f"@{self._version}"
         registry = os.environ.get(_NPM_REGISTRY_ENV)
         registry_arg = f" --registry={shlex.quote(registry)}" if registry else ""
         fetch_timeout = os.environ.get(_NPM_FETCH_TIMEOUT_ENV, "120000")
@@ -60,8 +71,11 @@ class ClaudeCodeNpmInstall(ClaudeCode):
                 f'node_root="$HOME/.local/{_NODE_DIST}"; '
                 'if [[ ! -x "$node_root/bin/node" ]]; then '
                 '  mkdir -p "$HOME/.local" && '
-                f"  curl -fsSL {_NODE_TARBALL_URL} | "
-                'tar -xzf - -C "$HOME/.local"; '
+                f'  curl -fsSL {_NODE_TARBALL_URL} -o "$HOME/.local/{_NODE_DIST}.tar.gz" && '
+                f'  echo "{_NODE_TARBALL_SHA256}  $HOME/.local/{_NODE_DIST}.tar.gz" | '
+                "  sha256sum -c - && "
+                f'  tar -xzf "$HOME/.local/{_NODE_DIST}.tar.gz" -C "$HOME/.local" && '
+                f'  rm -f "$HOME/.local/{_NODE_DIST}.tar.gz"; '
                 "fi; "
                 'export PATH="$node_root/bin:$PATH"; '
                 'npm_proxy="${http_proxy:-${HTTP_PROXY:-}}"; '

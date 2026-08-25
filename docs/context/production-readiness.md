@@ -31,7 +31,7 @@ make check-production-v1        # → ./scripts/check-production-v1.sh
 3. `uv run --no-sync ruff check src tests scripts/` and `ruff format --check` — lint + format clean.
 4. `shellcheck scripts/*.sh` and `bash -n scripts/*.sh` — shell hygiene.
 5. `uv lock --check` — lockfile in sync with `pyproject.toml`.
-6. **Executable-adapter count = 3.** `bencheval benchmark list --execution-support executable_adapter --format json` must report exactly: `terminal-bench`, `gpqa-diamond`, `hle`. Catalog still has **8** YAML rows (`swe-bench-verified` and `bfcl-v4` are demoted until official evaluate paths are wired; `swe-bench-pro`, `cybergym`, and `exploitgym` remain `adapter_pending`). Executability is config-declared in [`config/benchmarks.yaml`](../../config/benchmarks.yaml) (`executable: true` + `adapter_id`). `harness_kind` is derived from adapter code, not YAML, so config cannot introduce a behavior-changing harness. Adding a benchmark on an **existing** adapter family can be config-only; a **new** harness family needs a Python adapter, executor wiring, and official score ingestion — not just a YAML flip.
+6. **Executable-adapter count = 4.** `bencheval benchmark list --execution-support executable_adapter --format json` must report exactly: `terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4`. Catalog still has **8** YAML rows (`swe-bench-verified` is demoted until official evaluation is wired; `bfcl-v4` was admitted 2026-08-24 on the diagnostic-labeled dev-box lifecycle demonstration `run-20260824-040631-228703-4756f857` plus the registered `passed` run `run-20260824-045622-854659-a46ae44d`; `swe-bench-pro`, `cybergym`, and `exploitgym` remain `adapter_pending`). Executability is config-declared in [`config/benchmarks.yaml`](../../config/benchmarks.yaml) (`executable: true` + `adapter_id`). `harness_kind` is derived from adapter code, not YAML, so config cannot introduce a behavior-changing harness. Adding a benchmark on an **existing** adapter family can be config-only; a **new** harness family needs a Python adapter, executor wiring, and official score ingestion — not just a YAML flip.
 7. **Negative-evidence gate:** `bencheval run no-such-benchmark/smoke-5 ...` must **fail** before subprocess dispatch with a benchmark-not-found error. Research candidates live in docs, not as undeclared YAML executables.
 
 **Passing Tier 0 means:** the configured local software gates passed. It does **not** prove every behavior is correct or that any benchmark result is real. Non-executable benchmarks stay `metadata_only` / `manifest_only`; reports produced without live deps must carry the `adapter_smoke` interpretation label, never `benchmark_native_claim` (architecture §13.1, §15 risk "Harbor unavailable / Docker absent").
@@ -46,10 +46,7 @@ Phase B lifts the Tier 0 live blockers. **Expected operator environment:** dev-b
 
 BenchEval does **not** implement a separate Docker orchestration plane. When Terminal-Bench (Harbor) or similar adapters need containers, that isolation is provided by the **official harness/runtime**, not by BenchEval core.
 
-External agents are admitted via `config/agents/*.yaml` and dispatched through
-`external_agent_adapter` using the selected profile's `command` contract.
-They do **not** by themselves promote a cataloged benchmark to Production v1;
-promotion still requires the native-harness evidence and checklist below.
+External agents are admitted via `config/agents/*.yaml` and dispatched through `external_agent_adapter` using the selected profile's `command` contract. They do **not** by themselves promote a cataloged benchmark to Production v1; promotion still requires the native-harness evidence and checklist below.
 
 Outputs live under `results/` (gitignored): evidence, reports, bundles (`--redaction private` default), and `preflight/*.json` when a step is blocked — **negative evidence**, not a fake pass.
 
@@ -93,7 +90,7 @@ A benchmark graduates to **Production v1** only when **all** of the following ho
 - [ ] Version capture on every `EvidenceRecord`: benchmark, harness, adapter, runtime, model.
 - [ ] Evidence completeness: raw result, stdout, stderr, verifier logs, candidate artifacts, run config.
 - [ ] Failure separation: failed attempts written with a failure label, never silently dropped.
-- [ ] Cleanup replay: `--cleanup always|on-success` removes transient dirs (`agent-workspace`, `harbor-package`, `materialized-workspace`) **without** deleting evidence; Docker image pruning deliberately **not** owned by BenchEval (external adapters must document it).
+- [ ] Cleanup replay: `--cleanup always|on-success` removes transient dirs (`agent-workspace`, `harbor-package`, `hle-datasets-cache`, `materialized-workspace`) **without** deleting evidence; Docker image pruning deliberately **not** owned by BenchEval (external adapters must document it).
 - [ ] ≥1 typed slice with instance ids committed under `config/slices/`.
 - [ ] Dry-run accuracy: `run --dry-run` plan matches the real envelope (instance count, cost, caveats).
 - [ ] Caveat labels attached (e.g. `contaminated_or_legacy` for SWE-bench-family).

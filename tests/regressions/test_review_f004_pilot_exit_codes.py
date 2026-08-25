@@ -51,8 +51,8 @@ def test_live_pilot_exports_failed_terminal_bench_evidence() -> None:
     assert "BENCHEVAL_PILOT_TB_EXPECTED_INSTANCES" in content
 
 
-def test_live_pilot_does_not_invoke_demoted_bfcl_or_swe() -> None:
-    """F001/F002/F017: demoted lanes must not run in the minimum-proof matrix."""
+def test_live_pilot_does_not_invoke_bfcl_or_swe_lanes() -> None:
+    """F001/F002/F017: non-pilot lanes must not run in the minimum-proof matrix."""
     repo_root = Path(__file__).resolve().parents[2]
     script = repo_root / "scripts" / "run-live-pilot-matrix.sh"
 
@@ -62,7 +62,7 @@ def test_live_pilot_does_not_invoke_demoted_bfcl_or_swe() -> None:
     assert "run_swe" not in content
     assert "BENCHEVAL_PILOT_BFCL_MODEL" not in content
     assert "bfcl_model_supported" not in content
-    assert "demoted (non-executable)" in content
+    assert "outside the Terminal-Bench pilot matrix" in content
     assert "need TB claude-code + codex-cli evidence and compare" in content
 
 

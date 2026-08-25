@@ -1,4 +1,25 @@
-"""Regressions for Round-1 native-runner honesty findings (F001–F012)."""
+"""Regressions for Round-1 native-runner honesty findings (F001–F012).
+
+SUBSTITUTE_JUSTIFICATION
+- substitute: constructed ``HarborCliResult``/``SwebenchCliResult``/``BfclCliResult``
+  process results and the synthetic harness artifact files written below
+  (including official-format BFCL score artifacts, Harbor result.json files,
+  SWE verifier.json files, GPQA inspect logs, and HLE judged-output files);
+  plus the monkeypatched ``bfcl_harness_version`` in
+  ``test_f004_bfcl_provisional_benchmark_version_and_swe_demotion_refusal``
+- replaces: the external Harbor/mini-SWE-agent/BFCL/inspect harness processes
+  and the output artifacts those harnesses would author
+- necessity: the assertions require deterministic fault states (nonzero exits
+  dominating pass-bearing artifacts, malformed verdict payloads, partial judged
+  sets, planted symlinks) that the real harnesses cannot safely and
+  deterministically write on demand
+- real-option: the dev-box live lanes for each harness; not available in the
+  local Tier-0 environment
+- proof-limit: proves BenchEval-side parser/orchestration fail-closed behavior
+  only — not harness execution, scorer correctness, or live readiness
+- real-proof: BLOCKED until the dev-box pilot lanes re-qualify
+  (docs/ops/dev-box-pilot.md)
+"""
 
 from __future__ import annotations
 
@@ -9,10 +30,14 @@ from pathlib import Path
 import pytest
 
 from bencheval.benchmark_plan import plan_control_plane
-from bencheval.benchmark_registry import execution_support_label, load_benchmark_catalog
+from bencheval.benchmark_registry import (
+    BfclPackageDataIdentity,
+    execution_support_label,
+    load_benchmark_catalog,
+)
 from bencheval.bfcl_native_adapter import (
     BfclCliResult,
-    bfcl_benchmark_version,
+    bfcl_pinned_harness_version,
     parse_bfcl_instance_outcome,
 )
 from bencheval.control_plane_executor import execute_control_plane_run
@@ -20,6 +45,7 @@ from bencheval.evidence import EvidenceRecord, JsonlEvidenceSink
 from bencheval.exceptions import BenchEvalError
 from bencheval.gpqa_adapter import parse_gpqa_official_score
 from bencheval.hle_adapter import parse_hle_official_score
+from bencheval.identity_strings import bfcl_benchmark_identity
 from bencheval.lifecycle import cleanup_transient_artifacts
 from bencheval.model_compare import assess_model_comparison_validity
 from bencheval.provenance_gates import is_captured_axis, is_captured_harness_version
@@ -32,24 +58,26 @@ from bencheval.terminal_bench_harbor import HarborCliResult, parse_harbor_instan
 _TS = datetime(2026, 8, 6, tzinfo=UTC)
 
 
-def test_f001_f002_swe_and_bfcl_demoted_from_executable() -> None:
+def test_f001_f002_swe_demoted_and_bfcl_admitted() -> None:
     catalog = load_benchmark_catalog()
     swe = catalog.by_id_or_alias("swe-bench-verified")
     bfcl = catalog.by_id_or_alias("bfcl-v4")
     assert swe.executable is False
-    assert bfcl.executable is False
     assert execution_support_label(swe) == "manifest_only"
-    assert execution_support_label(bfcl) == "manifest_only"
+    # BFCL was admitted on the diagnostic-labeled dev-box lifecycle
+    # demonstration run-20260824-040631-228703-4756f857 plus the registered
+    # `passed` run run-20260824-045622-854659-a46ae44d.
+    assert bfcl.executable is True
+    assert execution_support_label(bfcl) == "executable_adapter"
     executable = {
         b.id for b in catalog.benchmarks if execution_support_label(b) == "executable_adapter"
     }
-    assert executable == {"terminal-bench", "gpqa-diamond", "hle"}
+    assert executable == {"terminal-bench", "gpqa-diamond", "hle", "bfcl-v4"}
 
 
 def test_f001_f002_execute_refuses_demoted_adapters(tmp_path: Path) -> None:
     for benchmark_id, slice_id, runtime_id in (
         ("swe-bench-verified", "swe-bench-verified-smoke-10", "claude-code"),
-        ("bfcl-v4", "smoke-5", None),
     ):
         plan = plan_control_plane(
             benchmark_id=benchmark_id,
@@ -67,14 +95,20 @@ def test_f001_f002_execute_refuses_demoted_adapters(tmp_path: Path) -> None:
 
 
 def test_f003_bfcl_package_version_is_not_benchmark_identity() -> None:
-    assert bfcl_benchmark_version() is None
+    identity = load_benchmark_catalog().by_id_or_alias("bfcl-v4").identity
+    assert isinstance(identity, BfclPackageDataIdentity)
+
+    harness_version = bfcl_pinned_harness_version()
+    benchmark_version = bfcl_benchmark_identity(identity)
+
+    assert harness_version == "bfcl-eval@2026.3.23"
+    assert "+data-" in benchmark_version
+    assert benchmark_version != harness_version
 
 
 def test_f004_process_failure_dominates_boolean_artifacts(tmp_path: Path) -> None:
-    # SUBSTITUTE_JUSTIFICATION:
-    # - necessity: official Harbor/SWE/BFCL CLIs unavailable here
-    # - boundary: parser unit contract only (returncode vs artifact authority)
-    # - proof limit: not live harness acceptance
+    # Covered by the file-scope SUBSTITUTE_JUSTIFICATION: parser-level contract
+    # that a nonzero process exit dominates any pass-bearing artifact.
     art = tmp_path / "inst"
     art.mkdir()
     (art / "result.json").write_text(
@@ -110,12 +144,23 @@ def test_f004_process_failure_dominates_boolean_artifacts(tmp_path: Path) -> Non
     assert swe.primary_pass is False
     assert swe.failure_class == "harness_failure"
 
+    # BFCL scoring authority is the official evaluate score artifact; a
+    # pass-bearing official score must still lose to a nonzero process exit.
+    bfcl_score_dir = art / "bfcl-scores"
+    bfcl_score_file = bfcl_score_dir / "model" / "non_live" / "BFCL_v4_simple_score.json"
+    bfcl_score_file.parent.mkdir(parents=True)
+    bfcl_score_file.write_text(
+        json.dumps({"accuracy": 1.0, "correct_count": 1, "total_count": 1}) + "\n",
+        encoding="utf-8",
+    )
     bfcl = parse_bfcl_instance_outcome(
         instance_id="simple",
-        cli=BfclCliResult(17, "", "", 0.1, ("bfcl", "generate")),
+        cli=BfclCliResult(17, "", "", 0.1, ("bfcl", "evaluate")),
         artifacts_dir=art,
         repo_root=tmp_path,
         harness_version="bfcl@test",
+        score_dir=bfcl_score_dir,
+        model_id="model",
     )
     assert bfcl.primary_pass is False
     assert bfcl.failure_class == "harness_failure"

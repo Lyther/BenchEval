@@ -129,6 +129,9 @@ InterpretationLabel = Literal[
     "model_comparison",
     "contaminated_or_legacy",
     "defensive_security_only",
+    # Explicitly opted-in run of a demoted (non-executable) benchmark: real
+    # execution, but the evidence can never register ``passed``.
+    "diagnostic",
 ]
 
 # Failure taxonomy — must stay distinct per architecture §10. One evidence row
@@ -217,6 +220,10 @@ class RuntimeVersioning(BaseModel):
 
     version_command: tuple[str, ...] = Field(min_length=1)
     config_hash_inputs: tuple[str, ...] = ()
+    # Agent version installed inside the harness container (Harbor
+    # ``--agent-kwarg version=``). Optional in the model; REQUIRED at the
+    # Harbor launch boundary — an unpinned agent version cannot launch.
+    agent_version_pin: str | None = None
 
 
 class RuntimeProfile(BaseModel):
@@ -403,6 +410,10 @@ class RunPlan(BaseModel):
         "diagnostic_only",
         "invalid",
     ]
+    # Opt-in diagnostic execution of a demoted (non-executable) benchmark with
+    # a wired adapter; evidence is labeled "diagnostic" and cannot register
+    # ``passed``.
+    diagnostic: bool = False
 
     def model_post_init(self, __context: object) -> None:
         if self.runtime_id is not None and self.agent_id is not None:

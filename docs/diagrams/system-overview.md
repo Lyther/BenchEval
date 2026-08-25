@@ -18,7 +18,7 @@ flowchart TB
 
     subgraph Ext["Outside BenchEval ownership"]
         Harbor["Harbor + Docker<br/>Terminal-Bench"]
-        Inspect["Inspect / HLE<br/>GPQA · HLE"]
+        Inspect["Inspect / HLE / BFCL<br/>GPQA · HLE · BFCL"]
         MOMO["MOMO agent CLI"]
         LLM["Providers<br/>ByteLLM · Ollama"]
     end
@@ -45,4 +45,4 @@ flowchart TB
     Out --> Op
 ```
 
-Notes: Model-only (GPQA/HLE) records `runtime_id=null` / `agent_id=null`. Executable adapters: `terminal-bench`, `gpqa-diamond`, `hle`. No BenchEval-owned Docker plane.
+Notes: Model-only (GPQA/HLE/BFCL) records `runtime_id=null` / `agent_id=null`. Executable adapters: `terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4`. No BenchEval-owned Docker plane.

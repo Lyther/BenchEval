@@ -35,4 +35,7 @@ safety:
 versioning:
   version_command: ["claude", "--version"]
   config_hash_inputs: [".claude", "CLAUDE.md"]
+  # Pinned agent version installed in the Harbor container
+  # (@anthropic-ai/claude-code npm dist-tag); launch refuses when absent.
+  agent_version_pin: "2.1.235"
 admission: "admitted"

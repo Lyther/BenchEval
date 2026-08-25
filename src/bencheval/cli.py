@@ -26,12 +26,16 @@ from bencheval.benchmark_registry import (
     filter_benchmarks,
     load_benchmark_catalog,
 )
-from bencheval.control_plane_executor import execute_control_plane_run
+from bencheval.control_plane_executor import (
+    diagnostic_capable_benchmark,
+    execute_control_plane_run,
+)
 from bencheval.doctor import run_doctor, run_pilot_doctor
 from bencheval.domain import RunPlan
 from bencheval.evidence import read_evidence_jsonl
 from bencheval.exceptions import BenchEvalError
 from bencheval.ids import new_run_id
+from bencheval.live_proof import qualify_lane, registration_identity_mismatch
 from bencheval.live_run_manifest import (
     LiveRunRecord,
     LiveRunStatus,
@@ -106,6 +110,7 @@ def _build_plan(args: argparse.Namespace) -> RunPlan:
         agent_id=args.agent,
         provider_id=args.provider,
         model_id=args.model,
+        diagnostic=bool(getattr(args, "diagnostic", False)),
     )
 
 
@@ -143,12 +148,27 @@ def _run_command(args: argparse.Namespace) -> int:
         sys.stderr.write(f"error: {e}\n")
         return 1
     support = resolution.get("execution_support")
-    if support != "executable_adapter":
-        sys.stderr.write(
-            f"error: benchmark {plan.benchmark_id!r} has execution_support={support!r}; "
-            "requires executable_adapter\n",
-        )
-        return 1
+    diagnostic = bool(getattr(args, "diagnostic", False))
+    if support == "executable_adapter":
+        if diagnostic:
+            sys.stderr.write(
+                "error: --diagnostic is only valid for demoted benchmarks; "
+                f"{plan.benchmark_id!r} has execution_support='executable_adapter'\n",
+            )
+            return 1
+    else:
+        benchmark = load_benchmark_catalog().by_id_or_alias(plan.benchmark_id)
+        if not (diagnostic and diagnostic_capable_benchmark(benchmark)):
+            hint = (
+                "; opt in with --diagnostic for a labeled, non-registering run"
+                if diagnostic_capable_benchmark(benchmark)
+                else ""
+            )
+            sys.stderr.write(
+                f"error: benchmark {plan.benchmark_id!r} has execution_support={support!r}; "
+                f"requires executable_adapter{hint}\n",
+            )
+            return 1
 
     _print_plan_envelope(plan, slice_resolution=resolution)
     if args.dry_run:
@@ -313,11 +333,15 @@ def _catalog_model_show(args: argparse.Namespace) -> int:
 def _export_warehouse(args: argparse.Namespace) -> int:
     from bencheval.export import export_evidence
 
-    output = export_evidence(
-        Path(args.evidence),
-        fmt=args.format,
-        output_dir=Path(args.output),
-    )
+    try:
+        output = export_evidence(
+            Path(args.evidence),
+            fmt=args.format,
+            output_dir=Path(args.output),
+        )
+    except OSError as e:
+        sys.stderr.write(f"error: cannot write export output {args.output}: {e}\n")
+        return 1
     payload = {"format": args.format, "output": str(output.resolve())}
     sys.stdout.write(json.dumps(payload, indent=2) + "\n")
     return 0
@@ -326,15 +350,19 @@ def _export_warehouse(args: argparse.Namespace) -> int:
 def _export_run_bundle(args: argparse.Namespace) -> int:
     from bencheval.run_bundle import RedactionMode, export_run_bundle
 
-    archive = export_run_bundle(
-        evidence_path=Path(args.evidence),
-        output_dir=Path(args.output),
-        raw_dir=args.raw_dir,
-        redaction=cast("RedactionMode", args.redaction),
-        compare_baseline=args.compare_baseline,
-        compare_current=args.compare_current,
-        compare_report_path=args.compare_report,
-    )
+    try:
+        archive = export_run_bundle(
+            evidence_path=Path(args.evidence),
+            output_dir=Path(args.output),
+            raw_dir=args.raw_dir,
+            redaction=cast("RedactionMode", args.redaction),
+            compare_baseline=args.compare_baseline,
+            compare_current=args.compare_current,
+            compare_report_path=args.compare_report,
+        )
+    except OSError as e:
+        sys.stderr.write(f"error: cannot write bundle output {args.output}: {e}\n")
+        return 1
     payload = {
         "bundle_dir": str(Path(args.output).resolve()),
         "archive": str(archive.resolve()),
@@ -448,6 +476,9 @@ def _compare_run(args: argparse.Namespace) -> int:
     except BenchEvalError as e:
         sys.stderr.write(f"error: {e}\n")
         return 1
+    except OSError as e:
+        sys.stderr.write(f"error: cannot write comparison output {args.output}: {e}\n")
+        return 1
 
 
 def _report_generate(args: argparse.Namespace) -> int:
@@ -459,8 +490,12 @@ def _report_generate(args: argparse.Namespace) -> int:
     except BenchEvalError as e:
         sys.stderr.write(f"error: {e}\n")
         return 1
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(report_md, encoding="utf-8")
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(report_md, encoding="utf-8")
+    except OSError as e:
+        sys.stderr.write(f"error: cannot write report output {output_path}: {e}\n")
+        return 1
     payload = {
         "evidence": str(evidence_path.resolve()),
         "output": str(output_path.resolve()),
@@ -513,6 +548,68 @@ def _validate_register_artifact_paths(
     return None
 
 
+def _qualify_passed_registration(
+    *,
+    evidence: Path | None,
+    benchmark: str | None,
+    slice_id: str | None,
+    run_id: str,
+    model_id: str,
+    runtime_id: str | None,
+    allow_missing: bool,
+) -> str | None:
+    """Gate the proof-bearing ``passed`` status on live-proof-qualified evidence.
+
+    ``passed`` claims the lane's evidence shows real native-harness execution;
+    it is not a synonym for "the JSONL parsed". Non-passed lifecycle rows keep
+    the permissive registration contract above.
+    """
+    if allow_missing:
+        return (
+            "error: --status passed requires real evidence; --allow-missing-artifacts is dev-only"
+        )
+    if not benchmark or not slice_id:
+        return "error: --status passed requires explicit --benchmark and --slice"
+    if evidence is None:
+        return "error: --status passed requires --evidence"
+    # Break circular promotion: only catalog-executable benchmarks may register
+    # proof-bearing ``passed`` runs. Diagnostic evidence from a demoted
+    # benchmark can never register passed — a human flips ``executable`` only
+    # after reviewing qualified live evidence.
+    try:
+        entry = load_benchmark_catalog().by_id_or_alias(benchmark)
+    except BenchEvalError as e:
+        return f"error: passed registration benchmark lookup failed: {e}"
+    if not entry.executable:
+        return (
+            "error: --status passed requires a catalog-executable benchmark; "
+            f"{benchmark!r} is demoted (executable: false) and diagnostic evidence "
+            "never registers passed"
+        )
+    try:
+        qualification = qualify_lane(
+            evidence,
+            expected_instances=1,
+            benchmark_id=benchmark,
+            slice_id=slice_id,
+            require_runtime=runtime_id is not None,
+        )
+    except BenchEvalError as e:
+        return f"error: passed registration evidence failed to load: {e}"
+    if not qualification.ok:
+        reasons = "; ".join(qualification.reasons)
+        return f"error: passed registration evidence is not live-proof qualified: {reasons}"
+    mismatch = registration_identity_mismatch(
+        qualification.eligible_rows,
+        run_id=run_id,
+        model_id=model_id,
+        runtime_id=runtime_id,
+    )
+    if mismatch is not None:
+        return f"error: passed registration identity mismatch: {mismatch}"
+    return None
+
+
 def _evidence_register(args: argparse.Namespace) -> int:
     from pydantic import ValidationError
 
@@ -531,6 +628,19 @@ def _evidence_register(args: argparse.Namespace) -> int:
     if artifact_err is not None:
         sys.stderr.write(f"{artifact_err}\n")
         return 1
+    if args.status == "passed":
+        passed_err = _qualify_passed_registration(
+            evidence=args.evidence,
+            benchmark=args.benchmark,
+            slice_id=args.slice,
+            run_id=args.run_id,
+            model_id=args.model,
+            runtime_id=args.runtime,
+            allow_missing=allow_missing,
+        )
+        if passed_err is not None:
+            sys.stderr.write(f"{passed_err}\n")
+            return 1
     try:
         record = LiveRunRecord(
             run_id=args.run_id,
@@ -547,7 +657,7 @@ def _evidence_register(args: argparse.Namespace) -> int:
             generated_at=datetime.now(tz=UTC),
         )
         target = append_live_run(manifest_path, record)
-    except (LiveRunManifestError, ValidationError, ValueError) as e:
+    except (LiveRunManifestError, ValidationError, ValueError, OSError) as e:
         sys.stderr.write(f"error: {e}\n")
         return 1
     payload = {
@@ -609,6 +719,15 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--agent", default=None)
     run.add_argument("--provider", default=DEFAULT_PROVIDER_ID)
     run.add_argument("--dry-run", action="store_true")
+    run.add_argument(
+        "--diagnostic",
+        action="store_true",
+        help=(
+            "Opt in to executing a demoted (non-executable) benchmark that still "
+            "has a wired adapter; evidence is labeled 'diagnostic' and can never "
+            "register passed"
+        ),
+    )
     run.add_argument("-y", "--yes", action="store_true", help="Skip continue prompt")
     run.add_argument("--output", default=None)
     run.add_argument("--artifacts-dir", default=None)

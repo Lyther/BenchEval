@@ -263,3 +263,15 @@ def test_all_executable_plans_pin_a_benchmark_version() -> None:
 
     assert set(versions) == {target[0] for target in targets}
     assert all(version and version.strip() for version in versions.values()), versions
+
+
+def test_runtime_comparison_excludes_diagnostic_rows() -> None:
+    baseline = [_runtime_record(instance_id="tb-001", runtime_id="claude-code")]
+    current = [_runtime_record(instance_id="tb-001", runtime_id="codex-cli")]
+    assert assess_runtime_comparison_validity(baseline, current).valid is True
+
+    diagnostic_current = [current[0].model_copy(update={"interpretation_label": "diagnostic"})]
+    verdict = assess_runtime_comparison_validity(baseline, diagnostic_current)
+    assert verdict.valid is False
+    assert verdict.interpretation_label == "diagnostic_only"
+    assert any("diagnostic" in reason for reason in verdict.reasons)

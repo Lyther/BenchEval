@@ -16,6 +16,7 @@ TRANSIENT_ARTIFACT_DIR_NAMES: frozenset[str] = frozenset(
     {
         "agent-workspace",
         "harbor-package",
+        "hle-datasets-cache",
         "materialized-workspace",
     },
 )

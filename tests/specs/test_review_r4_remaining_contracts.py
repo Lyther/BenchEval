@@ -27,6 +27,8 @@ SUBSTITUTE_JUSTIFICATION
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -37,8 +39,25 @@ from bencheval.control_plane_executor import execute_control_plane_run
 from bencheval.evidence import read_evidence_jsonl
 from bencheval.gpqa_adapter import GpqaCliResult, run_gpqa_slice
 from bencheval.hle_adapter import HleCliResult, run_hle_slice
+from bencheval.runtime_registry import load_runtime_catalog
 from bencheval.swebench_adapter import SwebenchCliResult, run_swebench_instance
-from bencheval.terminal_bench_harbor import HarborCliResult
+from bencheval.terminal_bench_harbor import HarborCliResult, harbor_agent_for_runtime
+
+
+def _legacy_pass_result(runtime_id: str) -> str:
+    """Legacy-verdict result.json carrying the agent_info identity the run path requires."""
+    pin = load_runtime_catalog().by_id(runtime_id).versioning.agent_version_pin
+    return json.dumps(
+        {
+            "resolved": True,
+            "agent_info": {
+                "name": harbor_agent_for_runtime(runtime_id),
+                "version": pin,
+                "model_info": None,
+            },
+        },
+    )
+
 
 _MODEL = "kimi-k2.7-code"
 _PROXY_ENV_NAMES = (
@@ -86,7 +105,9 @@ def test_runtime_identity_tracks_proxy_presence_without_hashing_credential_value
                 assert proxy_name in env_file.read_text(encoding="utf-8")
             jobs_dir = Path(command[command.index("--jobs-dir") + 1])
             jobs_dir.mkdir(parents=True, exist_ok=True)
-            (jobs_dir / "result.json").write_text('{"resolved": true}\n', encoding="utf-8")
+            (jobs_dir / "result.json").write_text(
+                _legacy_pass_result("claude-code") + "\n", encoding="utf-8"
+            )
             return HarborCliResult(0, "", "", 0.01, tuple(command))
 
         evidence_path = tmp_path / f"{label}.jsonl"
@@ -171,7 +192,9 @@ def test_bfcl_launch_timeout_does_not_exceed_one_instance_budget(
         benchmark_id="bfcl-v4",
         slice_id="smoke-5",
         runtime_id=None,
-        model_id=_MODEL,
+        # The only config/models.yaml entry the pinned upstream
+        # MODEL_CONFIG_MAPPING supports; the launch gate rejects others first.
+        model_id="gpt-5.2-2025-12-11",
     )
     plan = base_plan.model_copy(
         update={
@@ -187,7 +210,9 @@ def test_bfcl_launch_timeout_does_not_exceed_one_instance_budget(
         *,
         cwd: Path | None,
         timeout_sec: int,
+        env: Mapping[str, str],
     ) -> BfclCliResult:
+        del env
         observed.append(timeout_sec)
         raise _LaunchObserved
 
@@ -198,6 +223,7 @@ def test_bfcl_launch_timeout_does_not_exceed_one_instance_budget(
             artifacts_dir=tmp_path / "artifacts",
             repo_root=tmp_path,
             process_runner=observe_launch,
+            harness_version="bfcl-eval@2026.3.23",
         )
 
     assert observed == [budget_sec]

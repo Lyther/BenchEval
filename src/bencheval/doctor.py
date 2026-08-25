@@ -256,7 +256,7 @@ def run_doctor(
                     f"inspect_ai {version} available",
                 ),
             )
-        if execution_profile == "E1":
+        if execution_profile in ("E1", "E4"):
             if docker_available():
                 checks.append(
                     DoctorCheck("docker", "pass", "docker daemon reachable"),
@@ -266,7 +266,8 @@ def run_doctor(
                     DoctorCheck(
                         "docker",
                         "fail",
-                        "docker is required for E1 Inspect runs but is unavailable",
+                        f"docker is required for {execution_profile} Inspect runs "
+                        "but is unavailable",
                     ),
                 )
         elif execution_profile is None:
@@ -326,7 +327,8 @@ def run_doctor(
 def run_pilot_doctor(*, model_id: str | None = None) -> DoctorReport:
     """Preflight the active Terminal-Bench minimum pilot matrix.
 
-    Demoted BFCL/SWE diagnostics are deliberately outside this blocking profile.
+    The Terminal-Bench lanes are the blocking profile; BFCL/SWE checks are
+    deliberately outside it (bfcl-v4 is executable but not a pilot lane).
     When a model id is supplied, provider credential env vars are also checked.
     """
     checks: list[DoctorCheck] = [

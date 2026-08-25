@@ -25,7 +25,7 @@ Product spine: `benchmark → (runtime | agent)? → model via provider → evid
 ## CLI surface
 
 ```text
-bencheval list [--format json]                          # runnable benchmarks (default: 3)
+bencheval list [--format json]                          # runnable benchmarks (default: 4)
 bencheval benchmark list|show|slices …                  # compat catalog
 bencheval catalog runtime|provider|agent|model list|show
 bencheval doctor --backend … | --profile pilot --model <id>

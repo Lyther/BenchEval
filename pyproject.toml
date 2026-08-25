@@ -21,6 +21,7 @@ bencheval = "bencheval.cli:main"
 [tool.hatch.build.targets.wheel.force-include]
 "config/benchmarks.yaml" = "bencheval/_bundled/config/benchmarks.yaml"
 "config/models.yaml" = "bencheval/_bundled/config/models.yaml"
+"config/bfcl-v4-supported-models.yaml" = "bencheval/_bundled/config/bfcl-v4-supported-models.yaml"
 "config/runtimes" = "bencheval/_bundled/config/runtimes"
 "config/providers" = "bencheval/_bundled/config/providers"
 "config/agents" = "bencheval/_bundled/config/agents"
@@ -49,6 +50,30 @@ dev = [
     "pytest-cov>=7.1.0",
     "ruff>=0.15.10",
 ]
+bfcl = [
+    # Exact adapter/catalog pin; this package supplies both `bfcl` and
+    # `bfcl_eval`. Keep in a repository-owned group: its upstream exact pins
+    # require the audited uv overrides below, which package extras cannot carry.
+    "bfcl-eval==2026.3.23",
+    # bfcl-eval 2026.3.23 eagerly imports qwen-agent at CLI startup but omits
+    # this runtime dependency; without it even `bfcl --help` fails.
+    "soundfile>=0.13.1,<0.14.0",
+]
+
+[tool.uv]
+# bfcl-eval 2026.3.23 pins two vulnerable transitive versions even though its
+# FileLock usage and datamodel compatibility branch support the patched APIs.
+# Keep these overrides exact: they are part of the separately tested BFCL
+# environment and must not silently move without re-running that smoke proof.
+override-dependencies = [
+    "datamodel-code-generator==0.64.0",
+    "filelock==3.32.4",
+]
+# Security floor on a transitive dep: inspect-evals 0.8.0 depends on datasets
+# unconstrained and resolved 4.8.4, flagged by PYSEC-2026-3716 (fixed in 5.0.1).
+# A constraint, not a dependency: bencheval core never imports datasets; only
+# the eval extra reaches it via inspect-evals (and hle_adapter at run time).
+constraint-dependencies = ["datasets>=5.0.1"]
 
 [tool.ruff]
 line-length = 100

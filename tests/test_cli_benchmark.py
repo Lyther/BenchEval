@@ -41,10 +41,10 @@ def test_benchmark_list_defaults_to_executable_only() -> None:
     result = _run("benchmark", "list", "--format", "json")
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert payload["count"] == 3
+    assert payload["count"] == 4
     ids = {benchmark["id"] for benchmark in payload["benchmarks"]}
-    assert ids == {"terminal-bench", "gpqa-diamond", "hle"}
-    assert {"swe-bench-verified", "bfcl-v4", "swe-bench-pro", "cybergym", "exploitgym"}.isdisjoint(
+    assert ids == {"terminal-bench", "gpqa-diamond", "hle", "bfcl-v4"}
+    assert {"swe-bench-verified", "swe-bench-pro", "cybergym", "exploitgym"}.isdisjoint(
         ids,
     )
 
@@ -60,4 +60,4 @@ def test_catalog_benchmark_list_matches() -> None:
     result = _run("catalog", "benchmark", "list", "--format", "json")
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert payload["count"] == 3
+    assert payload["count"] == 4

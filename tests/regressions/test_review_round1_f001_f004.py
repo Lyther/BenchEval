@@ -72,21 +72,45 @@ def _run_verify_auth(
 
 
 def _write_valid_evidence(path: Path, *, run_id: str = "run-passed") -> None:
+    # Passed registration is proof-bearing: the positive row must qualify as a
+    # real native-harness attempt (native verifier artifact on disk, full
+    # provenance axes, pass@k-eligible) and match the CLI identity flags.
+    verifier = path.parent / "native-verifier.json"
+    verifier.write_text('{"resolved": true}\n', encoding="utf-8")
     record = EvidenceRecord(
         run_id=run_id,
         task_id="terminal-bench/fix-git",
         model_id="claude-haiku-4-5",
         execution_profile="E2",
+        backend="harbor",
         primary_pass=True,
         partial_score=1.0,
         cost_usd=0.01,
         latency_sec=10.0,
+        artifact_paths=[str(verifier.resolve())],
+        verifier_log_path=str(verifier.resolve()),
         created_at=datetime(2026, 6, 18, 15, 5, tzinfo=UTC),
+        benchmark_id="terminal-bench",
+        benchmark_version="terminal-bench@2.1",
+        slice_id="smoke-5",
+        adapter_id="terminal-bench-harbor",
+        harness_kind="harbor",
+        harness_version="harbor@0.1.0",
+        runtime_id="claude-code",
+        runtime_version="claude-code@1.0.0",
+        runtime_config_hash="sha256:runtime-config",
+        provider_id="bytellm",
+        provider_config_hash="sha256:provider-config",
+        instance_id="fix-git",
+        interpretation_label="adapter_smoke",
+        verifier_integrity_label="native",
+        attempt_validity="valid",
+        counts_toward_pass_at_k=True,
     )
     path.write_text(record.model_dump_json() + "\n", encoding="utf-8")
 
 
-def test_verify_auth_routes_anthropic_base_url_and_masks_key() -> None:
+def test_verify_auth_routes_anthropic_base_url_without_logging_key_material() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     server = HTTPServer(("127.0.0.1", 0), _OkHandler)
     port = server.server_address[1]
@@ -108,7 +132,8 @@ def test_verify_auth_routes_anthropic_base_url_and_masks_key() -> None:
 
     assert proc.returncode == 0, proc.stderr
     assert secret not in proc.stderr + proc.stdout
-    assert "****XYZZ" in proc.stderr
+    # F002: credential suffixes are never logged (endpoint identity suffices).
+    assert "XYZZ" not in proc.stderr + proc.stdout
 
 
 def test_verify_auth_routes_openai_base_url() -> None:
@@ -169,7 +194,8 @@ def test_verify_auth_prefers_bytellm_key_and_probes_protected_route() -> None:
     assert seen["x_api_key"] == secret
     assert secret not in proc.stderr + proc.stdout
     assert "stale-openai-key" not in proc.stderr + proc.stdout
-    assert "****ABCD" in proc.stderr
+    # F002: credential suffixes are never logged (endpoint identity suffices).
+    assert "ABCD" not in proc.stderr + proc.stdout
 
 
 def test_cli_register_accepts_status_passed(tmp_path: Path) -> None:
@@ -185,6 +211,12 @@ def test_cli_register_accepts_status_passed(tmp_path: Path) -> None:
             "run-passed",
             "--model",
             "claude-haiku-4-5",
+            "--benchmark",
+            "terminal-bench",
+            "--slice",
+            "smoke-5",
+            "--runtime",
+            "claude-code",
             "--evidence",
             str(evidence),
             "--status",
