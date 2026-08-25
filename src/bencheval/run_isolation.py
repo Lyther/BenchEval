@@ -17,6 +17,7 @@ AUTHORITATIVE_ARTIFACT_NAMES: frozenset[str] = frozenset(
         "verifier.json",
         "result.json",
         "verdict.json",
+        "report.json",
         "official_scores.json",
         "gpqa_summary.json",
         "hle_summary.json",

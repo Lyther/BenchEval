@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 import subprocess
 import time
 from collections.abc import Sequence
@@ -14,8 +16,18 @@ from bencheval.backends import INSPECT_BACKEND
 from bencheval.domain import FailureLabel, RunPlan
 from bencheval.exceptions import AdapterFailureError, BenchEvalError
 from bencheval.path_safety import validate_control_plane_instance_id
+from bencheval.run_isolation import (
+    AUTHORITATIVE_ARTIFACT_NAMES,
+    dir_identity_error,
+    open_owned_dir_fd,
+    prepare_instance_artifacts_dir,
+    write_text_at_exclusive,
+)
 
 SWEBENCH_ADAPTER_ID = "swebench"
+_INSTANCE_DIR_ROLE = "swebench instance directory"
+_OFFICIAL_REPORT_NAME = "report.json"
+_WORKSPACE_DIFF_NAME = "workspace.diff"
 
 
 def _as_bool_verdict(value: object) -> bool | None:
@@ -96,6 +108,8 @@ def _default_process_runner(
             cwd=str(cwd) if cwd is not None else None,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=timeout_sec,
         )
@@ -124,17 +138,125 @@ def _default_process_runner(
     )
 
 
-def _write_text(path: Path, content: str) -> str:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
-    return str(path.resolve())
-
-
 def _rel_path(path: str, repo_root: Path) -> str:
     try:
         return str(Path(path).resolve().relative_to(repo_root))
     except ValueError:
         return path
+
+
+def _reject_instance_swap(
+    *,
+    instance_dir: Path,
+    instance_fd: int,
+    cli: SwebenchCliResult,
+) -> None:
+    identity_error = dir_identity_error(instance_fd, instance_dir, role=_INSTANCE_DIR_ROLE)
+    if identity_error is not None:
+        raise AdapterFailureError(
+            identity_error,
+            failure_label="evidence_corrupt",
+            latency_sec=cli.latency_sec,
+            adapter_metadata={"swebench_command": " ".join(cli.command)},
+        )
+
+
+def _write_owned_logs(
+    *,
+    instance_dir: Path,
+    instance_fd: int,
+    cli: SwebenchCliResult,
+) -> tuple[str, str]:
+    _reject_instance_swap(instance_dir=instance_dir, instance_fd=instance_fd, cli=cli)
+    write_text_at_exclusive(instance_fd, "stdout.log", cli.stdout)
+    write_text_at_exclusive(instance_fd, "stderr.log", cli.stderr)
+    _reject_instance_swap(instance_dir=instance_dir, instance_fd=instance_fd, cli=cli)
+    return str((instance_dir / "stdout.log").resolve()), str(
+        (instance_dir / "stderr.log").resolve(),
+    )
+
+
+def _read_official_report_json(instance_fd: int) -> dict[str, object] | None:
+    try:
+        report_fd = os.open(
+            _OFFICIAL_REPORT_NAME,
+            os.O_RDONLY | os.O_NOFOLLOW,
+            dir_fd=instance_fd,
+        )
+    except OSError:
+        return None
+    parsed: object | None = None
+    try:
+        opened = os.fstat(report_fd)
+        if not stat.S_ISREG(opened.st_mode):
+            return None
+        with os.fdopen(report_fd, encoding="utf-8") as handle:
+            report_fd = -1
+            parsed = json.loads(handle.read())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    finally:
+        if report_fd >= 0:
+            os.close(report_fd)
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _owned_regular_file_path(
+    instance_fd: int,
+    name: str,
+    artifacts_dir: Path,
+) -> str | None:
+    try:
+        file_fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=instance_fd)
+    except OSError:
+        return None
+    try:
+        opened = os.fstat(file_fd)
+        if not stat.S_ISREG(opened.st_mode):
+            return None
+    finally:
+        os.close(file_fd)
+    return str((artifacts_dir / name).resolve())
+
+
+def _official_instance_report(
+    instance_fd: int,
+    instance_id: str,
+    artifacts_dir: Path,
+) -> tuple[bool, dict[str, object], Path] | None:
+    parsed = _read_official_report_json(instance_fd)
+    if parsed is None or instance_id not in parsed:
+        return None
+    instance = parsed[instance_id]
+    if not isinstance(instance, dict):
+        return None
+    resolved = _as_bool_verdict(instance.get("resolved"))
+    if resolved is None:
+        return None
+    return resolved, instance, artifacts_dir / _OFFICIAL_REPORT_NAME
+
+
+def _score_from_official(
+    *,
+    cli: SwebenchCliResult,
+    official: tuple[bool, dict[str, object], Path] | None,
+) -> tuple[bool, float, FailureLabel | None, dict[str, object], str | None, float]:
+    native: dict[str, object] = {"returncode": cli.returncode, "backend": INSPECT_BACKEND}
+    if official is None:
+        failure: FailureLabel = (
+            "harness_failure" if cli.returncode != 0 else "runtime_output_unparseable"
+        )
+        return False, 0.0, failure, native, None, 0.0
+    resolved, instance, report = official
+    native = {**native, **instance}
+    verifier_path = str(report.resolve())
+    cost = instance.get("cost_usd")
+    cost_usd = float(cost) if isinstance(cost, (int, float)) and not isinstance(cost, bool) else 0.0
+    if cli.returncode != 0:
+        return False, 0.0, "harness_failure", native, verifier_path, cost_usd
+    if resolved:
+        return True, 1.0, None, native, verifier_path, cost_usd
+    return False, 0.0, "model_wrong_solution", native, verifier_path, cost_usd
 
 
 def parse_swebench_instance_outcome(
@@ -144,77 +266,33 @@ def parse_swebench_instance_outcome(
     artifacts_dir: Path,
     repo_root: Path,
     harness_version: str | None,
+    artifacts_fd: int | None = None,
 ) -> SwebenchInstanceOutcome:
-    stdout_file = artifacts_dir / "stdout.log"
-    stderr_file = artifacts_dir / "stderr.log"
-    stdout_rel = _write_text(stdout_file, cli.stdout)
-    stderr_rel = _write_text(stderr_file, cli.stderr)
+    owned_fd = artifacts_fd is None
+    instance_fd = artifacts_fd
+    if instance_fd is None:
+        instance_fd = open_owned_dir_fd(artifacts_dir, role=_INSTANCE_DIR_ROLE)
+    try:
+        stdout_abs, stderr_abs = _write_owned_logs(
+            instance_dir=artifacts_dir,
+            instance_fd=instance_fd,
+            cli=cli,
+        )
+        official = _official_instance_report(instance_fd, instance_id, artifacts_dir)
+        _reject_instance_swap(instance_dir=artifacts_dir, instance_fd=instance_fd, cli=cli)
+        diff_path = _owned_regular_file_path(
+            instance_fd,
+            _WORKSPACE_DIFF_NAME,
+            artifacts_dir,
+        )
+        _reject_instance_swap(instance_dir=artifacts_dir, instance_fd=instance_fd, cli=cli)
+    finally:
+        if owned_fd:
+            os.close(instance_fd)
 
-    verifier_path: str | None = None
-    diff_path: str | None = None
-    native: dict[str, object] = {"returncode": cli.returncode, "backend": INSPECT_BACKEND}
-    primary_pass = cli.returncode == 0
-    partial_score = 1.0 if primary_pass else 0.0
-    failure_class: FailureLabel | None = None
-    cost_usd = 0.0
-
-    verifier_file = artifacts_dir / "verifier.json"
-    if not verifier_file.is_file():
-        verifier_file = artifacts_dir / "result.json"
-    if verifier_file.is_file():
-        verifier_path = str(verifier_file.resolve())
-        try:
-            parsed = json.loads(verifier_file.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            failure_class = "runtime_output_unparseable"
-            primary_pass = False
-            partial_score = 0.0
-        else:
-            if isinstance(parsed, dict):
-                native = {**native, **parsed}
-                verdict: bool | None = None
-                if "resolved" in parsed:
-                    verdict = _as_bool_verdict(parsed["resolved"])
-                elif "tests_passed" in parsed:
-                    verdict = _as_bool_verdict(parsed["tests_passed"])
-                if "resolved" in parsed or "tests_passed" in parsed:
-                    if verdict is None:
-                        failure_class = "runtime_output_unparseable"
-                        primary_pass = False
-                        partial_score = 0.0
-                    else:
-                        primary_pass = verdict
-                        partial_score = 1.0 if primary_pass else 0.0
-                else:
-                    failure_class = "runtime_output_unparseable"
-                    primary_pass = False
-                    partial_score = 0.0
-                if "cost_usd" in parsed and isinstance(parsed["cost_usd"], (int, float)):
-                    cost_usd = float(parsed["cost_usd"])
-            else:
-                failure_class = "runtime_output_unparseable"
-                primary_pass = False
-                partial_score = 0.0
-    elif cli.returncode != 0:
-        failure_class = "harness_failure"
-    elif cli.returncode == 0:
-        failure_class = "harness_failure"
-        primary_pass = False
-        partial_score = 0.0
-
-    if cli.returncode != 0:
-        primary_pass = False
-        partial_score = 0.0
-        if failure_class is None:
-            failure_class = "harness_failure"
-
-    diff_file = artifacts_dir / "workspace.diff"
-    if diff_file.is_file():
-        diff_path = str(diff_file.resolve())
-
-    if not primary_pass and failure_class is None:
-        failure_class = "model_wrong_solution"
-
+    primary_pass, partial_score, failure_class, native, verifier_path, cost_usd = (
+        _score_from_official(cli=cli, official=official)
+    )
     metadata = {
         "adapter_id": SWEBENCH_ADAPTER_ID,
         "harness_kind": "swebench-native",
@@ -222,7 +300,6 @@ def parse_swebench_instance_outcome(
     }
     if harness_version:
         metadata["harness_version"] = harness_version
-
     return SwebenchInstanceOutcome(
         instance_id=instance_id,
         primary_pass=primary_pass,
@@ -231,8 +308,8 @@ def parse_swebench_instance_outcome(
         latency_sec=cli.latency_sec,
         native_score=native,
         failure_class=failure_class,
-        stdout_path=_rel_path(stdout_rel, repo_root),
-        stderr_path=_rel_path(stderr_rel, repo_root),
+        stdout_path=_rel_path(stdout_abs, repo_root),
+        stderr_path=_rel_path(stderr_abs, repo_root),
         verifier_log_path=_rel_path(verifier_path, repo_root) if verifier_path else None,
         workspace_diff_path=_rel_path(diff_path, repo_root) if diff_path else None,
         adapter_metadata=metadata,
@@ -252,25 +329,33 @@ def run_swebench_instance(
     if plan.adapter_id != SWEBENCH_ADAPTER_ID:
         raise BenchEvalError(f"swebench adapter cannot run adapter_id={plan.adapter_id!r}")
     validate_control_plane_instance_id(instance_id)
-    instance_dir = artifacts_dir / instance_id
-    from bencheval.run_isolation import prepare_instance_artifacts_dir
-
-    instance_dir = prepare_instance_artifacts_dir(instance_dir)
-    command = build_swebench_run_command(
-        plan=plan,
-        instance_id=instance_id,
-        artifacts_dir=instance_dir,
+    instance_dir = prepare_instance_artifacts_dir(
+        artifacts_dir / instance_id,
+        clear_names=AUTHORITATIVE_ARTIFACT_NAMES
+        | frozenset({_OFFICIAL_REPORT_NAME, _WORKSPACE_DIFF_NAME}),
     )
-    wall = timeout_sec if timeout_sec is not None else max(1, plan.max_wall_clock_sec_per_instance)
-    runner = process_runner or _default_process_runner
-    cli = runner(command, cwd=repo_root, timeout_sec=wall)
-    return parse_swebench_instance_outcome(
-        instance_id=instance_id,
-        cli=cli,
-        artifacts_dir=instance_dir,
-        repo_root=repo_root,
-        harness_version=harness_version,
-    )
+    instance_fd = open_owned_dir_fd(instance_dir, role=_INSTANCE_DIR_ROLE)
+    try:
+        command = build_swebench_run_command(
+            plan=plan,
+            instance_id=instance_id,
+            artifacts_dir=instance_dir,
+        )
+        wall = (
+            timeout_sec if timeout_sec is not None else max(1, plan.max_wall_clock_sec_per_instance)
+        )
+        runner = process_runner or _default_process_runner
+        cli = runner(command, cwd=repo_root, timeout_sec=wall)
+        return parse_swebench_instance_outcome(
+            instance_id=instance_id,
+            cli=cli,
+            artifacts_dir=instance_dir,
+            repo_root=repo_root,
+            harness_version=harness_version,
+            artifacts_fd=instance_fd,
+        )
+    finally:
+        os.close(instance_fd)
 
 
 __all__ = [
