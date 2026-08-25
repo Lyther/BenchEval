@@ -238,6 +238,59 @@ def test_cli_register_appends_record(tmp_path: Path) -> None:
     assert record.generated_at.tzinfo is not None
 
 
+def test_cli_archive_may_omit_filled_axes_but_not_replace_them(tmp_path: Path) -> None:
+    manifest = tmp_path / "runs.jsonl"
+    common = [
+        "evidence",
+        "register",
+        "--run-id",
+        "run-fill-once-cli",
+        "--model",
+        "gpt-5.2-2025-12-11",
+        "--host",
+        "dev-box-cpu",
+        "--manifest-path",
+        str(manifest),
+        "--allow-missing-artifacts",
+    ]
+
+    completed = main(
+        [
+            *common,
+            "--benchmark",
+            "terminal-bench",
+            "--slice",
+            "core-8",
+            "--runtime",
+            "claude-code",
+            "--status",
+            "completed",
+        ],
+    )
+    archived_without_axes = main([*common, "--status", "archived"])
+    archived_with_drift = main(
+        [
+            *common,
+            "--benchmark",
+            "hle",
+            "--status",
+            "archived",
+        ],
+    )
+
+    assert completed == 0
+    assert archived_without_axes == 0
+    assert archived_with_drift == 1
+    rows = read_live_runs(manifest)
+    assert len(rows) == 2
+    assert (rows[0].benchmark, rows[0].slice_id, rows[0].runtime) == (
+        "terminal-bench",
+        "core-8",
+        "claude-code",
+    )
+    assert (rows[1].benchmark, rows[1].slice_id, rows[1].runtime) == (None, None, None)
+
+
 def test_cli_register_rejects_secret(tmp_path: Path) -> None:
     manifest = tmp_path / "runs.jsonl"
     code = main(
