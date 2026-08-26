@@ -2,16 +2,9 @@
 
 **Status:** SUPERSEDED (2026-07 product-spine prune) · **Component:** historical external-command lane (removed) · **Type:** archived defect brief
 
-> **Supersession.** `src/bencheval/external_command_adapter.py`, `bencheval run --config`, and the
-> generic external-command profile lane are **removed** from the admitted product spine. Do not
-> treat the "design landed" claims below as current implementation. Live product path is
-> `benchmark → (runtime | agent)? → model via provider → evidence` (see README / architecture).
-> This file is retained only as historical problem context.
+> **Supersession.** `src/bencheval/external_command_adapter.py`, `bencheval run --config`, and the generic external-command profile lane are **removed** from the admitted product spine. Do not treat the "design landed" claims below as current implementation. Live product path is `benchmark → (runtime | agent)? → model via provider → evidence` (see README / architecture). This file is retained only as historical problem context.
 >
-> **Historical resolution note (pre-prune).** The problem statement described the state *before*
-> external-command stall/attribution work. That lane previously shipped progress-aware stall
-> handling, container-safe cleanup, and model provenance fields — then the whole external-command
-> product surface was pruned. Re-admit only via a deliberate new adapter design if needed.
+> **Historical resolution note (pre-prune).** The problem statement described the state *before* external-command stall/attribution work. That lane previously shipped progress-aware stall handling, container-safe cleanup, and model provenance fields — then the whole external-command product surface was pruned. Re-admit only via a deliberate new adapter design if needed.
 
 ## Summary
 

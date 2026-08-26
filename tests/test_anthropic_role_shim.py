@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from bencheval.anthropic_role_shim import _forward_headers, normalize_anthropic_payload
 
 
@@ -48,6 +50,69 @@ def test_normalize_appends_existing_system_prompt() -> None:
     normalized = normalize_anthropic_payload(payload)
 
     assert normalized["system"] == "existing\n\nextra"
+    assert normalized["messages"] == [{"role": "user", "content": "hello"}]
+
+
+def test_normalize_developer_role_in_responses_input() -> None:
+    payload = {
+        "model": "kimi-k2.7-code",
+        "input": [
+            {"role": "developer", "content": "follow the repo"},
+            {"role": "user", "content": "fix git"},
+        ],
+    }
+
+    normalized = normalize_anthropic_payload(payload)
+
+    assert normalized["input"] == [
+        {"role": "system", "content": "follow the repo"},
+        {"role": "user", "content": "fix git"},
+    ]
+    assert "developer" not in json.dumps(normalized)
+
+
+def test_normalize_developer_role_input_text_blocks() -> None:
+    payload = {
+        "model": "kimi-k2.7-code",
+        "input": [
+            {
+                "type": "message",
+                "role": "developer",
+                "content": [{"type": "input_text", "text": "follow the repo"}],
+            },
+            {"role": "user", "content": "fix git"},
+        ],
+    }
+
+    normalized = normalize_anthropic_payload(payload)
+
+    assert normalized["input"][0]["role"] == "system"
+    assert normalized["input"][0]["content"] == [
+        {"type": "input_text", "text": "follow the repo"},
+    ]
+    assert "developer" not in json.dumps(normalized)
+
+
+def test_normalize_string_input_is_unchanged() -> None:
+    payload = {"model": "kimi-k2.7-code", "input": "just a string"}
+
+    normalized = normalize_anthropic_payload(payload)
+
+    assert normalized["input"] == "just a string"
+
+
+def test_normalize_developer_message_like_system_role() -> None:
+    payload = {
+        "model": "kimi-k2.7-code",
+        "messages": [
+            {"role": "developer", "content": "follow the repo"},
+            {"role": "user", "content": "hello"},
+        ],
+    }
+
+    normalized = normalize_anthropic_payload(payload)
+
+    assert normalized["system"] == "follow the repo"
     assert normalized["messages"] == [{"role": "user", "content": "hello"}]
 
 

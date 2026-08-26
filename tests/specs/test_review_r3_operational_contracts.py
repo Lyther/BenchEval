@@ -185,7 +185,7 @@ def test_control_plane_stops_before_launching_past_the_cost_budget(tmp_path: Pat
     calls: list[str] = []
 
     def charged_runner(command, *, cwd: Path | None, timeout_sec: int) -> HarborCliResult:
-        instance_id = command[command.index("--task-name") + 1]
+        instance_id = command[command.index("--include-task-name") + 1].rsplit("/", 1)[-1]
         calls.append(instance_id)
         jobs_dir = Path(command[command.index("--jobs-dir") + 1])
         jobs_dir.mkdir(parents=True, exist_ok=True)
@@ -238,7 +238,7 @@ def test_control_plane_stops_before_launching_past_the_wall_budget(tmp_path: Pat
     calls: list[str] = []
 
     def slow_runner(command, *, cwd: Path | None, timeout_sec: int) -> HarborCliResult:
-        instance_id = command[command.index("--task-name") + 1]
+        instance_id = command[command.index("--include-task-name") + 1].rsplit("/", 1)[-1]
         calls.append(instance_id)
         jobs_dir = Path(command[command.index("--jobs-dir") + 1])
         jobs_dir.mkdir(parents=True, exist_ok=True)

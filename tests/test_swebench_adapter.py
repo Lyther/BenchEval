@@ -19,11 +19,11 @@ from bencheval.swebench_adapter import (
 )
 
 # SUBSTITUTE_JUSTIFICATION
-# - substitute: injected mini-SWE runner and disposable leftover report.json or
-#   workspace.diff in test_run_instance_single,
+# - substitute: injected Inspect/swebench runner and disposable leftover
+#   report.json or workspace.diff in test_run_instance_single,
 #   test_run_instance_clears_stale_official_report, and
 #   test_run_instance_clears_stale_workspace_diff
-# - replaces: live mini-SWE generation and official SWE-Bench evaluation
+# - replaces: charged Inspect generation and official SWE-Bench evaluation
 # - necessity: leftover-artifact and local parse cases must be forced without a
 #   Docker evaluator; the official path cannot safely produce stale artifacts
 # - real-option: official generation plus evaluation must be implemented first
@@ -46,8 +46,10 @@ def test_build_swebench_run_command() -> None:
         instance_id="django__django-11099",
         artifacts_dir=Path("/tmp/out"),
     )
-    assert cmd[:2] == ("mini-extra", "swebench")
-    assert "django__django-11099" in cmd
+    assert cmd[:3] == ("inspect", "eval", "inspect_evals/swe_bench")
+    assert cmd[cmd.index("--sample-id") + 1] == "django__django-11099"
+    assert cmd[cmd.index("--solver") + 1] == "inspect_swe/claude_code"
+    assert cmd[cmd.index("-S") + 1] == "version=2.1.235"
     assert plan.model_binding == "runtime_configured"
 
 
@@ -108,13 +110,17 @@ def test_run_instance_single(tmp_path: Path) -> None:
     )
 
     def fake_runner(command, *, cwd, timeout_sec):
-        out_dir = Path(command[command.index("--output-dir") + 1])
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "report.json").write_text(
-            json.dumps({"django__django-11099": {"resolved": False}}),
-            encoding="utf-8",
-        )
-        return SwebenchCliResult(0, "", "", 0.1, tuple(command))
+        argv = tuple(str(part) for part in command)
+        instance_dir = tmp_path / "a" / "django__django-11099"
+        instance_dir.mkdir(parents=True, exist_ok=True)
+        if argv[:2] == ("inspect", "eval"):
+            (instance_dir / "predictions.jsonl").write_text("{}\n", encoding="utf-8")
+        if argv[:2] == ("swebench", "eval"):
+            (instance_dir / "report.json").write_text(
+                json.dumps({"django__django-11099": {"resolved": False}}),
+                encoding="utf-8",
+            )
+        return SwebenchCliResult(0, "", "", 0.1, argv)
 
     out = run_swebench_instance(
         plan=plan,
@@ -141,7 +147,10 @@ def test_run_instance_clears_stale_official_report(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
+    calls: list[tuple[str, ...]] = []
+
     def fake_runner(command, *, cwd, timeout_sec):
+        calls.append(tuple(str(part) for part in command))
         return SwebenchCliResult(0, "", "", 0.1, tuple(command))
 
     out = run_swebench_instance(
@@ -153,6 +162,8 @@ def test_run_instance_clears_stale_official_report(tmp_path: Path) -> None:
     )
     assert out.primary_pass is False
     assert out.failure_class == "runtime_output_unparseable"
+    assert calls and calls[0][:2] == ("inspect", "eval")
+    assert all(call[:2] != ("swebench", "eval") for call in calls)
 
 
 def test_run_instance_clears_stale_workspace_diff(tmp_path: Path) -> None:
@@ -168,17 +179,22 @@ def test_run_instance_clears_stale_workspace_diff(tmp_path: Path) -> None:
     def fake_runner(command, *, cwd, timeout_sec):
         nonlocal call_count
         call_count += 1
-        out_dir = Path(command[command.index("--output-dir") + 1])
-        (out_dir / "report.json").write_text(
-            json.dumps({"django__django-11099": {"resolved": False}}),
-            encoding="utf-8",
-        )
-        if call_count == 1:
-            (out_dir / "workspace.diff").write_text(
+        argv = tuple(str(part) for part in command)
+        instance_dir = tmp_path / "a" / "django__django-11099"
+        instance_dir.mkdir(parents=True, exist_ok=True)
+        if argv[:2] == ("inspect", "eval"):
+            (instance_dir / "predictions.jsonl").write_text("{}\n", encoding="utf-8")
+        if argv[:2] == ("swebench", "eval"):
+            (instance_dir / "report.json").write_text(
+                json.dumps({"django__django-11099": {"resolved": False}}),
+                encoding="utf-8",
+            )
+        if call_count == 2:
+            (instance_dir / "workspace.diff").write_text(
                 "STALE-FIRST-RUN",
                 encoding="utf-8",
             )
-        return SwebenchCliResult(0, "", "", 0.1, tuple(command))
+        return SwebenchCliResult(0, "", "", 0.1, argv)
 
     first = run_swebench_instance(
         plan=plan,

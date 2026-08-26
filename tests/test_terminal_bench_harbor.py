@@ -14,6 +14,7 @@ from bencheval.exceptions import AdapterFailureError
 from bencheval.runtime_registry import load_runtime_catalog
 from bencheval.terminal_bench_harbor import (
     CLAUDE_CODE_NPM_IMPORT_PATH,
+    CODEX_NPM_IMPORT_PATH,
     HarborCliResult,
     build_harbor_run_command,
     harbor_agent_for_runtime,
@@ -77,16 +78,16 @@ def test_build_harbor_run_command_claude_code(monkeypatch: pytest.MonkeyPatch) -
     )
     assert cmd[0:3] == ("harbor", "run", "--yes")
     assert "--dataset" in cmd and "terminal-bench/terminal-bench-2-1" in cmd
-    assert "--agent" not in cmd
-    assert "--agent-import-path" in cmd
-    assert cmd[cmd.index("--agent-import-path") + 1] == CLAUDE_CODE_NPM_IMPORT_PATH
+    assert cmd[cmd.index("--agent") + 1] == CLAUDE_CODE_NPM_IMPORT_PATH
+    assert "--agent-import-path" not in cmd
     # The only agent kwarg without allowed_tools is the launch-time version pin.
     kwarg_tokens = [cmd[i + 1] for i, tok in enumerate(cmd[:-1]) if tok == "--agent-kwarg"]
     assert len(kwarg_tokens) == 1
     assert kwarg_tokens[0] == "version=2.1.235"
     assert "--agent-setup-timeout-multiplier" in cmd
     assert cmd[cmd.index("--agent-setup-timeout-multiplier") + 1] == "8"
-    assert "--task-name" in cmd and "fix-git" in cmd
+    assert cmd[cmd.index("--include-task-name") + 1] == "terminal-bench/fix-git"
+    assert "--task-name" not in cmd
     assert "--jobs-dir" in cmd
     assert "--n-concurrent" in cmd and "1" in cmd
 
@@ -136,6 +137,7 @@ def test_build_harbor_run_command_mounts_codex_provider_config(
         artifacts_dir=tmp_path,
     )
 
+    assert cmd[cmd.index("--agent") + 1] == CODEX_NPM_IMPORT_PATH
     assert "--agent-setup-timeout-multiplier" in cmd
     assert cmd[cmd.index("--agent-setup-timeout-multiplier") + 1] == "8"
     assert "--mounts-json" in cmd
@@ -223,7 +225,9 @@ def test_build_harbor_run_command_forwards_proxy_with_env_file(
         assert "bencheval-harbor-proxy-" in env_file.name
         assert env_file.parent != tmp_path
         assert env_file.stat().st_mode & 0o777 == 0o600
-        assert "--agent-env" not in cmd
+        env_tokens = [cmd[i + 1] for i, tok in enumerate(cmd[:-1]) if tok == "--agent-env"]
+        assert "ANTHROPIC_CUSTOM_MODEL_OPTION=kimi-k2.7-code" in env_tokens
+        assert all("proxy" not in token.lower() for token in env_tokens)
         assert "https_proxy=http://proxy.example:8118" not in cmd
     finally:
         proxy_env.unlink(missing_ok=True)
@@ -413,14 +417,14 @@ def test_execute_control_plane_smoke_writes_evidence(tmp_path: Path) -> None:
         cwd: Path | None,
         timeout_sec: int,
     ) -> HarborCliResult:
-        assert command[command.index("--agent-import-path") + 1] == CLAUDE_CODE_NPM_IMPORT_PATH
-        task_id = command[command.index("--task-name") + 1]
+        assert command[command.index("--agent") + 1] == CLAUDE_CODE_NPM_IMPORT_PATH
+        task_id = command[command.index("--include-task-name") + 1]
         assert task_id in {
-            "fix-git",
-            "overfull-hbox",
-            "cobol-modernization",
-            "modernize-scientific-stack",
-            "log-summary-date-ranges",
+            "terminal-bench/fix-git",
+            "terminal-bench/overfull-hbox",
+            "terminal-bench/cobol-modernization",
+            "terminal-bench/modernize-scientific-stack",
+            "terminal-bench/log-summary-date-ranges",
         }
         out_dir = Path(command[command.index("--jobs-dir") + 1])
         out_dir.mkdir(parents=True, exist_ok=True)

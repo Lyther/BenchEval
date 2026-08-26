@@ -40,6 +40,8 @@ def test_harbor_command_omits_proxy_secret_argv_tokens(
     monkeypatch.setenv("BENCHEVAL_HARBOR_FORWARD_PROXY", "1")
     monkeypatch.setenv("HTTPS_PROXY", _SECRET_PROXY)
     monkeypatch.setenv("https_proxy", _SECRET_PROXY)
+    monkeypatch.delenv("ANTHROPIC_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
 
     plan = plan_control_plane(
         benchmark_id="terminal-bench",
@@ -60,7 +62,8 @@ def test_harbor_command_omits_proxy_secret_argv_tokens(
         env_file = Path(cmd[cmd.index("--env-file") + 1])
         assert env_file.is_file()
         assert _SECRET_PROXY in env_file.read_text(encoding="utf-8")
-        assert "--agent-env" not in cmd
+        env_tokens = [cmd[i + 1] for i, tok in enumerate(cmd[:-1]) if tok == "--agent-env"]
+        assert env_tokens == ["ANTHROPIC_CUSTOM_MODEL_OPTION=kimi-k2.7-code"]
         for token in cmd:
             assert _SECRET_PROXY not in token
             assert "s3cr3t-proxy-token" not in token

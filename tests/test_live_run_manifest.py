@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -17,6 +18,8 @@ from bencheval.live_run_manifest import (
     LiveRunRecord,
     append_live_run,
     default_runs_manifest_path,
+    project_live_runs,
+    read_live_run_projections,
     read_live_runs,
 )
 
@@ -180,9 +183,104 @@ def test_directory_target_rejected(tmp_path: Path) -> None:
         append_live_run(target, _record())
 
 
+# SUBSTITUTE_JUSTIFICATION
+# - substitute: `_record()` creates the LiveRunRecord payload used by
+#   test_manifest_lock_rejects_alias_without_mutating_victim and
+#   test_manifest_append_rejects_hardlink_without_mutating_victim
+# - replaces: an operator-generated live-run event payload
+# - necessity: the exact lock/manifest alias state must be created before append;
+#   reusing an operator manifest would risk mutating retained run history
+# - real-option: a disposable real filesystem is used for every ownership operation;
+#   only the unrelated event payload is constructed
+# - proof-limit: proves local lock/manifest inode ownership and victim preservation,
+#   not benchmark execution or live-run authenticity
+# - real-proof: both tests execute real symlink/hardlink, open, lock, append, and
+#   permission paths on the host filesystem
+@pytest.mark.parametrize("alias_kind", ["symlink", "hardlink"])
+def test_manifest_lock_rejects_alias_without_mutating_victim(
+    tmp_path: Path,
+    alias_kind: str,
+) -> None:
+    manifest = tmp_path / "runs.jsonl"
+    victim = tmp_path / "victim.txt"
+    victim.write_text("outside\n", encoding="utf-8")
+    victim.chmod(0o644)
+    lock_path = tmp_path / "runs.jsonl.lock"
+    if alias_kind == "symlink":
+        lock_path.symlink_to(victim)
+    else:
+        os.link(victim, lock_path)
+
+    with pytest.raises(LiveRunManifestError, match=r"lock|owned regular file"):
+        append_live_run(manifest, _record())
+
+    assert victim.read_text(encoding="utf-8") == "outside\n"
+    assert victim.stat().st_mode & 0o777 == 0o644
+    assert not manifest.exists()
+
+
+def test_manifest_append_rejects_hardlink_without_mutating_victim(tmp_path: Path) -> None:
+    manifest = tmp_path / "runs.jsonl"
+    victim = tmp_path / "victim.jsonl"
+    victim.touch(mode=0o600)
+    os.link(victim, manifest)
+
+    with pytest.raises(LiveRunManifestError, match=r"owned regular file|link"):
+        append_live_run(manifest, _record())
+
+    assert victim.read_bytes() == b""
+
+
 def test_read_missing_file_raises(tmp_path: Path) -> None:
     with pytest.raises(LiveRunManifestError, match="cannot read"):
         read_live_runs(tmp_path / "nope.jsonl")
+    assert not (tmp_path / "nope.jsonl.lock").exists()
+
+
+def test_project_live_runs_uses_last_valid_event(tmp_path: Path) -> None:
+    manifest = tmp_path / "runs.jsonl"
+    append_live_run(manifest, _record(status="registered", notes="start"))
+    append_live_run(
+        manifest,
+        _record(
+            status="completed",
+            notes="done",
+            generated_at=datetime(2026, 6, 18, 15, 6, 0, tzinfo=UTC),
+            evidence_path="/later/evidence.jsonl",
+        ),
+    )
+    views = read_live_run_projections(manifest)
+    assert len(views) == 1
+    view = views[0]
+    assert view.status == "completed"
+    assert view.event_count == 2
+    assert view.notes == "done"
+    assert view.evidence_path == "/later/evidence.jsonl"
+    assert view.first_generated_at == _TS
+    assert project_live_runs(read_live_runs(manifest)) == views
+
+
+def test_cli_evidence_list_current_projects_latest_state(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    manifest = tmp_path / "runs.jsonl"
+    append_live_run(manifest, _record(status="registered", notes="start"))
+    append_live_run(
+        manifest,
+        _record(
+            status="completed",
+            notes="done",
+            generated_at=datetime(2026, 6, 18, 15, 6, 0, tzinfo=UTC),
+        ),
+    )
+    code = main(["evidence", "list", "--current", "--manifest-path", str(manifest)])
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["count"] == 1
+    assert payload["runs"][0]["status"] == "completed"
+    assert payload["runs"][0]["event_count"] == 2
+    assert payload["runs"][0]["notes"] == "done"
 
 
 def test_default_runs_manifest_path_under_repo_results() -> None:

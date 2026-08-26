@@ -1,4 +1,4 @@
-"""F002: SWE adapter must invoke mini-extra swebench per production contract."""
+"""F002: SWE generation must use the selected Inspect runtime solver."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from bencheval.benchmark_plan import plan_control_plane
 from bencheval.swebench_adapter import build_swebench_run_command
 
 
-def test_swebench_command_uses_mini_extra_swebench() -> None:
+def test_swebench_command_uses_inspect_runtime_solver() -> None:
     plan = plan_control_plane(
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
@@ -20,5 +20,8 @@ def test_swebench_command_uses_mini_extra_swebench() -> None:
         instance_id="django__django-11099",
         artifacts_dir=Path("/tmp/out"),
     )
-    assert cmd[:2] == ("mini-extra", "swebench")
-    assert "django__django-11099" in cmd
+    assert cmd[:3] == ("inspect", "eval", "inspect_evals/swe_bench")
+    assert cmd[cmd.index("--sample-id") + 1] == "django__django-11099"
+    assert cmd[cmd.index("--solver") + 1] == "inspect_swe/claude_code"
+    assert cmd[cmd.index("-S") + 1] == "version=2.1.235"
+    assert "mini-extra" not in cmd

@@ -26,6 +26,7 @@ from bencheval.control_plane_executor import execute_control_plane_run
 from bencheval.evidence import read_evidence_jsonl
 from bencheval.external_agent_adapter import (
     ExternalAgentCliResult,
+    execute_external_agent_run,
     run_external_agent_instance,
 )
 from bencheval.gpqa_adapter import (
@@ -45,13 +46,9 @@ def _gpqa_plan():
 
 
 def _external_agent_plan():
-    return plan_control_plane(
-        benchmark_id="terminal-bench",
-        slice_id="smoke-5",
-        runtime_id=None,
-        agent_id="momo",
-        model_id="kimi-k2.7-code",
-    )
+    from tests.factories import make_scaffold_agent_plan
+
+    return make_scaffold_agent_plan()
 
 
 def test_gpqa_requests_machine_readable_inspect_launch_output(tmp_path: Path) -> None:
@@ -250,11 +247,11 @@ def test_external_agent_evidence_preserves_benchmark_owned_axes(tmp_path: Path) 
         return ExternalAgentCliResult(1, "", "agent failed", 0.1, tuple(command))
 
     evidence_path = tmp_path / "evidence.jsonl"
-    execute_control_plane_run(
+    execute_external_agent_run(
         plan=plan,
         output_path=evidence_path,
         artifacts_dir=tmp_path / "run",
-        agent_process_runner=failed_agent_runner,
+        process_runner=failed_agent_runner,
         run_id="external-agent-axis-contract",
     )
 

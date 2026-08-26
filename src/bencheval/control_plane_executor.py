@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import get_args
 from urllib.parse import urlsplit
 
+from bencheval.agent_registry import require_admitted_agent
 from bencheval.backends import (
     HARBOR_BACKEND,
     INSPECT_BACKEND,
@@ -65,6 +66,7 @@ from bencheval.run_isolation import (
     claim_exclusive_run_outputs,
     open_owned_dir_fd,
     release_evidence_reservation,
+    rollback_claimed_run_outputs,
     write_text_at_exclusive,
 )
 from bencheval.runtime_registry import load_runtime_catalog
@@ -780,16 +782,38 @@ def _require_executable_benchmark(plan: RunPlan) -> None:
     )
 
 
+def _persist_frozen_run_plan(run_artifacts: Path, plan: RunPlan) -> None:
+    artifacts_fd = open_owned_dir_fd(run_artifacts, role="control-plane run artifacts")
+    try:
+        write_text_at_exclusive(artifacts_fd, "run-plan.json", plan.model_dump_json() + "\n")
+    finally:
+        os.close(artifacts_fd)
+
+
 def _claim_control_plane_outputs(
     *,
     output_path: Path,
     artifacts_dir: Path | None,
     rid: str,
     root: Path,
+    plan: RunPlan,
 ) -> Path:
     """Exclusive evidence file + empty run-artifacts tree for one control-plane run."""
     run_artifacts = artifacts_dir or (root / "results" / "raw" / rid)
-    claim_exclusive_run_outputs(evidence_path=output_path, artifacts_path=run_artifacts)
+    artifacts_created = claim_exclusive_run_outputs(
+        evidence_path=output_path,
+        artifacts_path=run_artifacts,
+    )
+    try:
+        _persist_frozen_run_plan(run_artifacts, plan)
+    except Exception:
+        rollback_claimed_run_outputs(
+            evidence_path=output_path,
+            artifacts_path=run_artifacts,
+            artifacts_created=artifacts_created,
+            evidence_claimed=True,
+        )
+        raise
     return run_artifacts
 
 
@@ -810,6 +834,11 @@ def execute_control_plane_run(
     run_id: str | None = None,
 ) -> ControlPlaneRunSummary:
     """Dispatch a ``RunPlan`` to the matching adapter and append evidence rows."""
+    if plan.agent_id is not None:
+        try:
+            require_admitted_agent(plan.agent_id)
+        except KeyError as e:
+            raise BenchEvalError(f"unknown agent {plan.agent_id!r}") from e
     _require_executable_benchmark(plan)
     if plan.adapter_id == GPQA_ADAPTER_ID:
         return _execute_gpqa(
@@ -884,6 +913,7 @@ def _execute_terminal_bench_harbor(
         artifacts_dir=artifacts_dir,
         rid=rid,
         root=root,
+        plan=plan,
     )
     try:
         if harbor_process_runner is None:
@@ -983,6 +1013,7 @@ def _execute_gpqa(
         artifacts_dir=artifacts_dir,
         rid=rid,
         root=root,
+        plan=plan,
     )
     try:
         sink = _evidence_sink(plan)
@@ -1065,6 +1096,7 @@ def _execute_hle(
         artifacts_dir=artifacts_dir,
         rid=rid,
         root=root,
+        plan=plan,
     )
     try:
         sink = _evidence_sink(plan)
@@ -1148,6 +1180,7 @@ def _execute_bfcl(
         artifacts_dir=artifacts_dir,
         rid=rid,
         root=root,
+        plan=plan,
     )
     try:
         sink = _evidence_sink(plan)

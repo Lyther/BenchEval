@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from bencheval.evidence import EvidenceRecord
+from bencheval.evidence import EvidenceRecord, eligible_for_pass_at_k
 from bencheval.exceptions import ComparisonError
 
 EvidenceKey = tuple[str, str, str]
@@ -81,6 +81,9 @@ class EvidenceComparisonReport:
     task_deltas: tuple[TaskEvidenceDelta, ...]
     backend_pass_rates: tuple[BackendPassRate, ...]
     generated_at: datetime
+    comparison_valid: bool
+    interpretation_label: str
+    validity_reasons: tuple[str, ...]
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -89,6 +92,9 @@ class EvidenceComparisonReport:
             "baseline_pass_rate": self.baseline_pass_rate,
             "current_pass_rate": self.current_pass_rate,
             "pass_rate_delta": self.pass_rate_delta,
+            "comparison_valid": self.comparison_valid,
+            "interpretation_label": self.interpretation_label,
+            "validity_reasons": list(self.validity_reasons),
             "missing_in_current": list(self.missing_in_current),
             "new_in_current": list(self.new_in_current),
             "backend_pass_rates": [
@@ -236,13 +242,31 @@ def compare_evidence_runs(
             ),
         )
 
-    backends = sorted(
-        {record.backend for record in baseline} | {record.backend for record in current},
-    )
+    shared_eligible = [
+        key
+        for key in shared
+        if eligible_for_pass_at_k(base_index[key]) and eligible_for_pass_at_k(cur_index[key])
+    ]
+    asymmetric = [
+        key
+        for key in shared
+        if eligible_for_pass_at_k(base_index[key]) != eligible_for_pass_at_k(cur_index[key])
+    ]
+    validity_reasons: list[str] = []
+    if asymmetric:
+        validity_reasons.append("asymmetric eligibility on shared tasks")
+    if not shared_eligible:
+        validity_reasons.append("empty shared eligible intersection")
+    comparison_valid = not validity_reasons
+    interpretation_label = "contaminated_or_legacy"
+
+    eligible_baseline = [base_index[key] for key in shared_eligible]
+    eligible_current = [cur_index[key] for key in shared_eligible]
+    backends = sorted({row.backend for row in eligible_baseline + eligible_current})
     backend_rows: list[BackendPassRate] = []
     for backend in backends:
-        base_subset = [row for row in baseline if row.backend == backend]
-        cur_subset = [row for row in current if row.backend == backend]
+        base_subset = [row for row in eligible_baseline if row.backend == backend]
+        cur_subset = [row for row in eligible_current if row.backend == backend]
         base_rate = _pass_rate(base_subset)
         cur_rate = _pass_rate(cur_subset)
         backend_rows.append(
@@ -256,8 +280,8 @@ def compare_evidence_runs(
             ),
         )
 
-    base_rate = _pass_rate(baseline)
-    cur_rate = _pass_rate(current)
+    base_rate = _pass_rate(eligible_baseline)
+    cur_rate = _pass_rate(eligible_current)
     return EvidenceComparisonReport(
         baseline_count=len(baseline),
         current_count=len(current),
@@ -269,6 +293,9 @@ def compare_evidence_runs(
         task_deltas=tuple(task_deltas),
         backend_pass_rates=tuple(backend_rows),
         generated_at=datetime.now(tz=UTC),
+        comparison_valid=comparison_valid,
+        interpretation_label=interpretation_label,
+        validity_reasons=tuple(validity_reasons),
     )
 
 
@@ -281,8 +308,16 @@ def render_comparison_markdown(report: EvidenceComparisonReport) -> str:
         f"- Baseline pass rate: {report.baseline_pass_rate:.3f}",
         f"- Current pass rate: {report.current_pass_rate:.3f}",
         f"- Pass rate delta: {report.pass_rate_delta:+.3f}",
+        f"- Comparison valid: {str(report.comparison_valid).lower()}",
+        f"- Interpretation: {report.interpretation_label}",
         "",
     ]
+    if report.validity_reasons:
+        lines.extend(
+            ["## Validity reasons", ""]
+            + [f"- {reason}" for reason in report.validity_reasons]
+            + [""],
+        )
     if report.missing_in_current:
         lines.extend(
             ["## Missing in current", ""]

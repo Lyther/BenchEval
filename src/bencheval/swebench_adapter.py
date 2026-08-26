@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import stat
 import subprocess
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -14,6 +16,7 @@ from typing import Protocol
 from bencheval.backends import INSPECT_BACKEND
 from bencheval.domain import FailureLabel, RunPlan
 from bencheval.exceptions import AdapterFailureError, BenchEvalError
+from bencheval.ids import new_run_id
 from bencheval.path_safety import validate_control_plane_instance_id
 from bencheval.run_isolation import (
     AUTHORITATIVE_ARTIFACT_NAMES,
@@ -23,11 +26,18 @@ from bencheval.run_isolation import (
     read_json_at_nofollow,
     write_text_at_exclusive,
 )
+from bencheval.runtime_registry import load_runtime_catalog
 
 SWEBENCH_ADAPTER_ID = "swebench"
 _INSTANCE_DIR_ROLE = "swebench instance directory"
 _OFFICIAL_REPORT_NAME = "report.json"
 _WORKSPACE_DIFF_NAME = "workspace.diff"
+_PREDICTIONS_NAME = "predictions.jsonl"
+_SWE_RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+_INSPECT_SOLVER_BY_RUNTIME = {
+    "codex-cli": "inspect_swe/codex_cli",
+    "claude-code": "inspect_swe/claude_code",
+}
 
 
 def _as_bool_verdict(value: object) -> bool | None:
@@ -75,24 +85,67 @@ def build_swebench_run_command(
     instance_id: str,
     artifacts_dir: Path,
 ) -> tuple[str, ...]:
-    """Command shape for ``mini-extra swebench`` (mini-SWE-agent SWE-bench helper)."""
+    """Inspect Evals generation command for the selected pinned runtime solver."""
     validate_control_plane_instance_id(instance_id)
-    admitted = ("claude-code", "codex-cli")
-    if plan.runtime_id not in admitted:
+    solver = _INSPECT_SOLVER_BY_RUNTIME.get(plan.runtime_id or "")
+    if solver is None:
         raise BenchEvalError(
-            f"swebench adapter expects runtime_id in {admitted}, got {plan.runtime_id!r}",
+            f"swebench adapter expects runtime_id in {tuple(_INSPECT_SOLVER_BY_RUNTIME)}, "
+            f"got {plan.runtime_id!r}",
         )
-    cmd: list[str] = [
-        "mini-extra",
-        "swebench",
-        "--instance",
+    try:
+        runtime = load_runtime_catalog().by_id(plan.runtime_id or "")
+    except KeyError as e:
+        raise BenchEvalError(f"unknown runtime {plan.runtime_id!r}") from e
+    pin = runtime.versioning.agent_version_pin
+    if pin is None or not pin.strip():
+        raise BenchEvalError(f"runtime {plan.runtime_id!r} has no agent_version_pin")
+    return (
+        "inspect",
+        "eval",
+        "inspect_evals/swe_bench",
+        "--sample-id",
         instance_id,
-        "--output-dir",
-        str(artifacts_dir.resolve()),
-    ]
-    if plan.model_binding == "bencheval_injected" and plan.model_id != "runtime-default":
-        cmd.extend(["--model", plan.model_id])
-    return tuple(cmd)
+        "--solver",
+        solver,
+        "-S",
+        f"version={pin.strip()}",
+        "--log-dir",
+        str(artifacts_dir),
+    )
+
+
+def _validate_swe_run_id(run_id: str) -> str:
+    if not run_id or not _SWE_RUN_ID_PATTERN.fullmatch(run_id):
+        raise BenchEvalError(
+            f"invalid swebench run_id {run_id!r}: use alphanumeric, dot, underscore, hyphen",
+        )
+    return run_id
+
+
+def build_swebench_eval_command(
+    *,
+    instance_id: str,
+    predictions_path: Path,
+    run_id: str,
+    report_dir: Path,
+) -> tuple[str, ...]:
+    validate_control_plane_instance_id(instance_id)
+    return (
+        "swebench",
+        "eval",
+        "verified",
+        "-p",
+        str(predictions_path),
+        "-i",
+        instance_id,
+        "-j",
+        "1",
+        "--run-id",
+        _validate_swe_run_id(run_id),
+        "--report-dir",
+        str(report_dir),
+    )
 
 
 def _default_process_runner(
@@ -201,6 +254,207 @@ def _owned_regular_file_path(
     return os.path.abspath(artifacts_dir / name)
 
 
+def _clear_owned_name(instance_fd: int, name: str) -> None:
+    try:
+        os.unlink(name, dir_fd=instance_fd)
+    except FileNotFoundError:
+        return
+    except OSError as e:
+        raise BenchEvalError(f"cannot clear leftover {name}: {e}") from e
+
+
+def _inspect_model_patch(sample: object) -> str | None:
+    scores = getattr(sample, "scores", None)
+    if not isinstance(scores, Mapping):
+        return None
+    scorer = scores.get("swe_bench_scorer")
+    if scorer is None:
+        return None
+    metadata = (
+        scorer.get("metadata")
+        if isinstance(scorer, Mapping)
+        else getattr(
+            scorer,
+            "metadata",
+            None,
+        )
+    )
+    if not isinstance(metadata, Mapping):
+        return None
+    patch = metadata.get("model_patch")
+    return patch if isinstance(patch, str) else None
+
+
+def _prediction_row_from_inspect_log(
+    log_path: Path,
+    *,
+    instance_id: str,
+    model_name_or_path: str,
+) -> dict[str, str] | None:
+    try:
+        from inspect_ai.log import read_eval_log
+    except ImportError:
+        return None
+    try:
+        log = read_eval_log(str(log_path))
+    except (OSError, UnicodeDecodeError, ValueError, TypeError):
+        return None
+    samples = getattr(log, "samples", None)
+    if not isinstance(samples, list):
+        return None
+    patches = [
+        patch
+        for sample in samples
+        if str(getattr(sample, "id", "")) == instance_id
+        for patch in (_inspect_model_patch(sample),)
+        if patch is not None
+    ]
+    if len(patches) != 1:
+        return None
+    return {
+        "instance_id": instance_id,
+        "model_name_or_path": model_name_or_path,
+        "model_patch": patches[0],
+    }
+
+
+def _owned_eval_log_names(instance_fd: int) -> tuple[str, ...]:
+    try:
+        names = os.listdir(instance_fd)
+    except OSError:
+        return ()
+    owned: list[str] = []
+    for name in names:
+        if not name.endswith(".eval"):
+            continue
+        try:
+            file_fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=instance_fd)
+        except OSError:
+            continue
+        try:
+            if stat.S_ISREG(os.fstat(file_fd).st_mode):
+                owned.append(name)
+        finally:
+            os.close(file_fd)
+    return tuple(owned)
+
+
+def _ensure_official_predictions(
+    *,
+    instance_dir: Path,
+    instance_fd: int,
+    instance_id: str,
+    model_name_or_path: str,
+) -> str | None:
+    existing = _owned_regular_file_path(instance_fd, _PREDICTIONS_NAME, instance_dir)
+    if existing is not None:
+        return existing
+    rows: list[dict[str, str]] = []
+    for name in _owned_eval_log_names(instance_fd):
+        row = _prediction_row_from_inspect_log(
+            instance_dir / name,
+            instance_id=instance_id,
+            model_name_or_path=model_name_or_path,
+        )
+        if row is not None:
+            rows.append(row)
+    if len(rows) != 1:
+        return None
+    write_text_at_exclusive(instance_fd, _PREDICTIONS_NAME, json.dumps(rows[0]) + "\n")
+    return _owned_regular_file_path(instance_fd, _PREDICTIONS_NAME, instance_dir)
+
+
+def _find_eval_instance_report(
+    instance_dir: Path,
+    *,
+    instance_id: str,
+    run_id: str,
+) -> Path | None:
+    root = instance_dir / "logs" / "run_evaluation" / run_id
+    try:
+        if root.is_symlink() or not root.is_dir():
+            return None
+        children = list(root.iterdir())
+    except OSError:
+        return None
+    matches: list[Path] = []
+    for model_dir in children:
+        try:
+            if model_dir.is_symlink() or not model_dir.is_dir():
+                continue
+            candidate = model_dir / instance_id / _OFFICIAL_REPORT_NAME
+            if candidate.is_symlink() or not candidate.is_file():
+                continue
+        except OSError:
+            continue
+        matches.append(candidate)
+    if len(matches) != 1:
+        return None
+    return matches[0]
+
+
+def _materialize_official_instance_report(
+    *,
+    instance_dir: Path,
+    instance_fd: int,
+    instance_id: str,
+    run_id: str,
+) -> None:
+    if _owned_regular_file_path(instance_fd, _OFFICIAL_REPORT_NAME, instance_dir):
+        return
+    found = _find_eval_instance_report(
+        instance_dir,
+        instance_id=instance_id,
+        run_id=run_id,
+    )
+    if found is None:
+        return
+    try:
+        text = found.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return
+    write_text_at_exclusive(instance_fd, _OFFICIAL_REPORT_NAME, text)
+
+
+def _missing_predictions_outcome(
+    *,
+    instance_id: str,
+    cli: SwebenchCliResult,
+    instance_dir: Path,
+    repo_root: Path,
+    harness_version: str | None,
+    instance_fd: int,
+) -> SwebenchInstanceOutcome:
+    stdout_abs, stderr_abs = _write_owned_logs(
+        instance_dir=instance_dir,
+        instance_fd=instance_fd,
+        cli=cli,
+    )
+    metadata = {
+        "adapter_id": SWEBENCH_ADAPTER_ID,
+        "harness_kind": "swebench-native",
+        "swebench_command": " ".join(cli.command),
+        "interpretation_label": "diagnostic_only",
+        "missing_artifact": _PREDICTIONS_NAME,
+    }
+    if harness_version:
+        metadata["harness_version"] = harness_version
+    return SwebenchInstanceOutcome(
+        instance_id=instance_id,
+        primary_pass=False,
+        partial_score=0.0,
+        cost_usd=0.0,
+        latency_sec=cli.latency_sec,
+        native_score={"returncode": cli.returncode, "backend": INSPECT_BACKEND},
+        failure_class="runtime_output_unparseable",
+        stdout_path=_rel_path(stdout_abs, repo_root),
+        stderr_path=_rel_path(stderr_abs, repo_root),
+        verifier_log_path=None,
+        workspace_diff_path=None,
+        adapter_metadata=metadata,
+    )
+
+
 def _official_instance_report(
     instance_fd: int,
     instance_id: str,
@@ -274,6 +528,7 @@ def parse_swebench_instance_outcome(
             "adapter_id": SWEBENCH_ADAPTER_ID,
             "harness_kind": "swebench-native",
             "swebench_command": " ".join(cli.command),
+            "interpretation_label": "diagnostic_only",
         }
         if harness_version:
             metadata["harness_version"] = harness_version
@@ -298,6 +553,134 @@ def parse_swebench_instance_outcome(
             os.close(instance_fd)
 
 
+def _score_swe_phase(
+    *,
+    instance_id: str,
+    cli: SwebenchCliResult,
+    instance_dir: Path,
+    repo_root: Path,
+    harness_version: str | None,
+    instance_fd: int,
+) -> SwebenchInstanceOutcome:
+    return parse_swebench_instance_outcome(
+        instance_id=instance_id,
+        cli=cli,
+        artifacts_dir=instance_dir,
+        repo_root=repo_root,
+        harness_version=harness_version,
+        artifacts_fd=instance_fd,
+    )
+
+
+def _run_generation_then_eval(
+    *,
+    plan: RunPlan,
+    instance_id: str,
+    instance_dir: Path,
+    instance_fd: int,
+    repo_root: Path,
+    runner: SwebenchProcessRunner,
+    wall: int,
+    harness_version: str | None,
+    run_id: str,
+) -> SwebenchInstanceOutcome:
+    generate = build_swebench_run_command(
+        plan=plan,
+        instance_id=instance_id,
+        artifacts_dir=instance_dir,
+    )
+    generation = runner(generate, cwd=repo_root, timeout_sec=wall)
+    _reject_instance_swap(instance_dir=instance_dir, instance_fd=instance_fd, cli=generation)
+    if generation.returncode != 0:
+        return _score_swe_phase(
+            instance_id=instance_id,
+            cli=generation,
+            instance_dir=instance_dir,
+            repo_root=repo_root,
+            harness_version=harness_version,
+            instance_fd=instance_fd,
+        )
+    predictions = _ensure_official_predictions(
+        instance_dir=instance_dir,
+        instance_fd=instance_fd,
+        instance_id=instance_id,
+        model_name_or_path=plan.model_id,
+    )
+    if predictions is None:
+        return _missing_predictions_outcome(
+            instance_id=instance_id,
+            cli=generation,
+            instance_dir=instance_dir,
+            repo_root=repo_root,
+            harness_version=harness_version,
+            instance_fd=instance_fd,
+        )
+    return _evaluate_official_predictions(
+        instance_id=instance_id,
+        instance_dir=instance_dir,
+        instance_fd=instance_fd,
+        repo_root=repo_root,
+        runner=runner,
+        wall=wall,
+        harness_version=harness_version,
+        run_id=run_id,
+        generation=generation,
+        predictions=predictions,
+    )
+
+
+def _evaluate_official_predictions(
+    *,
+    instance_id: str,
+    instance_dir: Path,
+    instance_fd: int,
+    repo_root: Path,
+    runner: SwebenchProcessRunner,
+    wall: int,
+    harness_version: str | None,
+    run_id: str,
+    generation: SwebenchCliResult,
+    predictions: str,
+) -> SwebenchInstanceOutcome:
+    _clear_owned_name(instance_fd, _OFFICIAL_REPORT_NAME)
+    evaluate = build_swebench_eval_command(
+        instance_id=instance_id,
+        predictions_path=Path(predictions),
+        run_id=run_id,
+        report_dir=instance_dir,
+    )
+    remaining = wall - int(generation.latency_sec)
+    if remaining <= 0:
+        raise AdapterFailureError(
+            "no remaining wall budget for official SWE-bench evaluation",
+            failure_label="runtime_budget_exceeded",
+            latency_sec=generation.latency_sec,
+            adapter_metadata={"swebench_command": " ".join(evaluate)},
+        )
+    scored = runner(evaluate, cwd=instance_dir, timeout_sec=remaining)
+    scored = SwebenchCliResult(
+        returncode=scored.returncode,
+        stdout=generation.stdout + scored.stdout,
+        stderr=generation.stderr + scored.stderr,
+        latency_sec=generation.latency_sec + scored.latency_sec,
+        command=scored.command,
+    )
+    _materialize_official_instance_report(
+        instance_dir=instance_dir,
+        instance_fd=instance_fd,
+        instance_id=instance_id,
+        run_id=run_id,
+    )
+    return _score_swe_phase(
+        instance_id=instance_id,
+        cli=scored,
+        instance_dir=instance_dir,
+        repo_root=repo_root,
+        harness_version=harness_version,
+        instance_fd=instance_fd,
+    )
+
+
 def run_swebench_instance(
     *,
     plan: RunPlan,
@@ -307,34 +690,36 @@ def run_swebench_instance(
     process_runner: SwebenchProcessRunner | None = None,
     timeout_sec: int | None = None,
     harness_version: str | None = None,
+    run_id: str | None = None,
 ) -> SwebenchInstanceOutcome:
     if plan.adapter_id != SWEBENCH_ADAPTER_ID:
         raise BenchEvalError(f"swebench adapter cannot run adapter_id={plan.adapter_id!r}")
+    if process_runner is None:
+        raise BenchEvalError(
+            "swebench default process runner is disabled until the diagnostic "
+            "identity and dependency contract is complete",
+        )
     validate_control_plane_instance_id(instance_id)
     instance_dir = prepare_instance_artifacts_dir(
         artifacts_dir / instance_id,
         clear_names=AUTHORITATIVE_ARTIFACT_NAMES
-        | frozenset({_OFFICIAL_REPORT_NAME, _WORKSPACE_DIFF_NAME}),
+        | frozenset({_OFFICIAL_REPORT_NAME, _WORKSPACE_DIFF_NAME, _PREDICTIONS_NAME}),
     )
     instance_fd = open_owned_dir_fd(instance_dir, role=_INSTANCE_DIR_ROLE)
     try:
-        command = build_swebench_run_command(
-            plan=plan,
-            instance_id=instance_id,
-            artifacts_dir=instance_dir,
-        )
         wall = (
             timeout_sec if timeout_sec is not None else max(1, plan.max_wall_clock_sec_per_instance)
         )
-        runner = process_runner or _default_process_runner
-        cli = runner(command, cwd=repo_root, timeout_sec=wall)
-        return parse_swebench_instance_outcome(
+        return _run_generation_then_eval(
+            plan=plan,
             instance_id=instance_id,
-            cli=cli,
-            artifacts_dir=instance_dir,
+            instance_dir=instance_dir,
+            instance_fd=instance_fd,
             repo_root=repo_root,
+            runner=process_runner or _default_process_runner,
+            wall=wall,
             harness_version=harness_version,
-            artifacts_fd=instance_fd,
+            run_id=_validate_swe_run_id(run_id) if run_id is not None else new_run_id(),
         )
     finally:
         os.close(instance_fd)
@@ -345,6 +730,7 @@ __all__ = [
     "SwebenchCliResult",
     "SwebenchInstanceOutcome",
     "SwebenchProcessRunner",
+    "build_swebench_eval_command",
     "build_swebench_run_command",
     "parse_swebench_instance_outcome",
     "run_swebench_instance",

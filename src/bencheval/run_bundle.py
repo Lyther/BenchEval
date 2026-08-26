@@ -112,6 +112,93 @@ def _bundle_local_artifact_path(
     return value
 
 
+def _safe_relative_parts(value: str) -> tuple[str, ...] | None:
+    parts = Path(value).parts
+    if not parts or any(part in {"", ".", ".."} for part in parts):
+        return None
+    return parts
+
+
+def _contained_regular_file(path: Path, root: Path) -> Path | None:
+    abs_path = Path(os.path.abspath(path))
+    try:
+        abs_path.relative_to(root)
+    except ValueError:
+        return None
+    if abs_path.is_symlink() or not abs_path.is_file():
+        return None
+    return abs_path
+
+
+def _relative_under_declared_root(value: str, root: Path) -> Path | None:
+    """Resolve a repo-relative path only under an exact declared-root prefix.
+
+    ``results/raw/<this-tag>/fix-git/result.json`` may resolve when ``root`` is
+    that tag directory. A sibling tag in the same prefix must not bind.
+    """
+    parts = _safe_relative_parts(value)
+    if parts is None:
+        return None
+    root_abs = Path(os.path.abspath(root))
+    found = _contained_regular_file(root_abs.joinpath(*parts), root_abs)
+    if found is not None:
+        return found
+    root_parts = root_abs.parts
+    for cut in range(1, len(parts)):
+        prefix = parts[:cut]
+        if len(prefix) > len(root_parts) or root_parts[-len(prefix) :] != prefix:
+            continue
+        remainder = parts[cut:]
+        if not remainder:
+            continue
+        found = _contained_regular_file(root_abs.joinpath(*remainder), root_abs)
+        if found is not None:
+            return found
+    return None
+
+
+def _resolve_private_artifact(
+    value: str,
+    *,
+    raw_root: Path,
+    capture_root: Path,
+) -> Path:
+    raw_abs = Path(os.path.abspath(raw_root))
+    capture_abs = Path(os.path.abspath(capture_root))
+    path = Path(value)
+    if path.is_absolute():
+        abs_candidate = Path(os.path.abspath(path))
+        for root in (raw_abs, capture_abs):
+            found = _contained_regular_file(abs_candidate, root)
+            if found is not None:
+                return found
+        raise BenchEvalError(f"artifact path is outside declared raw/capture roots: {value}")
+    if _safe_relative_parts(value) is None:
+        raise BenchEvalError(f"missing referenced artifact: {value}")
+    for root in (raw_abs, capture_abs):
+        found = _relative_under_declared_root(value, root)
+        if found is not None:
+            return found
+    raise BenchEvalError(f"missing referenced artifact: {value}")
+
+
+def _portable_private_artifact(
+    value: str,
+    *,
+    raw_root: Path,
+    capture_root: Path,
+) -> str:
+    resolved = _resolve_private_artifact(value, raw_root=raw_root, capture_root=capture_root)
+    relocated = _bundle_local_artifact_path(
+        str(resolved),
+        raw_root=raw_root,
+        capture_root=capture_root,
+    )
+    if Path(relocated).is_absolute():
+        raise BenchEvalError(f"artifact path is outside declared raw/capture roots: {value}")
+    return relocated
+
+
 def _relocate_private_artifact_paths(
     records: list[EvidenceRecord],
     *,
@@ -121,25 +208,27 @@ def _relocate_private_artifact_paths(
     """Return private-bundle rows whose copied artifacts use portable paths."""
     relocated: list[EvidenceRecord] = []
     for record in records:
-        verifier_log_path = record.verifier_log_path
-        if verifier_log_path is not None:
-            verifier_log_path = _bundle_local_artifact_path(
-                verifier_log_path,
-                raw_root=raw_root,
-                capture_root=capture_root,
-            )
+        verifier = record.verifier_log_path
         relocated.append(
             record.model_copy(
                 update={
                     "artifact_paths": [
-                        _bundle_local_artifact_path(
+                        _portable_private_artifact(
                             path,
                             raw_root=raw_root,
                             capture_root=capture_root,
                         )
                         for path in record.artifact_paths
                     ],
-                    "verifier_log_path": verifier_log_path,
+                    "verifier_log_path": (
+                        _portable_private_artifact(
+                            verifier,
+                            raw_root=raw_root,
+                            capture_root=capture_root,
+                        )
+                        if verifier is not None
+                        else None
+                    ),
                 },
             ),
         )

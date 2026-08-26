@@ -41,6 +41,7 @@ from bencheval.live_run_manifest import (
     LiveRunStatus,
     append_live_run,
     default_runs_manifest_path,
+    read_live_run_projections,
 )
 from bencheval.model_registry import load_model_registry
 from bencheval.provider_registry import DEFAULT_PROVIDER_ID, load_provider_catalog
@@ -372,6 +373,51 @@ def _export_run_bundle(args: argparse.Namespace) -> int:
     return 0
 
 
+def _proof_export(args: argparse.Namespace) -> int:
+    from bencheval.proof_bundle import export_private_proof
+
+    exported = export_private_proof(
+        run_id=args.run_id,
+        evidence_path=Path(args.evidence),
+        artifacts_dir=Path(args.artifacts),
+        manifest_path=Path(args.manifest),
+        output_dir=Path(args.output),
+        capture_dir=Path(args.capture_dir) if args.capture_dir is not None else None,
+    )
+    sys.stdout.write(
+        json.dumps(
+            {
+                "proof_id": exported.proof_id,
+                "root": str(exported.root),
+                "classification": exported.classification,
+                "classification_reason": exported.classification_reason,
+            },
+            indent=2,
+        )
+        + "\n",
+    )
+    return 0
+
+
+def _proof_verify(args: argparse.Namespace) -> int:
+    from bencheval.proof_bundle import verify_private_proof
+
+    proof_id = verify_private_proof(Path(args.path), expected_proof_id=args.expected)
+    sys.stdout.write(json.dumps({"proof_id": proof_id, "ok": True}, indent=2) + "\n")
+    return 0
+
+
+def _proof_import(args: argparse.Namespace) -> int:
+    from bencheval.proof_bundle import default_proofs_dir, import_private_proof
+
+    installed = import_private_proof(
+        Path(args.path),
+        store_root=Path(args.store) if args.store is not None else default_proofs_dir(),
+    )
+    sys.stdout.write(json.dumps({"installed": str(installed)}, indent=2) + "\n")
+    return 0
+
+
 def _compare_run(args: argparse.Namespace) -> int:
     from bencheval.evidence_compare import (
         compare_evidence_runs,
@@ -467,8 +513,11 @@ def _compare_run(args: argparse.Namespace) -> int:
                 "format": fmt,
                 "output": str(output_path.resolve()),
                 "pass_rate_delta": report.pass_rate_delta,
+                "comparison_valid": report.comparison_valid,
+                "interpretation_label": report.interpretation_label,
+                "validity_reasons": list(report.validity_reasons),
             }
-            comparison_valid = True
+            comparison_valid = report.comparison_valid
         sys.stdout.write(json.dumps(payload, indent=2) + "\n")
         # Pilot proof treats a zero exit as a successful comparison; invalid
         # model/runtime comparisons must not look green (F005).
@@ -675,6 +724,39 @@ def _evidence_register(args: argparse.Namespace) -> int:
     return 0
 
 
+def _evidence_list(args: argparse.Namespace) -> int:
+    manifest_path = Path(args.manifest_path) if args.manifest_path else default_runs_manifest_path()
+    if not args.current:
+        sys.stderr.write("error: evidence list requires --current\n")
+        return 2
+    try:
+        rows = read_live_run_projections(manifest_path)
+    except BenchEvalError as e:
+        sys.stderr.write(f"error: {e}\n")
+        return 1
+    payload = [
+        {
+            "run_id": row.run_id,
+            "model_id": row.model_id,
+            "host": row.host,
+            "status": row.status,
+            "benchmark": row.benchmark,
+            "slice_id": row.slice_id,
+            "runtime": row.runtime,
+            "evidence_path": row.evidence_path,
+            "report_path": row.report_path,
+            "bundle_path": row.bundle_path,
+            "notes": row.notes,
+            "event_count": row.event_count,
+            "first_generated_at": row.first_generated_at.isoformat(),
+            "last_generated_at": row.last_generated_at.isoformat(),
+        }
+        for row in rows
+    ]
+    sys.stdout.write(json.dumps({"count": len(payload), "runs": payload}, indent=2) + "\n")
+    return 0
+
+
 def _add_benchmark_list_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--format", choices=("text", "json"), default="text")
     parser.add_argument("--category", choices=get_args(BenchmarkCategory), default=None)
@@ -819,6 +901,25 @@ def _build_parser() -> argparse.ArgumentParser:
     export_run.add_argument("--compare-report", default=None, type=Path)
     export_run.set_defaults(handler=_export_run_bundle)
 
+    proof = sub.add_parser("proof", help="Export, verify, or import a private proof")
+    proof_sub = proof.add_subparsers(dest="proof_command", required=True)
+    proof_export = proof_sub.add_parser("export", help="Export a private_proof_v1 directory")
+    proof_export.add_argument("--run-id", required=True)
+    proof_export.add_argument("--evidence", required=True)
+    proof_export.add_argument("--artifacts", required=True)
+    proof_export.add_argument("--manifest", required=True)
+    proof_export.add_argument("--output", required=True)
+    proof_export.add_argument("--capture-dir", default=None)
+    proof_export.set_defaults(handler=_proof_export)
+    proof_verify = proof_sub.add_parser("verify", help="Verify a private_proof_v1 directory")
+    proof_verify.add_argument("path")
+    proof_verify.add_argument("--expected", default=None)
+    proof_verify.set_defaults(handler=_proof_verify)
+    proof_import = proof_sub.add_parser("import", help="Verify and install a private proof")
+    proof_import.add_argument("path")
+    proof_import.add_argument("--store", default=None)
+    proof_import.set_defaults(handler=_proof_import)
+
     evidence = sub.add_parser("evidence", help="Evidence helpers")
     evidence_sub = evidence.add_subparsers(dest="evidence_command", required=True)
     register = evidence_sub.add_parser("register", help="Append a live-run manifest row")
@@ -836,6 +937,13 @@ def _build_parser() -> argparse.ArgumentParser:
     register.add_argument("--manifest-path", default=None)
     register.add_argument("--allow-missing-artifacts", action="store_true")
     register.set_defaults(handler=_evidence_register)
+    evidence_list = evidence_sub.add_parser(
+        "list",
+        help="List live-run current state from the validated history",
+    )
+    evidence_list.add_argument("--current", action="store_true")
+    evidence_list.add_argument("--manifest-path", default=None)
+    evidence_list.set_defaults(handler=_evidence_list)
 
     return parser
 

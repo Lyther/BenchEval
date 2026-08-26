@@ -28,6 +28,7 @@ _DEFAULT_ALLOWED_PATHS: frozenset[str] = frozenset(
         "/v1/completions",
     },
 )
+_ALLOWED_QUERIES: frozenset[str] = frozenset({"beta=true"})
 _DEFAULT_MAX_BODY_BYTES = 16 * 1024 * 1024
 _DEFAULT_MAX_INFLIGHT = 32
 _INBOUND_HEADER = "x-bencheval-shim-token"
@@ -86,11 +87,28 @@ def _content_to_system_text(content: object) -> str:
     return json.dumps(content, ensure_ascii=False, sort_keys=True)
 
 
+def _rewrite_developer_roles(items: list[object]) -> list[object]:
+    rewritten: list[object] = []
+    for item in items:
+        if isinstance(item, Mapping) and item.get("role") == "developer":
+            rewritten.append({**dict(item), "role": "system"})
+        else:
+            rewritten.append(item)
+    return rewritten
+
+
 def normalize_anthropic_payload(payload: JsonObject) -> JsonObject:
-    """Move non-standard system-role messages into Anthropic's top-level system field."""
-    raw_messages = payload.get("messages")
+    """Rewrite gateway-incompatible roles, then lift system messages for Anthropic."""
+    normalized = dict(payload)
+    for key in ("messages", "input"):
+        raw_items = normalized.get(key)
+        if isinstance(raw_items, list):
+            rewritten = _rewrite_developer_roles(raw_items)
+            if rewritten != raw_items:
+                normalized[key] = rewritten
+    raw_messages = normalized.get("messages")
     if not isinstance(raw_messages, list):
-        return dict(payload)
+        return normalized
 
     system_parts: list[str] = []
     messages: list[object] = []
@@ -103,15 +121,15 @@ def normalize_anthropic_payload(payload: JsonObject) -> JsonObject:
         messages.append(raw_message)
 
     if not system_parts:
-        return dict(payload)
+        return normalized
 
-    normalized = dict(payload)
-    normalized["messages"] = messages
-    existing_system = normalized.get("system")
+    lifted = dict(normalized)
+    lifted["messages"] = messages
+    existing_system = lifted.get("system")
     if existing_system is not None:
         system_parts.insert(0, _content_to_system_text(existing_system))
-    normalized["system"] = "\n\n".join(part for part in system_parts if part)
-    return normalized
+    lifted["system"] = "\n\n".join(part for part in system_parts if part)
+    return lifted
 
 
 def _validated_request_path(raw_target: str, allowed_paths: frozenset[str]) -> str | None:
@@ -124,7 +142,9 @@ def _validated_request_path(raw_target: str, allowed_paths: frozenset[str]) -> s
     if raw_target.startswith("//") or "://" in raw_target:
         return None
     parts = urlsplit(raw_target)
-    if parts.scheme or parts.netloc or parts.query or parts.fragment:
+    if parts.scheme or parts.netloc or parts.fragment:
+        return None
+    if parts.query and parts.query not in _ALLOWED_QUERIES:
         return None
     path = parts.path
     if not path.startswith("/") or "@" in path:
@@ -454,7 +474,10 @@ def run_server(
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Rewrite Anthropic system-role messages to top-level system.",
+        description=(
+            "Rewrite Anthropic system-role messages and Codex developer-role "
+            "items, then lift system text to the top-level system field."
+        ),
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, required=True)

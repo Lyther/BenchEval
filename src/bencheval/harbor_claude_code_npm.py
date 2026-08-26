@@ -17,6 +17,14 @@ _NODE_TARBALL_SHA256 = "fb870226119d47378fa9c92c4535389c72dae14fcc7b47e6fdcc82c4
 _NPM_REGISTRY_ENV = "BENCHEVAL_CLAUDE_CODE_NPM_REGISTRY"
 _NPM_FETCH_TIMEOUT_ENV = "BENCHEVAL_CLAUDE_CODE_NPM_FETCH_TIMEOUT_MS"
 _NPM_FETCH_RETRIES_ENV = "BENCHEVAL_CLAUDE_CODE_NPM_FETCH_RETRIES"
+_FORWARDED_PROXY_ENVS = ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY")
+
+
+def _env_without_forwarded_proxy(env: dict[str, str] | None) -> dict[str, str]:
+    cleaned = dict(env or {})
+    for name in _FORWARDED_PROXY_ENVS:
+        cleaned[name] = ""
+    return cleaned
 
 
 class ClaudeCodeNpmInstall(ClaudeCode):
@@ -93,6 +101,26 @@ class ClaudeCodeNpmInstall(ClaudeCode):
                 'ln -sf "$(command -v claude)" "$HOME/.local/bin/claude" && '
                 '"$HOME/.local/bin/claude" --version'
             ),
+        )
+
+    async def exec_as_agent(
+        self,
+        environment: BaseEnvironment,
+        command: str,
+        env: dict[str, str] | None = None,
+        cwd: str | None = None,
+        timeout_sec: int | None = None,
+    ) -> object:
+        # npm install needs the forwarded host proxy; Claude provider calls must
+        # not. The same 172.17.0.1 CONNECT 403 that hit Codex applies here.
+        if "claude --verbose" in command or "claude --print" in command:
+            env = _env_without_forwarded_proxy(env)
+        return await super().exec_as_agent(
+            environment,
+            command,
+            env=env,
+            cwd=cwd,
+            timeout_sec=timeout_sec,
         )
 
 

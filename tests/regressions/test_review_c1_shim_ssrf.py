@@ -219,8 +219,28 @@ def test_non_allowlisted_paths_are_rejected(shim_stack: _ShimStack, target: str)
     _assert_rejected(shim_stack, target)
 
 
-def test_query_string_target_is_rejected(shim_stack: _ShimStack) -> None:
-    _assert_rejected(shim_stack, "/v1/messages?x=1")
+@pytest.mark.parametrize(
+    "target",
+    [
+        "/v1/messages?x=1",
+        "/v1/messages?beta=true&x=1",
+        "/v1/messages?x=1&beta=true",
+        "/v1/messages?beta=true#frag",
+        "/v1/admin?beta=true",
+    ],
+)
+def test_query_string_target_is_rejected(shim_stack: _ShimStack, target: str) -> None:
+    _assert_rejected(shim_stack, target)
+
+
+def test_beta_query_on_allowlisted_path_forwards_path_only(shim_stack: _ShimStack) -> None:
+    # Claude Code 2.1.235 POSTs /v1/messages?beta=true. Arbitrary queries stay rejected.
+    status, body = _post(shim_stack.shim_port, "/v1/messages?beta=true")
+    assert status == HTTPStatus.OK
+    assert json.loads(body) == {"ok": True}
+    assert len(shim_stack.upstream.requests) == 1
+    forwarded_path, _, _ = shim_stack.upstream.requests[0]
+    assert forwarded_path == "/v1/messages"
 
 
 def test_oversized_content_length_is_rejected_before_body_is_read(

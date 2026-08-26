@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from bencheval.benchmark_plan import plan_control_plane
@@ -98,7 +99,7 @@ def test_docs_mark_append_validation_and_pending_anchored_writes_complete() -> N
     r2 = current.split("### R2", maxsplit=1)[1].split("### R3", maxsplit=1)[0]
     r4 = current.split("### R4", maxsplit=1)[1].split("### R5", maxsplit=1)[0]
     assert "- [x]" in r2 and "append-time" in r2
-    assert "- [ ]" in r2 and "last-valid-event" in r2
+    assert "- [x]" in r2 and "last-valid-event" in r2
     assert "- [x]" in r4 and "anchored" in r4
 
 
@@ -183,3 +184,15 @@ def test_external_agent_public_api_has_no_momo_aliases() -> None:
         "run_momo_instance",
     }
     assert momo_names.isdisjoint(set(external_agent_all))
+
+
+def test_private_proof_store_is_gitignored() -> None:
+    probe = subprocess.run(
+        ["git", "check-ignore", "-v", "results/proofs/example/private.json"],
+        cwd=REPO,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert probe.returncode == 0
+    assert "results/proofs/*" in probe.stdout

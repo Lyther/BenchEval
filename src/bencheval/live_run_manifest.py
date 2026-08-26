@@ -8,9 +8,14 @@ construction-time guard rejects any field whose value looks like a credential.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import re
+import stat
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -124,12 +129,6 @@ def _aware_event_time(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
-def _prior_events(path: Path, run_id: str) -> list[LiveRunRecord]:
-    if not path.is_file():
-        return []
-    return [row for row in read_live_runs(path) if row.run_id == run_id]
-
-
 def _first_filled(rows: list[LiveRunRecord], field: str) -> str | None:
     for row in rows:
         value = getattr(row, field)
@@ -138,8 +137,90 @@ def _first_filled(rows: list[LiveRunRecord], field: str) -> str | None:
     return None
 
 
-def _reject_inconsistent_history(path: Path, record: LiveRunRecord) -> None:
-    prior = _prior_events(path, record.run_id)
+def _latest_filled(rows: list[LiveRunRecord], field: str) -> str | None:
+    latest: str | None = None
+    for row in rows:
+        value = getattr(row, field)
+        if isinstance(value, str):
+            latest = value
+    return latest
+
+
+def _lock_path(manifest: Path) -> Path:
+    return manifest.with_name(f"{manifest.name}.lock")
+
+
+def _owned_regular_file_error(path: Path, descriptor: int, *, role: str) -> str | None:
+    try:
+        current = os.lstat(path)
+        held = os.fstat(descriptor)
+    except OSError as e:
+        return f"cannot inspect {role} {path}: {e}"
+    if not stat.S_ISREG(held.st_mode) or not stat.S_ISREG(current.st_mode):
+        return f"{role} is not a regular file: {path}"
+    if held.st_nlink != 1:
+        return f"{role} is not an owned single-link regular file: {path}"
+    if (current.st_dev, current.st_ino) != (held.st_dev, held.st_ino):
+        return f"{role} was replaced after open: {path}"
+    return None
+
+
+def _open_owned_regular_file(path: Path, flags: int, *, role: str) -> int:
+    safe_flags = (
+        flags
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
+    try:
+        descriptor = os.open(path, safe_flags, 0o600)
+    except OSError as e:
+        try:
+            current = os.lstat(path)
+        except OSError:
+            current = None
+        if current is not None and not stat.S_ISREG(current.st_mode):
+            raise LiveRunManifestError(f"{role} is not a regular file: {path}") from e
+        raise LiveRunManifestError(f"cannot open {role} {path}: {e}") from e
+    error = _owned_regular_file_error(path, descriptor, role=role)
+    if error is not None:
+        os.close(descriptor)
+        raise LiveRunManifestError(error)
+    return descriptor
+
+
+@contextmanager
+def _live_run_lock(manifest: Path, *, exclusive: bool) -> Iterator[None]:
+    lock_path = _lock_path(manifest)
+    try:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise LiveRunManifestError(
+            f"cannot create runs manifest parent {lock_path.parent}: {e}",
+        ) from e
+    descriptor = _open_owned_regular_file(
+        lock_path,
+        os.O_RDWR | os.O_CREAT,
+        role="runs manifest lock",
+    )
+    locked = False
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+            locked = True
+        except OSError as e:
+            raise LiveRunManifestError(f"cannot lock runs manifest {manifest}: {e}") from e
+        error = _owned_regular_file_error(lock_path, descriptor, role="runs manifest lock")
+        if error is not None:
+            raise LiveRunManifestError(error)
+        yield
+    finally:
+        if locked:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
+
+
+def _reject_record_against_prior(prior: list[LiveRunRecord], record: LiveRunRecord) -> None:
     if not prior:
         return
     last = prior[-1]
@@ -163,27 +244,70 @@ def _reject_inconsistent_history(path: Path, record: LiveRunRecord) -> None:
             )
 
 
+def _validate_live_run_history(rows: list[LiveRunRecord]) -> None:
+    histories: dict[str, list[LiveRunRecord]] = {}
+    for record in rows:
+        history = histories.setdefault(record.run_id, [])
+        _reject_record_against_prior(history, record)
+        history.append(record)
+
+
+def _reject_inconsistent_history(existing: list[LiveRunRecord], record: LiveRunRecord) -> None:
+    _validate_live_run_history(existing)
+    _reject_record_against_prior(
+        [row for row in existing if row.run_id == record.run_id],
+        record,
+    )
+
+
 def append_live_run(path: Path | str, record: LiveRunRecord) -> Path:
-    """Append ``record`` as one JSON line to ``path`` (single-threaded).
+    """Append ``record`` as one JSON line to ``path``.
 
     The leaf is opened with ``O_NOFOLLOW`` so a swapped symlink cannot
     redirect the append; the lexical (unresolved) path is used on purpose,
-    since resolving would follow that symlink. Within the documented
-    single-threaded scope this keeps the registry bound to its own file.
+    since resolving would follow that symlink. Read→validate→append→fsync
+    is one exclusive ``fcntl.flock`` critical section.
     """
     target = Path(os.path.abspath(Path(path).expanduser()))
-    if target.exists() and not target.is_file():
-        raise LiveRunManifestError(f"path exists but is not a regular file: {target}")
-    _reject_inconsistent_history(target, record)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    line = record.model_dump_json() + "\n"
-    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
     try:
-        descriptor = os.open(target, flags, 0o600)
+        target.parent.mkdir(parents=True, exist_ok=True)
     except OSError as e:
-        raise LiveRunManifestError(f"cannot append runs manifest {target}: {e}") from e
-    with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
-        handle.write(line)
+        raise LiveRunManifestError(
+            f"cannot create runs manifest parent {target.parent}: {e}",
+        ) from e
+    payload = (record.model_dump_json() + "\n").encode("utf-8")
+    with _live_run_lock(target, exclusive=True):
+        descriptor = _open_owned_regular_file(
+            target,
+            os.O_RDWR | os.O_APPEND | os.O_CREAT,
+            role="runs manifest",
+        )
+        locked = False
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            locked = True
+            _reject_inconsistent_history(
+                _parse_live_run_descriptor(descriptor, target.name, target),
+                record,
+            )
+            remaining = memoryview(payload)
+            while remaining:
+                written = os.write(descriptor, remaining)
+                if written <= 0:
+                    raise OSError("short write")
+                remaining = remaining[written:]
+            os.fsync(descriptor)
+            error = _owned_regular_file_error(target, descriptor, role="runs manifest")
+            if error is not None:
+                raise LiveRunManifestError(error)
+        except LiveRunManifestError:
+            raise
+        except OSError as e:
+            raise LiveRunManifestError(f"cannot append runs manifest {target}: {e}") from e
+        finally:
+            if locked:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            os.close(descriptor)
     return target
 
 
@@ -205,28 +329,118 @@ def _parse_line(line: str, source: str, line_no: int) -> LiveRunRecord:
         raise LiveRunManifestError(f"{source}:line {line_no}: {e}") from e
 
 
-def read_live_runs(path: Path | str) -> list[LiveRunRecord]:
-    """Read every non-blank line of a runs manifest JSONL file in order."""
-    p = Path(path)
-    try:
-        text = p.read_text(encoding="utf-8")
-    except UnicodeDecodeError as e:
-        raise LiveRunManifestError(
-            f"cannot decode runs manifest {p} as UTF-8: {e}",
-        ) from e
-    except OSError as e:
-        raise LiveRunManifestError(f"cannot read runs manifest {p}: {e}") from e
-
+def _parse_live_run_text(text: str, source: str) -> list[LiveRunRecord]:
     rows: list[LiveRunRecord] = []
     for line_no, line in enumerate(text.splitlines(), start=1):
         if not line.strip():
             continue
-        rows.append(_parse_line(line, p.name, line_no))
+        rows.append(_parse_line(line, source, line_no))
     return rows
 
 
+def _parse_live_run_descriptor(descriptor: int, source: str, path: Path) -> list[LiveRunRecord]:
+    try:
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        chunks: list[bytes] = []
+        while chunk := os.read(descriptor, 1024 * 1024):
+            chunks.append(chunk)
+        text = b"".join(chunks).decode("utf-8")
+    except UnicodeDecodeError as e:
+        raise LiveRunManifestError(
+            f"cannot decode runs manifest {path} as UTF-8: {e}",
+        ) from e
+    except OSError as e:
+        raise LiveRunManifestError(f"cannot read runs manifest {path}: {e}") from e
+    error = _owned_regular_file_error(path, descriptor, role="runs manifest")
+    if error is not None:
+        raise LiveRunManifestError(error)
+    return _parse_live_run_text(text, source)
+
+
+def read_live_runs(path: Path | str) -> list[LiveRunRecord]:
+    """Read and validate every non-blank line of a runs manifest JSONL file."""
+    p = Path(os.path.abspath(Path(path).expanduser()))
+    if not p.is_file():
+        raise LiveRunManifestError(f"cannot read runs manifest {p}: file does not exist")
+    with _live_run_lock(p, exclusive=False):
+        descriptor = _open_owned_regular_file(p, os.O_RDONLY, role="runs manifest")
+        locked = False
+        try:
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_SH)
+                locked = True
+            except OSError as e:
+                raise LiveRunManifestError(f"cannot lock runs manifest {p}: {e}") from e
+            rows = _parse_live_run_descriptor(descriptor, p.name, p)
+            _validate_live_run_history(rows)
+            return rows
+        finally:
+            if locked:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            os.close(descriptor)
+
+
+@dataclass(frozen=True, slots=True)
+class LiveRunProjection:
+    """Last-valid-event operational view for one run_id. Raw rows stay intact."""
+
+    run_id: str
+    model_id: str
+    host: str
+    status: LiveRunStatus
+    benchmark: str | None
+    slice_id: str | None
+    runtime: str | None
+    evidence_path: str | None
+    report_path: str | None
+    bundle_path: str | None
+    notes: str
+    event_count: int
+    first_generated_at: datetime
+    last_generated_at: datetime
+
+
+def project_live_runs(rows: list[LiveRunRecord]) -> tuple[LiveRunProjection, ...]:
+    """Derive one current-state row per run_id from a validated history."""
+    _validate_live_run_history(rows)
+    projections: list[LiveRunProjection] = []
+    seen: dict[str, list[LiveRunRecord]] = {}
+    order: list[str] = []
+    for record in rows:
+        if record.run_id not in seen:
+            order.append(record.run_id)
+            seen[record.run_id] = []
+        seen[record.run_id].append(record)
+    for run_id in order:
+        history = seen[run_id]
+        last = history[-1]
+        projections.append(
+            LiveRunProjection(
+                run_id=run_id,
+                model_id=history[0].model_id,
+                host=last.host,
+                status=last.status,
+                benchmark=_first_filled(history, "benchmark"),
+                slice_id=_first_filled(history, "slice_id"),
+                runtime=_first_filled(history, "runtime"),
+                evidence_path=_latest_filled(history, "evidence_path"),
+                report_path=_latest_filled(history, "report_path"),
+                bundle_path=_latest_filled(history, "bundle_path"),
+                notes=last.notes,
+                event_count=len(history),
+                first_generated_at=_aware_event_time(history[0].generated_at),
+                last_generated_at=_aware_event_time(last.generated_at),
+            ),
+        )
+    return tuple(projections)
+
+
+def read_live_run_projections(path: Path | str) -> tuple[LiveRunProjection, ...]:
+    return project_live_runs(read_live_runs(path))
+
+
 class JsonlLiveRunSink:
-    """Append a :class:`LiveRunRecord` as a JSON line; single-threaded only."""
+    """Append a :class:`LiveRunRecord` as a JSON line under the exclusive lock."""
 
     def append_jsonl(self, path: Path, record: LiveRunRecord) -> Path:
         return append_live_run(path, record)
@@ -235,9 +449,12 @@ class JsonlLiveRunSink:
 __all__ = [
     "LIVE_RUN_SCHEMA_VERSION",
     "JsonlLiveRunSink",
+    "LiveRunProjection",
     "LiveRunRecord",
     "LiveRunStatus",
     "append_live_run",
     "default_runs_manifest_path",
+    "project_live_runs",
+    "read_live_run_projections",
     "read_live_runs",
 ]

@@ -19,4 +19,4 @@ agent:
     never scoring authority. BenchEval records primary_pass=false
     (harness_failure) until a benchmark-owned verifier path is wired. DeepAudit
     stays inside MOMO. Not valid for model-only harnesses (e.g. bfcl-native).
-admission: admitted
+admission: scaffold

@@ -4,8 +4,8 @@ Operator notes for product catalog rows. BenchEval ships control-plane glue and,
 
 | id | Mode | One-liner shape |
 | --- | --- | --- |
-| `terminal-bench` | Harbor 2.1 (Tier-0) | `--runtime` XOR `--agent` |
-| `gpqa-diamond` | Inspect Evals (Tier-0) | model-only; parse official Inspect scores |
+| `terminal-bench` | Harbor 2.1 (Tier-1 `fix-git` on both admitted runtimes) | `--runtime` XOR `--agent` |
+| `gpqa-diamond` | Inspect Evals (Tier-1: `run-20260825-160511-036214-304c2cee`) | model-only; parse official Inspect scores |
 | `hle` | CAIS scripts (Tier-0) | model-only; `BENCHEVAL_HLE_HOME`; parse judge metrics |
 | `swe-bench-verified` | **demoted** | not executable until official SWE-bench evaluate is wired |
 | `bfcl-v4` | BFCL eval (Tier-0) | model-only; official `bfcl generate`+`evaluate` lifecycle, gated on the supported-model manifest |

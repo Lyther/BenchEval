@@ -14,6 +14,7 @@ build/
 .ruff_cache/
 .pytest_cache/
 .mypy_cache/
+.hypothesis/
 
 target/
 node_modules/
@@ -35,6 +36,8 @@ results/reports/*
 !results/reports/.gitkeep
 results/manifests/*
 !results/manifests/README.md
+results/proofs/*
+!results/proofs/README.md
 config/selftest/**/runs/
 config/tasks/**/runs/
 

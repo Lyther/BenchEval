@@ -7,7 +7,7 @@
 
 ## 0. Product Principles
 
-1. **Simple spine.** Product path is `benchmark → (runtime|agent)? → model → evidence`. Runtime and agent are mutually exclusive scaffolds; omit both for the executable model-only paths (GPQA/HLE/BFCL).
+1. **Simple spine.** Product path is `benchmark → (runtime|agent)? → model → evidence`. Runtime and agent are mutually exclusive axes; omit both for the executable model-only paths (GPQA/HLE/BFCL). A cataloged agent scaffold is not executable until separately admitted.
 2. **Defined benchmarks only.** Live execution is limited to config-declared executable adapters.
 3. **Official-first execution.** Prefer official distributions, runners, and scorers. BenchEval normalizes evidence; it does not reimplement benchmark semantics unless upstream has no usable feedback path (then label it as fallback).
 4. **Config-first expansion.** New slices/runtimes/models/agents/providers on an existing adapter family are YAML/manifest work.
@@ -26,9 +26,9 @@ benchmark/slice  →  (runtime | agent)?  →  model via provider  →  Evidence
 
 **Tier-0 executable software (gate count = 4):** `terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4`. Catalog lists `swe-bench-verified` as non-executable until its official evaluate path is wired (`bfcl-v4` was admitted 2026-08-24 on the diagnostic-labeled dev-box lifecycle demonstration `run-20260824-040631-228703-4756f857` plus the registered `passed` run `run-20260824-045622-854659-a46ae44d`), plus `swe-bench-pro`, `cybergym`, and `exploitgym` as `adapter_pending`.
 
-**Live-proof status:** `bfcl-v4` and `hle` hold registered Tier-1 evidence. `terminal-bench` and `gpqa-diamond` remain Tier-0 software only; the pilot target is a Terminal-Bench runtime comparison (`claude-code` vs `codex-cli`) plus a GPQA native-harness smoke. No benchmark is called Tier-2 until its benchmark-specific checklist is complete. `swe-bench-verified` remains non-executable until official generation and evaluation are one evidence-bound lifecycle.
+**Live-proof status:** `bfcl-v4`, `hle`, `gpqa-diamond`, and `terminal-bench` hold registered Tier-1 evidence. Terminal-Bench is one native `fix-git` attempt per admitted runtime (`claude-code` `run-20260825-173913-754489-4f43e296`, `codex-cli` `run-20260825-171829-685914-aa08dd1d`), both `model_wrong_solution` with official `reward == 0.0`, plus a valid shared-axis runtime compare (`comparison_valid`, `contaminated_or_legacy`). No benchmark is called Tier-2 until its benchmark-specific checklist is complete. `swe-bench-verified` remains non-executable until official generation and evaluation are one evidence-bound lifecycle.
 
-**Admitted scaffolds:** runtimes `claude-code`, `codex-cli`; agent `momo`; providers `bytellm`, `ollama-cloud`.
+**Admitted execution profiles:** runtimes `claude-code`, `codex-cli`; providers `bytellm`, `ollama-cloud`. `momo` remains a discoverable **scaffold only**: planning or direct execution with it must fail before output reservation or provider/agent launch until a later admission decision.
 
 ## 2. Identity axes
 
@@ -101,7 +101,7 @@ flowchart LR
 | Slice Manifest Registry | Typed `smoke`/`lite`/`full`/`custom` instance lists with budget + labels. | Product slices keep instance ids inline; `manifest.py` remains for optional large/generated external lists. | `manifest.py` (+ `slice_manifest.py`) |
 | Model Registry | Model identity, provider, pricing, context limits, version capture. | **Implemented:** `config/models.yaml` + `pricing/` + model registry/types. | `model_registry.py`, `models.py`, `pricing.py` |
 | Runtime Registry | Admitted runtimes (`claude-code`, `codex-cli`) + capability metadata. | `runtime_registry.py` + `config/runtimes/*.yaml`. | `runtime_registry.py` |
-| Agent Registry | Admitted agents (`momo`); XOR with runtime on the plan. | `agent_registry.py` + `config/agents/*.yaml`. | `agent_registry.py` |
+| Agent Registry | Catalog agent scaffolds and their admission state; only `admitted` profiles may enter a plan. MOMO is currently `scaffold`. | `agent_registry.py` + `config/agents/*.yaml`. | `agent_registry.py` |
 | Provider Registry | Admitted providers (`bytellm`, `ollama-cloud`). | `provider_registry.py` + `config/providers/*.yaml`. | `provider_registry.py` |
 | Run Planner | Build `RunPlan` from benchmark + slice + model + (runtime\|agent) + provider. | `benchmark_plan.py` (phase 1 of `run`). | `benchmark_plan.py` |
 | Preflight / Doctor | Runtime/provider env checks before live runs (never prints secrets). | `doctor.py`. | `doctor.py` |
@@ -164,7 +164,7 @@ Product slice YAML keeps small fixed instance lists inline. Large generated mani
 
 ### 7.3 Runtime Profile (`config/runtimes/<id>.yaml`)
 
-Per HLD §6.2. Pydantic `RuntimeProfile`: id, kind, display_name, lifecycle, supported_platforms, supported_harnesses, model_binding, launch (command_template, working_dir_policy, env vars, timeout), capabilities, safety (network_default, workspace_boundary, forbidden_features), versioning (version_command, config_hash_inputs). **Admitted profiles now:** `claude-code`, `codex-cli`. Agents live under `config/agents/` (`momo`); providers under `config/providers/` (`bytellm`, `ollama-cloud`).
+Per HLD §6.2. Pydantic `RuntimeProfile`: id, kind, display_name, lifecycle, supported_platforms, supported_harnesses, model_binding, launch (command_template, working_dir_policy, env vars, timeout), capabilities, safety (network_default, workspace_boundary, forbidden_features), versioning (version_command, config_hash_inputs). **Admitted profiles now:** `claude-code`, `codex-cli`. Agent profiles live under `config/agents/` and carry a closed `scaffold | draft | admitted` state; MOMO is `scaffold` and non-executable. Providers live under `config/providers/` (`bytellm`, `ollama-cloud`).
 
 ### 7.4 EvidenceRecord v0.3 — additive extension (no breaking change)
 
@@ -218,7 +218,7 @@ Adapters **prefer native harnesses**. Product v1 allowed shapes:
 
 1. **Native wrapper** — call the official runner/scorer, parse its result files, and preserve raw artifacts (GPQA/HLE/BFCL today; future adapters must meet the same bar).
 2. **Harbor wrapper** — Harbor-native terminal tasks (Terminal-Bench 2.1).
-3. **External agent wrapper** — admitted agent profiles (`momo`) via `external_agent_adapter.py`.
+3. **External agent wrapper** — retained scaffold mechanics via `external_agent_adapter.py`; no agent profile is admitted in v1.
 
 Deferred / not product: Inspect-as-runtime wrappers. Compatibility shims must be explicitly labeled `adapter_smoke`.
 
@@ -249,7 +249,7 @@ Current official authority boundaries:
 | GPQA Diamond | Inspect Evals `inspect_evals/gpqa_diamond` | successful Inspect eval log accuracy |
 | HLE | official CAIS prediction then judge scripts | exact run-owned judged artifact |
 | BFCL v4 | `bfcl generate` then `bfcl evaluate` | official `BFCL_v4_<category>_score.json` JSONL |
-| SWE-bench Verified (demoted) | pinned mini-SWE batch prediction generation, then official SWE-bench evaluator | requested instance in official `report.json`; local `verifier.json`/`result.json` has no authority |
+| SWE-bench Verified (demoted) | locked Inspect Evals + Inspect SWE generation, then official SWE-bench evaluator | requested instance in official `report.json`; local `verifier.json`/`result.json` has no authority |
 
 ### 8.2 Expansion rule
 
@@ -271,7 +271,7 @@ Adding a new family therefore means one narrow adapter, one executor dispatch, o
 
 Class values are classification ceilings, and the slice's own envelope is always the effective cap (bands mirror the class defaults, so a slice never classifies into a class whose ceiling it exceeds; B3's zero defaults declare no standard envelope). Per-instance wall-clock and run-total wall-clock are **separate `RunPlan` fields**: `max_wall_clock_sec_per_instance` bounds each attempt and `max_wall_clock_sec` bounds the whole run (`per-instance × instances`); adapters must never derive one from the other. Serialized schema-"0.3" plans written before the per-instance field existed derive it from the run total on load (the pre-field contract allowed one attempt to consume the whole envelope). The aggregate model-only harnesses (GPQA, HLE) execute every sample in one subprocess chain and are therefore bounded by the **run-total** envelope; per-instance wall is not enforceable inside an aggregate process and evidence records this as `per_instance_wall_enforcement=unavailable_aggregate_harness`. Observed steps are recorded retrospectively in evidence only — no max-step envelope is claimed or enforced.
 
-**Budget truth:** wall-clock envelopes are enforceable. Dollar envelopes are hard caps only when the real provider route reports spend during execution and exposes a stop mechanism. GPQA, HLE, and BFCL currently capture no such provider metering; for them `max_cost_usd` is a planning estimate and `cost_usd=0.0` means *unmeasured*, not zero spend. Reports and readiness claims must preserve that distinction. Whether hard provider-dollar termination is a v1 requirement remains a product decision; until then BenchEval is **wall-bounded and cost-estimated**, not universally cost-bounded. Exceeding an enforced envelope → failure label `budget_exceeded` (distinct from `wrong_solution`).
+**Budget truth (v1 decision):** BenchEval promises enforceable wall-clock envelopes and cost estimates; it does **not** promise provider-enforced hard-dollar termination. Provider-reported billing may be retained when available, but is informational and does not become a required stop controller. `max_cost_usd` is therefore a planning envelope, and `cost_usd=0.0` means *unmeasured*, not zero spend, whenever no measured value is returned. Reports and readiness claims must preserve that distinction. Exceeding an enforced wall envelope → failure label `budget_exceeded` (distinct from `wrong_solution`). A future provider termination controller is out of scope unless a new product decision reopens it.
 
 ## 10. Failure Taxonomy (must be distinguishable)
 
@@ -323,6 +323,9 @@ A report cannot claim model/runtime superiority unless: benchmark id identical; 
 | AR-10 | Heavy harnesses, containers, corpora, and credentials remain operator-owned; BenchEval owns preflight, dispatch, evidence, and cleanup. |
 | AR-11 | Dual-use benchmark execution is impossible until the product boundary and operator-host policy explicitly admit it. |
 | AR-12 | Registered evidence has a portable, integrity-bound export path; machine-local registry paths are never presented as durable publication. |
+| AR-13 | An agent profile marked `scaffold` remains discoverable but cannot produce a plan, reserve outputs, launch a provider, or enter evidence. |
+| AR-14 | Finalized private proofs are retained in the local proof store permanently; v1 exposes no delete, prune, replacement, retention-expiry, or garbage-collection operation. |
+| AR-15 | Raw live-run events remain authoritative; readers validate the complete history before deriving a non-destructive current-state projection. |
 
 ### 13.5 Quality scenarios
 
@@ -338,6 +341,10 @@ A report cannot claim model/runtime superiority unless: benchmark id identical; 
 | QS-08 | A pending adapter's output directory is swapped after launch: no write or scored read escapes; the attempt fails `evidence_corrupt`. |
 | QS-09 | An operator requests a dual-use benchmark before policy admission: planning remains non-executable and no harness launches. |
 | QS-10 | A fresh supported install follows the documented dependency path: every advertised executable adapter reaches preflight without an undeclared package. |
+| QS-11 | A private proof is copied after the source checkout disappears: offline verification resolves every reference beneath the proof root and matches the expected inventory digest. |
+| QS-12 | An already-written live registry contains an illegal transition or identity drift: reading or projecting it fails instead of presenting a false current state. |
+| QS-13 | MOMO is selected by CLI or a crafted direct plan: the request fails before any output path, subprocess, or provider call is created. |
+| QS-14 | A legacy comparison contains a passing infrastructure-failure row or asymmetric eligibility: the row remains visible, is excluded from headline rates, and an invalid comparison exits nonzero. |
 
 ## 14. VETOs (unchanged where still relevant)
 
@@ -358,7 +365,7 @@ A report cannot claim model/runtime superiority unless: benchmark id identical; 
 | Harbor unavailable / Docker absent | High | Doctor gates; local injected-runner tests remain diagnostic only; Terminal-Bench live acceptance stays blocked until the operator host passes preflight. |
 | Public benchmark contamination | High | Caveat labels; prefer fresh benchmarks for promotion; contaminated = smoke/trend only. |
 | Reward-hackable verifiers | High | Preserve native result + label verifier-integrity risk; no promotion on one score. |
-| Cost overrun | High | Enforced wall limits, default smoke slices, dry-run cost estimates, and explicit `unmeasured` evidence; hard dollar caps require provider metering/termination proof. |
+| Cost overrun | High | Enforced wall limits, default smoke slices, dry-run cost estimates, and explicit `unmeasured` evidence. v1 deliberately makes no provider-enforced hard-dollar termination claim. |
 | Cyber scope creep | High | CyberGym/ExploitGym remain catalog-only and non-executable for v1; never target live systems or mix their results into Core. |
 | CLI runtimes mutate global config | Medium | Ephemeral home/workspace; config hash capture. |
 | Native harness drift | High | Pin benchmark repo version, image digest, harness version, adapter version. |
@@ -383,11 +390,12 @@ Every production module under `src/bencheval/` has one architectural home below.
 | Catalogs, slices, models, budgets | `benchmark_registry.py`, `slice_manifest.py`, `manifest.py`, `model_registry.py`, `runtime_registry.py`, `agent_registry.py`, `provider_registry.py`, `models.py`, `pricing.py`, `budget_defaults.py` | Typed configuration and identity lookup; no secrets. |
 | Planning and preflight | `benchmark_plan.py`, `doctor.py`, `preflight_report.py`, `redaction.py` | Phase-one plan, dependency/env checks, shareable preflight, secret/path redaction. |
 | Execution, isolation, lifecycle | `control_plane_executor.py`, `lifecycle.py`, `run_isolation.py`, `path_safety.py`, `backends.py` | Dispatch, budgets/deadlines, path ownership, cleanup, backend vocabulary. |
-| Executable adapters and integrations | `terminal_bench_harbor.py`, `harbor_claude_code_npm.py`, `anthropic_role_shim.py`, `gpqa_adapter.py`, `hle_adapter.py`, `bfcl_native_adapter.py`, `external_agent_adapter.py`, `momo_agent_adapter.py` | Admitted official harnesses, runtime install/shim boundaries, external-agent path. |
+| Executable adapters and integrations | `terminal_bench_harbor.py`, `harbor_claude_code_npm.py`, `harbor_codex_npm.py`, `anthropic_role_shim.py`, `gpqa_adapter.py`, `hle_adapter.py`, `bfcl_native_adapter.py` | Admitted official harnesses and runtime install/shim boundaries. |
+| Agent scaffold mechanics | `external_agent_adapter.py`, `momo_agent_adapter.py` | Non-authoritative external-agent integration retained for future admission work; no v1 agent is executable. |
 | Demoted or pending adapters | `swebench_adapter.py`, `swebench_pro_harbor.py`, `cybergym_adapter.py`, `exploitgym_adapter.py` | Research/diagnostic code only; no catalog-executable claim. |
 | Evidence, identity, admission | `evidence.py`, `identity_strings.py`, `live_proof.py`, `provenance_gates.py`, `adapter_admission.py`, `live_run_manifest.py` | JSONL record, captured identities, qualification, Tier-0 assessment, append-only run registry. |
 | Comparison and statistics | `evidence_compare.py`, `model_compare.py`, `runtime_compare.py`, `stats.py` | Shared-instance validity, deltas, confidence intervals, comparison CLIs. |
-| Reports and exports | `report.py`, `export.py`, `run_bundle.py` | Markdown/JSON reporting, Parquet/DuckDB analytics, public/private bundles. |
+| Reports and exports | `report.py`, `export.py`, `run_bundle.py`, `proof_bundle.py` | Markdown/JSON reporting, Parquet/DuckDB analytics, publication bundles, and immutable `private_proof_v1`. |
 | CLI | `cli.py` | `list`, `catalog`, `run`, `doctor`, report/compare/export, evidence registration. |
 
 ## 18. Remaining adapter architecture
@@ -396,17 +404,37 @@ The following are researched designs, not executable claims:
 
 ### 18.1 SWE-bench Verified diagnostic lifecycle
 
-The retained adapter is generation-only and already fail-closes unless official `report.json[instance_id]["resolved"]` is present; local `verifier.json`/`result.json` have no authority. That path still cannot be admitted until the pinned generation→official-evaluator lifecycle is proven. The selected redesign is:
+The retained adapter is generation-only and already fail-closes unless official `report.json[instance_id]["resolved"]` is present; local `verifier.json`/`result.json` have no authority. That path still cannot be admitted until one pinned generation→official-evaluator lifecycle is proven. Three routes were compared:
+
+| Route | Fit | Decision |
+|---|---|---|
+| Locked Inspect Evals + Inspect SWE runtime generation, then official SWE-bench evaluator | Reuses the installed task and exact admitted Codex/Claude binary pins, exports standard predictions, and still leaves the official evaluator as sole score authority. Inspect proxies the model route, so the result is diagnostic rather than standalone-CLI parity. | **Selected for the first diagnostic implementation.** |
+| mini-SWE-agent batch generation + official SWE-bench evaluator | Upstream-simple exact-ID batch generation, but mini-SWE is a distinct agent/scaffold. Using it while claiming a selected BenchEval Codex/Claude runtime would make the runtime axis misleading. | Defer to a separately named future agent profile, if admitted. |
+| Harbor SWE-bench Verified | Reuses Harbor, but Harbor documents an adapted dataset and measured parity drift rather than byte-for-byte official lifecycle parity. | Do not select as the first official diagnostic. |
+
+The selected lifecycle is:
 
 ```text
-pinned mini-SWE batch generation for exact fixed instance ids
-  → retained prediction JSONL (`instance_id`, `model_name_or_path`, `model_patch`)
-  → pinned official SWE-bench evaluator in its official container environment
+locked Inspect Evals task + Inspect SWE solver for the selected pinned runtime binary
+  → export exactly one standard prediction JSONL row
+  → pinned official SWE-bench evaluator over a run-owned pinned dataset row
   → exact requested-instance `report.json[instance_id]["resolved"]`
-  → evidence with prediction/report bytes and mini-SWE/evaluator/dataset identities
+  → evidence with prediction/report bytes and task/solver/runtime/evaluator/dataset/image identities
 ```
 
-The official evaluation guide and harness source define the prediction fields and `report.json` authority: [SWE-bench evaluation guide](https://github.com/SWE-bench/SWE-bench/blob/main/docs/guides/evaluation.md), [official evaluator](https://github.com/SWE-bench/SWE-bench/blob/main/swebench/harness/run_evaluation.py), and [grading schema](https://github.com/SWE-bench/SWE-bench/blob/main/swebench/harness/grading.py). The mini-SWE batch runner produces predictions through its `--subset`/`--split`/`--filter`/`--output` interface: [official mini-SWE batch source](https://github.com/SWE-agent/mini-swe-agent/blob/main/src/minisweagent/run/benchmarks/swebench.py). Keep the benchmark non-executable until a real diagnostic smoke proves both phases and the operator deliberately promotes it; its contamination/quality caveat still prevents a frontier-quality claim.
+The official evaluation guide defines the prediction fields as `instance_id`, `model_name_or_path`, and `model_patch`; the evaluator emits the requested instance's `report.json`: [SWE-bench evaluation guide](https://github.com/SWE-bench/SWE-bench/blob/v5.0.1/docs/guides/evaluation.md), [official evaluator](https://github.com/SWE-bench/SWE-bench/blob/v5.0.1/swebench/harness/run_evaluation.py), and [CLI evaluator](https://github.com/SWE-bench/SWE-bench/blob/v5.0.1/swebench/cli/evaluate.py). Inspect Evals documents its task/export boundary in its [SWE-bench task README](https://github.com/UKGovernmentBEIS/inspect_evals/blob/main/src/inspect_evals/swe_bench/README.md), while Inspect SWE documents the [Codex solver](https://meridianlabs-ai.github.io/inspect_swe/codex_cli.html).
+
+The implementation candidates are the already locked Inspect Evals `0.8.0` task 3-C and Inspect SWE `0.2.47`, the exact runtime binary pins already stored in runtime profiles, official `swebench==5.0.1` (tag commit `87ab1f6ced28f75ba73ca899dc759b019310944a`), and Verified dataset revision `78f471bf655a3137b2e8a75af1501690ec009ec3`. Only `swebench` is a new candidate dependency.
+
+Uncharged 2026-08-25 spike facts (product venv + `uv run --no-sync --with swebench==5.0.1`; do not add `swebench` to the lock until both spikes finish):
+
+- Inspect Evals `0.8.0` `swe_bench` defaults to `princeton-nlp/SWE-bench_Verified` @ `c104f840cc67f8b6eec6f759ebc8b2693d585d4a`. That pair loads 500 samples, includes `django__django-11099`, and still emits a tag-form image (`ghcr.io/epoch-research/swe-bench.eval.x86_64.django__django-11099:latest`), not a digest.
+- Revision `78f471bf655a3137b2e8a75af1501690ec009ec3` exists on `SWE-bench/SWE-bench_Verified` only. Loading that org/revision into inspect-evals `0.8.0` crashes because `PASS_TO_PASS` is already a list and the task still `json.loads` it. Extra columns include `difficulty`, `eval_type`, `image`, `log_parser`, `eval_script`; the row `image` is still tag-form.
+- Official CLI shape is `swebench eval verified -p <preds> -i <id> -j 1 --run-id <id> --report-dir <dir>` (dataset positional required; default `--run-id` is `run`). `--report-dir` writes `<model>.<run-id>.json` with `schema_version: 2` (`resolved_ids` / `unresolved_ids`). An empty `model_patch` is classified as `empty_patch_ids` and is **not** executed. A non-empty dummy patch (`results/raw/swe-dummy-patch-20260825T1748Z/`) completed Docker eval: `resolved: false` for `django__django-11099` in `logs/run_evaluation/<run_id>/<model>/<instance_id>/report.json` with the expected `{instance_id: {resolved: bool}}` shape. Adapter scoring still reads only that per-instance `report.json`, never the summary file.
+
+Before a charged diagnostic, keep the original pinned row, a run-owned one-row dataset with an execution-time resolved platform image digest, the transformation record, and all hashes. Both phases share one cumulative deadline and one run-owned artifact root. Either wrap inspect for list-typed metadata, or select one dataset/revision pair and record why the other pin was not used.
+
+Keep the benchmark non-executable and force `diagnostic` interpretation until a real smoke proves both phases. That proof triggers a separate human review; it never auto-promotes the catalog row. The contamination/quality caveat still prevents a frontier-quality claim.
 
 ### 18.2 CyberGym and ExploitGym
 
@@ -418,11 +446,51 @@ Neither current adapter implements that lifecycle. The v1 product decision is to
 
 `results/manifests/runs.jsonl` is an append-only machine-local event index. `append_live_run` already enforces the append-time event contract: `model_id` is immutable; optional benchmark/slice/runtime axes may be filled once and are immutable thereafter; event timestamps do not move backward; same-status correction rows are allowed; `registered` may advance to any lifecycle state, `running` to completed/passed/failed/archived, `completed` to passed/failed/archived, and passed/failed only to themselves or archived.
 
-The reader still exposes raw append order. A last-valid-event operational-view API, reader-side validation of already-written history, portable private bundles, and cross-host verification remain open. The smallest remaining durable extension is not a service or database: export a private run bundle containing the event history and all referenced artifacts, rewrite references to bundle-relative paths, compute a manifest digest over the bundle inventory, and record a non-secret portable index entry. Public bundles remain redacted derivatives and cannot replace the private proof artifact. Retention location and backup policy stay operator-owned.
+The reader still exposes raw append order, and current private `run_bundle_v1` output is a useful local export rather than a portable proof: relative retained paths can remain source-checkout-relative, referenced missing/skipped files do not necessarily fail export, no offline verifier/importer exists, and no external digest anchor binds its checksum list.
+
+#### Selected private-proof format
+
+Use a BenchEval-owned **`private_proof_v1` directory**, evolving the current human-readable bundle and borrowing the completeness/path rules of [BagIt RFC 8493](https://www.rfc-editor.org/rfc/rfc8493.html) without claiming BagIt conformance. Full BagIt adds payload/tag conventions that do not remove the need for BenchEval run semantics. [OCI image layout](https://github.com/opencontainers/image-spec/blob/main/image-layout.md) and the [OCI distribution specification](https://github.com/opencontainers/distribution-spec/blob/main/spec.md) add content-addressed blobs, media types, descriptor graphs, and registry operations for an object-storage problem explicitly deferred from v1. Neither dependency is earned now.
+
+```text
+results/proofs/
+  proofs.jsonl
+  sha256/<inventory-digest>/
+    inventory.json
+    proof.json
+    history.jsonl
+    projection.json
+    evidence.jsonl
+    run-plan.json
+    report.md
+    artifacts/{raw,capture}/...
+```
+
+The canonical proof is the finalized directory; a `.tar.gz` is only a transport derivative. `proof_id` is `sha256:` plus the SHA-256 of the exact canonical `inventory.json` bytes. Each other regular file appears exactly once in the inventory with a small closed role, byte size, and SHA-256. Inventory paths are normalized relative paths beneath the proof root. Absolute paths, empty/`.`/`..` components, backslashes, NUL, symlinks, hardlinks, devices, FIFOs, nested proofs, duplicate normalized names, case-fold collisions, Unicode-normalization collisions, missing files, and extra files are rejected.
+
+Private export is fail-closed:
+
+- copy the exact evidence, official results, verifier logs, stdout/stderr, workspace diffs, run configuration, run history, projection, report, and every evidence-referenced raw/capture artifact;
+- resolve repository-relative and absolute source references only against explicitly declared raw/capture roots, rewrite them beneath `artifacts/`, and reject anything outside those roots;
+- persist the frozen `RunPlan` with an anchored exclusive write after output ownership is claimed and before the first launch; never reconstruct a historical plan from current config;
+- require exactly one `run_id` across proof metadata, history, projection, and evidence (`RunPlan` has no `run_id`); a complete proof also binds shared frozen identity axes — benchmark, slice, model, runtime/agent, adapter, and planned instances — across plan, evidence, history, and projection, and rejects absent required axes or any non-null disagreement; and
+- keep public/redacted bundles as publication derivatives that private-proof verify/import rejects.
+
+`runs.jsonl` remains the raw machine-local lifecycle event log. Add whole-history reader validation and a derived **last-valid-event operational-view** projection: immutable run/model identities, first-non-null fill-once axes, last valid status/host/notes/time, latest non-null artifact locators, event count, and first/last timestamps. Projection never compacts or overwrites raw rows. Use an adjacent mode-0600 `fcntl.flock` file so read→validate→append→flush/fsync is one exclusive critical section; public reads take a shared lock. This deliberately targets the supported macOS/Linux operator hosts without adding a locking dependency.
+
+Offline verification must prove exact file-set equality, sizes, hashes, inventory digest, run-ID coherence, valid replayed history, stored-versus-derived projection equality, and containment/inventory of every retained reference. An expected proof digest or an existing local index anchors self-consistency; the digest detects corruption but does not authenticate the creator. Import verifies first, atomically installs under `sha256/<digest>`, and appends one idempotent `proof_index_v1` row to `proofs.jsonl`. Imported source lifecycle events are **not** replayed into local `runs.jsonl` because retaining a proof is not the same event as running it.
+
+The local proof store is the v1 long-term store. Finalized proofs are retained permanently and BenchEval exposes no delete, prune, replacement, expiry, or garbage-collection operation. Filesystem backup remains operator-owned. Bucket/object-store transports, deduplication, signatures, OCI/ORAS, discovery services, and remote retention are future options, not present blockers. Historical BFCL/HLE evidence without a pre-launch `run-plan.json` is retained as `legacy_unverifiable` / `run_plan_missing_legacy`; BenchEval must not invent a historical plan from current configuration.
 
 ## 19. Product decisions
 
-**Closed for v1:** CyberGym and ExploitGym remain catalog-only and non-executable. Their official PoC/exploit lifecycles and ExploitGym metric selection are outside the v1 implementation roadmap.
+The following decisions are closed for v1:
 
-1. **Next benchmark after the current executable set.** Recommendation: finish the SWE-bench Verified diagnostic generation→official-evaluation lifecycle first; select any later benchmark family only after that evidence is reviewed.
-2. **Dollar enforcement.** Decide whether hard provider-dollar termination is a v1 requirement. Default until decided: wall-bounded, cost-estimated, with unmeasured cost stated explicitly.
+1. **Cost:** no provider-enforced hard-dollar termination promise. BenchEval is wall-bounded and cost-estimated; measured provider billing is optional evidence, not a required controller.
+2. **Agent:** MOMO is cataloged scaffold mechanics, not an admitted execution profile. It must fail before charge until a future admission decision.
+3. **Private proof retention:** local store, permanent by default, and no BenchEval cleanup operation. Object/bucket storage is deferred.
+4. **SWE-bench Verified:** implement and retain a real diagnostic generation→official-evaluation proof, then make a separate promotion decision. No automatic admission.
+5. **Dual-use benchmarks:** CyberGym and ExploitGym remain catalog-only and non-executable. Their official PoC/exploit lifecycles and ExploitGym metric selection are outside v1.
+6. **HITL:** probe and automate ordinary host, dependency, credential-presence, and service prerequisites. Pause only when a runtime literally requires device/subscription login, CAPTCHA, hardware touch, unavailable administrator action, or a new product decision.
+
+After the current executable set, the next implementation candidate is the SWE-bench Verified diagnostic lifecycle. No later benchmark family is selected until that evidence is reviewed.

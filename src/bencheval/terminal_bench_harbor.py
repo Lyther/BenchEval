@@ -13,6 +13,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
+from urllib.parse import urlsplit
 
 from bencheval.doctor import harbor_revision
 from bencheval.domain import FailureLabel, RunPlan, RuntimeCatalog
@@ -28,10 +29,15 @@ from bencheval.runtime_registry import load_runtime_catalog
 
 # Harbor Hub dataset id for Terminal-Bench 2.1 (host pulls tasks/images).
 HARBOR_DATASET = "terminal-bench/terminal-bench-2-1"
+# Harbor 0.17 dataset task ids are namespaced: ``terminal-bench/fix-git``.
+# BenchEval instance ids stay unprefixed (``fix-git``); only the CLI filter
+# uses this prefix.
+HARBOR_DATASET_TASK_PREFIX = "terminal-bench/"
 # Concrete release identity stamped on evidence (replaces provisional plan labels).
 TERMINAL_BENCH_RELEASE_VERSION = "terminal-bench@2.1"
 TERMINAL_BENCH_ADAPTER_ID = "terminal-bench-harbor"
 CLAUDE_CODE_NPM_IMPORT_PATH = "bencheval.harbor_claude_code_npm:ClaudeCodeNpmInstall"
+CODEX_NPM_IMPORT_PATH = "bencheval.harbor_codex_npm:CodexNpmInstall"
 
 _RUNTIME_TO_HARBOR_AGENT: dict[str, str] = {
     "codex-cli": "codex",
@@ -49,6 +55,7 @@ _CODEX_PROVIDER_ID = "bytellm"
 _CODEX_CONFIG_TARGET = "/logs/agent/config.toml"
 _CLI_AGENT_SETUP_TIMEOUT_MULTIPLIER = "8"
 _CLAUDE_CODE_ALLOWED_TOOLS_ENV = "BENCHEVAL_CLAUDE_CODE_ALLOWED_TOOLS"
+_PROVIDER_BASE_URL_ENVS = ("ANTHROPIC_BASE_URL", "OPENAI_BASE_URL")
 
 
 def _as_bool_verdict(value: object) -> bool | None:
@@ -104,6 +111,51 @@ def harbor_agent_for_runtime(runtime_id: str) -> str:
             f"known: {sorted((*_RUNTIME_TO_HARBOR_AGENT, 'claude-code'))}",
         )
     return agent
+
+
+def harbor_dataset_task_name(instance_id: str) -> str:
+    """Map a BenchEval instance id onto the Harbor 0.17 dataset task name."""
+    validate_control_plane_instance_id(instance_id)
+    return f"{HARBOR_DATASET_TASK_PREFIX}{instance_id}"
+
+
+_UNSAFE_AGENT_ENV_CHARS = frozenset("\n\r\t =")
+
+
+def _harbor_claude_custom_model_args(plan: RunPlan) -> list[str]:
+    """Allow Harbor Claude to use a catalog model that is not an Anthropic SKU."""
+    if plan.runtime_id != "claude-code":
+        return []
+    model = plan.model_id
+    if model == "runtime-default":
+        return []
+    if not model or any(character in model for character in _UNSAFE_AGENT_ENV_CHARS):
+        raise BenchEvalError(
+            f"model_id {model!r} cannot be placed on Harbor ANTHROPIC_CUSTOM_MODEL_OPTION",
+        )
+    return ["--agent-env", f"ANTHROPIC_CUSTOM_MODEL_OPTION={model}"]
+
+
+def _harbor_provider_base_url_args() -> list[str]:
+    """Pass provider base URLs into Harbor extra_env. Never keys or userinfo."""
+    args: list[str] = []
+    for name in _PROVIDER_BASE_URL_ENVS:
+        raw = os.environ.get(name, "").strip()
+        if not raw:
+            continue
+        parsed = urlsplit(raw)
+        if parsed.username or parsed.password or "@" in raw:
+            raise BenchEvalError(
+                f"{name} contains userinfo; refuse to place it on Harbor argv",
+            )
+        if parsed.query or parsed.fragment:
+            raise BenchEvalError(
+                f"{name} contains a query or fragment; refuse to place it on Harbor argv",
+            )
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise BenchEvalError(f"{name} is not a usable http(s) URL")
+        args.extend(["--agent-env", f"{name}={raw}"])
+    return args
 
 
 def _harbor_agent_version_pin(runtime_id: str, *, catalog: RuntimeCatalog | None = None) -> str:
@@ -253,10 +305,13 @@ def build_harbor_run_command(
         # Proxy credentials stay in the mode-0600 env file only — never argv.
         cmd.extend(["--env-file", str(proxy_env_file.resolve())])
     if plan.runtime_id == "claude-code":
-        cmd.extend(["--agent-import-path", CLAUDE_CODE_NPM_IMPORT_PATH])
+        # Harbor 0.17+ takes a custom agent as --agent module:Class.
+        cmd.extend(["--agent", CLAUDE_CODE_NPM_IMPORT_PATH])
         allowed_tools = os.environ.get(_CLAUDE_CODE_ALLOWED_TOOLS_ENV)
         if allowed_tools and "\n" not in allowed_tools:
             cmd.extend(["--agent-kwarg", f"allowed_tools={allowed_tools}"])
+    elif plan.runtime_id == "codex-cli":
+        cmd.extend(["--agent", CODEX_NPM_IMPORT_PATH])
     else:
         cmd.extend(["--agent", agent])
     if plan.runtime_id in {"claude-code", "codex-cli"}:
@@ -270,6 +325,8 @@ def build_harbor_run_command(
         # exactly the catalog-pinned version the post-run agent_info check
         # compares against.
         cmd.extend(["--agent-kwarg", f"version={_harbor_agent_version_pin(plan.runtime_id)}"])
+    cmd.extend(_harbor_provider_base_url_args())
+    cmd.extend(_harbor_claude_custom_model_args(plan))
     if plan.runtime_id == "codex-cli":
         codex_config = _write_codex_provider_config(artifacts_dir, instance_dir_fd)
         if codex_config is not None:
@@ -278,8 +335,8 @@ def build_harbor_run_command(
         [
             "--dataset",
             dataset,
-            "--task-name",
-            instance_id,
+            "--include-task-name",
+            harbor_dataset_task_name(instance_id),
             "--jobs-dir",
             str(artifacts_dir.resolve()),
             "--n-concurrent",
@@ -933,6 +990,8 @@ def run_terminal_bench_instance(
 
 
 __all__ = [
+    "CLAUDE_CODE_NPM_IMPORT_PATH",
+    "CODEX_NPM_IMPORT_PATH",
     "HARBOR_DATASET",
     "TERMINAL_BENCH_ADAPTER_ID",
     "HarborCliResult",

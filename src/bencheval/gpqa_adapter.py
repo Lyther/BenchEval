@@ -52,6 +52,8 @@ class GpqaOfficialScore:
     correct: int | None
     total: int | None
     source: str
+    unique_samples: int | None = None
+    epochs: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -341,6 +343,62 @@ def _counts_for_accuracy(accuracy: float, total: int | None) -> tuple[int | None
     return correct, total
 
 
+def _positive_int(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    if value <= 0:
+        return None
+    return value
+
+
+def _unique_sample_count(raw: dict[str, object]) -> int | None:
+    eval_spec = raw.get("eval")
+    if not isinstance(eval_spec, dict):
+        return None
+    dataset = eval_spec.get("dataset")
+    if isinstance(dataset, dict):
+        sample_ids = dataset.get("sample_ids")
+        if isinstance(sample_ids, list) and sample_ids:
+            names = [item.strip() for item in sample_ids if isinstance(item, str)]
+            if len(names) == len(sample_ids) and all(names) and len(set(names)) == len(names):
+                return len(names)
+            return None
+    config = eval_spec.get("config")
+    if isinstance(config, dict):
+        return _positive_int(config.get("limit"))
+    return None
+
+
+def _inspect_epochs(raw: dict[str, object]) -> int | None:
+    eval_spec = raw.get("eval")
+    if not isinstance(eval_spec, dict):
+        return None
+    for key in ("config", "task_args"):
+        block = eval_spec.get(key)
+        if not isinstance(block, dict):
+            continue
+        epochs = _positive_int(block.get("epochs"))
+        if epochs is not None:
+            return epochs
+    return None
+
+
+def _gpqa_official_complete(official: GpqaOfficialScore, requested: int) -> bool:
+    if official.correct is None or official.total is None:
+        return False
+    if official.total <= 0 or official.correct > official.total:
+        return False
+    unique = official.unique_samples
+    if unique is None:
+        return official.total == requested
+    if unique != requested:
+        return False
+    epochs = official.epochs
+    if epochs is None:
+        return official.total == unique
+    return official.total == unique * epochs
+
+
 def _score_from_inspect_results(raw: dict[str, object], *, source: str) -> GpqaOfficialScore | None:
     results = raw.get("results")
     if not isinstance(results, dict):
@@ -360,16 +418,33 @@ def _score_from_inspect_results(raw: dict[str, object], *, source: str) -> GpqaO
                     value = _as_float(metric.get("value"))
                     if value is not None and 0.0 <= value <= 1.0:
                         correct, total = _counts_for_accuracy(value, sample_total)
-                        return GpqaOfficialScore(value, correct, total, source)
+                        return _official_score(value, correct, total, source, raw)
                 value = _as_float(metric)
                 if value is not None and 0.0 <= value <= 1.0:
                     correct, total = _counts_for_accuracy(value, sample_total)
-                    return GpqaOfficialScore(value, correct, total, source)
+                    return _official_score(value, correct, total, source, raw)
         value = _as_float(entry.get("value"))
         if value is not None and 0.0 <= value <= 1.0:
             correct, total = _counts_for_accuracy(value, sample_total)
-            return GpqaOfficialScore(value, correct, total, source)
+            return _official_score(value, correct, total, source, raw)
     return None
+
+
+def _official_score(
+    accuracy: float,
+    correct: int | None,
+    total: int | None,
+    source: str,
+    raw: dict[str, object],
+) -> GpqaOfficialScore:
+    return GpqaOfficialScore(
+        accuracy,
+        correct,
+        total,
+        source,
+        unique_samples=_unique_sample_count(raw),
+        epochs=_inspect_epochs(raw),
+    )
 
 
 def _looks_like_inspect_eval_log(
@@ -467,8 +542,37 @@ def _log_locations_from_text(text: str) -> list[Path]:
     return found
 
 
+def _path_from_location(value: object) -> Path | None:
+    if isinstance(value, str) and value.strip():
+        return Path(value.strip()).expanduser()
+    return None
+
+
+def _done_log_locations(payload: dict[str, object]) -> list[Path]:
+    found: list[Path] = []
+    if payload.get("event") == "done":
+        logs = payload.get("logs")
+        if isinstance(logs, list):
+            for entry in logs:
+                if not isinstance(entry, dict):
+                    continue
+                location = _path_from_location(entry.get("location"))
+                if location is not None:
+                    found.append(location)
+    if payload.get("type") == "done":
+        tasks = payload.get("tasks")
+        if isinstance(tasks, list):
+            for task in tasks:
+                if not isinstance(task, dict):
+                    continue
+                location = _path_from_location(task.get("log_location"))
+                if location is not None:
+                    found.append(location)
+    return found
+
+
 def _log_locations_from_inspect_json(text: str) -> list[Path]:
-    """Parse Inspect ``--json`` launch records; only ``done`` task log_location wins."""
+    """Parse Inspect ``--json`` records; only done-event log locations win."""
     found: list[Path] = []
     for line in text.splitlines():
         line = line.strip()
@@ -478,38 +582,17 @@ def _log_locations_from_inspect_json(text: str) -> list[Path]:
             payload = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if not isinstance(payload, dict):
-            continue
-        if payload.get("type") != "done":
-            continue
-        tasks = payload.get("tasks")
-        if not isinstance(tasks, list):
-            continue
-        for task in tasks:
-            if not isinstance(task, dict):
-                continue
-            location = task.get("log_location")
-            if isinstance(location, str) and location.strip():
-                found.append(Path(location.strip()).expanduser())
+        if isinstance(payload, dict):
+            found.extend(_done_log_locations(payload))
     if found:
         return found
-    # Whole-stdout JSON object (single launch record).
     try:
         payload = json.loads(text)
     except json.JSONDecodeError:
         return []
-    if not isinstance(payload, dict) or payload.get("type") != "done":
+    if not isinstance(payload, dict):
         return []
-    tasks = payload.get("tasks")
-    if not isinstance(tasks, list):
-        return []
-    for task in tasks:
-        if not isinstance(task, dict):
-            continue
-        location = task.get("log_location")
-        if isinstance(location, str) and location.strip():
-            found.append(Path(location.strip()).expanduser())
-    return found
+    return _done_log_locations(payload)
 
 
 def _inspect_log_candidates(
@@ -782,12 +865,7 @@ def run_gpqa_slice(
         else:
             partial_score = official.accuracy
             requested = len(plan.instances)
-            complete = (
-                official.total is not None
-                and official.correct is not None
-                and official.total == requested
-                and official.correct <= official.total
-            )
+            complete = _gpqa_official_complete(official, requested)
             primary_pass = bool(
                 complete and official.accuracy >= 1.0 and official.correct == official.total,
             )
@@ -812,6 +890,8 @@ def run_gpqa_slice(
                             "accuracy": official.accuracy,
                             "correct": official.correct,
                             "total": official.total,
+                            "unique_samples": official.unique_samples,
+                            "epochs": official.epochs,
                             "source": official.source,
                         }
                     ),
@@ -880,6 +960,8 @@ def run_gpqa_slice(
                     "accuracy": official.accuracy,
                     "correct": official.correct,
                     "total": official.total,
+                    "unique_samples": official.unique_samples,
+                    "epochs": official.epochs,
                     "score_source": official.source,
                 },
             )

@@ -210,7 +210,10 @@ def test_harbor_command_metadata_omits_proxy_credentials(
         assert "--env-file" in cmd
         assert proxy_url not in cmd
         assert f"https_proxy={proxy_url}" not in cmd
-        assert "--agent-env" not in cmd
+        env_tokens = [cmd[i + 1] for i, tok in enumerate(cmd[:-1]) if tok == "--agent-env"]
+        assert "ANTHROPIC_CUSTOM_MODEL_OPTION=kimi-k2.7-code" in env_tokens
+        assert all(proxy_url not in token for token in env_tokens)
+        assert all("proxy" not in token.lower() for token in env_tokens)
         env_file = Path(cmd[cmd.index("--env-file") + 1])
         assert proxy_url in env_file.read_text(encoding="utf-8")
     finally:

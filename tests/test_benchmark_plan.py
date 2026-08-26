@@ -183,7 +183,7 @@ def test_plan_rejects_agent_unsupported_harness() -> None:
             model_id="kimi-k2.7-code",
         )
     except BenchEvalError as e:
-        assert "does not support harness" in str(e)
+        assert "scaffold" in str(e)
     else:
         raise AssertionError("expected BenchEvalError")
 
