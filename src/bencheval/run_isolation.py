@@ -211,19 +211,27 @@ def claim_exclusive_run_artifacts(path: Path) -> bool:
     """
     target = path.expanduser()
     created = False
+    reject_symlink_path(target, role="run artifacts directory")
     if target.exists():
-        reject_symlink_path(target, role="run artifacts directory")
         if not target.is_dir():
             raise BenchEvalError(f"run artifacts path exists but is not a directory: {target}")
-        for entry in target.iterdir():
+        try:
+            entries = list(target.iterdir())
+        except OSError as e:
+            raise BenchEvalError(f"cannot inspect run artifacts directory {target}: {e}") from e
+        for entry in entries:
             if entry.name != _CLAIM_MARKER_NAME:
                 raise BenchEvalError(
                     "run artifacts directory is not empty "
                     f"(exclusive run ownership required): {target}",
                 )
     else:
-        target.mkdir(parents=True, exist_ok=False)
+        try:
+            target.mkdir(parents=True, exist_ok=False)
+        except OSError as e:
+            raise BenchEvalError(f"cannot create run artifacts directory {target}: {e}") from e
         created = True
+    reject_symlink_path(target, role="run artifacts directory")
     _write_claim_marker(target)
     return created
 
