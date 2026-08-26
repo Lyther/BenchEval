@@ -12,6 +12,7 @@ import fcntl
 import json
 import os
 import re
+import stat
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -149,21 +150,73 @@ def _lock_path(manifest: Path) -> Path:
     return manifest.with_name(f"{manifest.name}.lock")
 
 
+def _owned_regular_file_error(path: Path, descriptor: int, *, role: str) -> str | None:
+    try:
+        current = os.lstat(path)
+        held = os.fstat(descriptor)
+    except OSError as e:
+        return f"cannot inspect {role} {path}: {e}"
+    if not stat.S_ISREG(held.st_mode) or not stat.S_ISREG(current.st_mode):
+        return f"{role} is not a regular file: {path}"
+    if held.st_nlink != 1:
+        return f"{role} is not an owned single-link regular file: {path}"
+    if (current.st_dev, current.st_ino) != (held.st_dev, held.st_ino):
+        return f"{role} was replaced after open: {path}"
+    return None
+
+
+def _open_owned_regular_file(path: Path, flags: int, *, role: str) -> int:
+    safe_flags = (
+        flags
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
+    try:
+        descriptor = os.open(path, safe_flags, 0o600)
+    except OSError as e:
+        try:
+            current = os.lstat(path)
+        except OSError:
+            current = None
+        if current is not None and not stat.S_ISREG(current.st_mode):
+            raise LiveRunManifestError(f"{role} is not a regular file: {path}") from e
+        raise LiveRunManifestError(f"cannot open {role} {path}: {e}") from e
+    error = _owned_regular_file_error(path, descriptor, role=role)
+    if error is not None:
+        os.close(descriptor)
+        raise LiveRunManifestError(error)
+    return descriptor
+
+
 @contextmanager
 def _live_run_lock(manifest: Path, *, exclusive: bool) -> Iterator[None]:
     lock_path = _lock_path(manifest)
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    flags = os.O_RDWR | os.O_CREAT
     try:
-        descriptor = os.open(lock_path, flags, 0o600)
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
     except OSError as e:
-        raise LiveRunManifestError(f"cannot lock runs manifest {manifest}: {e}") from e
+        raise LiveRunManifestError(
+            f"cannot create runs manifest parent {lock_path.parent}: {e}",
+        ) from e
+    descriptor = _open_owned_regular_file(
+        lock_path,
+        os.O_RDWR | os.O_CREAT,
+        role="runs manifest lock",
+    )
+    locked = False
     try:
-        os.fchmod(descriptor, 0o600)
-        fcntl.flock(descriptor, fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+            locked = True
+        except OSError as e:
+            raise LiveRunManifestError(f"cannot lock runs manifest {manifest}: {e}") from e
+        error = _owned_regular_file_error(lock_path, descriptor, role="runs manifest lock")
+        if error is not None:
+            raise LiveRunManifestError(error)
         yield
     finally:
-        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        if locked:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
         os.close(descriptor)
 
 
@@ -216,21 +269,45 @@ def append_live_run(path: Path | str, record: LiveRunRecord) -> Path:
     is one exclusive ``fcntl.flock`` critical section.
     """
     target = Path(os.path.abspath(Path(path).expanduser()))
-    if target.exists() and not target.is_file():
-        raise LiveRunManifestError(f"path exists but is not a regular file: {target}")
-    target.parent.mkdir(parents=True, exist_ok=True)
-    line = record.model_dump_json() + "\n"
-    flags = os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise LiveRunManifestError(
+            f"cannot create runs manifest parent {target.parent}: {e}",
+        ) from e
+    payload = (record.model_dump_json() + "\n").encode("utf-8")
     with _live_run_lock(target, exclusive=True):
-        _reject_inconsistent_history(_parse_live_run_rows(target), record)
+        descriptor = _open_owned_regular_file(
+            target,
+            os.O_RDWR | os.O_APPEND | os.O_CREAT,
+            role="runs manifest",
+        )
+        locked = False
         try:
-            descriptor = os.open(target, flags, 0o600)
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            locked = True
+            _reject_inconsistent_history(
+                _parse_live_run_descriptor(descriptor, target.name, target),
+                record,
+            )
+            remaining = memoryview(payload)
+            while remaining:
+                written = os.write(descriptor, remaining)
+                if written <= 0:
+                    raise OSError("short write")
+                remaining = remaining[written:]
+            os.fsync(descriptor)
+            error = _owned_regular_file_error(target, descriptor, role="runs manifest")
+            if error is not None:
+                raise LiveRunManifestError(error)
+        except LiveRunManifestError:
+            raise
         except OSError as e:
             raise LiveRunManifestError(f"cannot append runs manifest {target}: {e}") from e
-        with os.fdopen(descriptor, "a", encoding="utf-8") as handle:
-            handle.write(line)
-            handle.flush()
-            os.fsync(handle.fileno())
+        finally:
+            if locked:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            os.close(descriptor)
     return target
 
 
@@ -261,37 +338,46 @@ def _parse_live_run_text(text: str, source: str) -> list[LiveRunRecord]:
     return rows
 
 
-def _parse_live_run_rows(path: Path) -> list[LiveRunRecord]:
-    if not path.is_file():
-        return []
+def _parse_live_run_descriptor(descriptor: int, source: str, path: Path) -> list[LiveRunRecord]:
     try:
-        text = path.read_text(encoding="utf-8")
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        chunks: list[bytes] = []
+        while chunk := os.read(descriptor, 1024 * 1024):
+            chunks.append(chunk)
+        text = b"".join(chunks).decode("utf-8")
     except UnicodeDecodeError as e:
         raise LiveRunManifestError(
             f"cannot decode runs manifest {path} as UTF-8: {e}",
         ) from e
     except OSError as e:
         raise LiveRunManifestError(f"cannot read runs manifest {path}: {e}") from e
-    return _parse_live_run_text(text, path.name)
+    error = _owned_regular_file_error(path, descriptor, role="runs manifest")
+    if error is not None:
+        raise LiveRunManifestError(error)
+    return _parse_live_run_text(text, source)
 
 
 def read_live_runs(path: Path | str) -> list[LiveRunRecord]:
     """Read and validate every non-blank line of a runs manifest JSONL file."""
-    p = Path(path)
+    p = Path(os.path.abspath(Path(path).expanduser()))
     if not p.is_file():
         raise LiveRunManifestError(f"cannot read runs manifest {p}: file does not exist")
     with _live_run_lock(p, exclusive=False):
+        descriptor = _open_owned_regular_file(p, os.O_RDONLY, role="runs manifest")
+        locked = False
         try:
-            text = p.read_text(encoding="utf-8")
-        except UnicodeDecodeError as e:
-            raise LiveRunManifestError(
-                f"cannot decode runs manifest {p} as UTF-8: {e}",
-            ) from e
-        except OSError as e:
-            raise LiveRunManifestError(f"cannot read runs manifest {p}: {e}") from e
-        rows = _parse_live_run_text(text, p.name)
-        _validate_live_run_history(rows)
-        return rows
+            try:
+                fcntl.flock(descriptor, fcntl.LOCK_SH)
+                locked = True
+            except OSError as e:
+                raise LiveRunManifestError(f"cannot lock runs manifest {p}: {e}") from e
+            rows = _parse_live_run_descriptor(descriptor, p.name, p)
+            _validate_live_run_history(rows)
+            return rows
+        finally:
+            if locked:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+            os.close(descriptor)
 
 
 @dataclass(frozen=True, slots=True)

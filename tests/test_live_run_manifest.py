@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -180,6 +181,54 @@ def test_directory_target_rejected(tmp_path: Path) -> None:
     target.mkdir()
     with pytest.raises(LiveRunManifestError, match="not a regular file"):
         append_live_run(target, _record())
+
+
+# SUBSTITUTE_JUSTIFICATION
+# - substitute: `_record()` creates the LiveRunRecord payload used by
+#   test_manifest_lock_rejects_alias_without_mutating_victim and
+#   test_manifest_append_rejects_hardlink_without_mutating_victim
+# - replaces: an operator-generated live-run event payload
+# - necessity: the exact lock/manifest alias state must be created before append;
+#   reusing an operator manifest would risk mutating retained run history
+# - real-option: a disposable real filesystem is used for every ownership operation;
+#   only the unrelated event payload is constructed
+# - proof-limit: proves local lock/manifest inode ownership and victim preservation,
+#   not benchmark execution or live-run authenticity
+# - real-proof: both tests execute real symlink/hardlink, open, lock, append, and
+#   permission paths on the host filesystem
+@pytest.mark.parametrize("alias_kind", ["symlink", "hardlink"])
+def test_manifest_lock_rejects_alias_without_mutating_victim(
+    tmp_path: Path,
+    alias_kind: str,
+) -> None:
+    manifest = tmp_path / "runs.jsonl"
+    victim = tmp_path / "victim.txt"
+    victim.write_text("outside\n", encoding="utf-8")
+    victim.chmod(0o644)
+    lock_path = tmp_path / "runs.jsonl.lock"
+    if alias_kind == "symlink":
+        lock_path.symlink_to(victim)
+    else:
+        os.link(victim, lock_path)
+
+    with pytest.raises(LiveRunManifestError, match=r"lock|owned regular file"):
+        append_live_run(manifest, _record())
+
+    assert victim.read_text(encoding="utf-8") == "outside\n"
+    assert victim.stat().st_mode & 0o777 == 0o644
+    assert not manifest.exists()
+
+
+def test_manifest_append_rejects_hardlink_without_mutating_victim(tmp_path: Path) -> None:
+    manifest = tmp_path / "runs.jsonl"
+    victim = tmp_path / "victim.jsonl"
+    victim.touch(mode=0o600)
+    os.link(victim, manifest)
+
+    with pytest.raises(LiveRunManifestError, match=r"owned regular file|link"):
+        append_live_run(manifest, _record())
+
+    assert victim.read_bytes() == b""
 
 
 def test_read_missing_file_raises(tmp_path: Path) -> None:
