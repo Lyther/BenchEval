@@ -353,6 +353,22 @@ def test_verify_rejects_extra_missing_digest_and_symlink(tmp_path: Path) -> None
         verify_private_proof(exported.root)
 
 
+def test_verify_requires_report_after_canonical_inventory_rewrite(tmp_path: Path) -> None:
+    source = _write_source(tmp_path / "src")
+    exported = export_private_proof(
+        run_id=_RUN_ID,
+        evidence_path=source["evidence"],
+        artifacts_dir=source["raw"],
+        manifest_path=source["manifest"],
+        output_dir=tmp_path / "proof",
+    )
+    (exported.root / "report.md").unlink()
+    _write_inventory(exported.root)
+
+    with pytest.raises(BenchEvalError, match=r"required|report"):
+        verify_private_proof(exported.root)
+
+
 def test_verify_rejects_unknown_classification_and_expected_digest(tmp_path: Path) -> None:
     source = _write_source(tmp_path / "src")
     exported = export_private_proof(

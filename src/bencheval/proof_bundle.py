@@ -60,6 +60,9 @@ _ROLE_BY_PATH: dict[str, ProofRole] = {
     "run-plan.json": "run_plan",
     "report.md": "report",
 }
+_REQUIRED_PROOF_ROLES: dict[str, ProofRole] = {
+    path: role for path, role in _ROLE_BY_PATH.items() if path != "run-plan.json"
+}
 _AGGREGATE_ADAPTER_IDS = frozenset({"gpqa", "hle"})
 
 
@@ -542,6 +545,10 @@ def _parse_inventory(raw: bytes) -> list[InventoryEntry]:
     _reject_collisions([entry.path for entry in entries])
     if raw != _canonical_inventory_bytes(entries):
         raise BenchEvalError("inventory.json is not canonical")
+    roles_by_path = {entry.path: entry.role for entry in entries}
+    for path, role in _REQUIRED_PROOF_ROLES.items():
+        if roles_by_path.get(path) != role:
+            raise BenchEvalError(f"required proof role is missing: {path} ({role})")
     return entries
 
 
