@@ -23,7 +23,9 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import get_args
 
+from bencheval.domain import InterpretationLabel
 from bencheval.evidence import EvidenceRecord, JsonlEvidenceSink
 from bencheval.evidence_compare import compare_evidence_runs
 
@@ -100,6 +102,17 @@ def test_v02_ordinary_rows_remain_eligible() -> None:
     assert payload["comparison_valid"] is True
     assert payload["baseline_pass_rate"] == 0.0
     assert payload["current_pass_rate"] == 1.0
+
+
+def test_valid_legacy_comparison_uses_closed_interpretation_label() -> None:
+    baseline = [_row("shared", passed=False)]
+    current = [_row("shared", passed=True)]
+
+    payload = compare_evidence_runs(baseline, current).to_dict()
+
+    assert payload["comparison_valid"] is True
+    assert payload["interpretation_label"] == "contaminated_or_legacy"
+    assert payload["interpretation_label"] in get_args(InterpretationLabel)
 
 
 def test_cli_returns_nonzero_and_reports_invalid_legacy_comparison(

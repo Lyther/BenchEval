@@ -258,7 +258,7 @@ def compare_evidence_runs(
     if not shared_eligible:
         validity_reasons.append("empty shared eligible intersection")
     comparison_valid = not validity_reasons
-    interpretation_label = "legacy" if comparison_valid else "contaminated_or_legacy"
+    interpretation_label = "contaminated_or_legacy"
 
     eligible_baseline = [base_index[key] for key in shared_eligible]
     eligible_current = [cur_index[key] for key in shared_eligible]
