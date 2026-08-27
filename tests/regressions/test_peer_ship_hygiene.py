@@ -5,10 +5,24 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from bencheval.benchmark_plan import plan_control_plane
 from bencheval.external_agent_adapter import __all__ as external_agent_all
 
 REPO = Path(__file__).resolve().parents[2]
+
+
+def _require_git_checkout() -> None:
+    probe = subprocess.run(
+        ["git", "rev-parse", "--is-inside-work-tree"],
+        cwd=REPO,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if probe.returncode != 0:
+        pytest.skip("gitignore contracts require a git checkout")
 
 
 def test_pilot_matrix_defaults_to_registry_model() -> None:
@@ -186,7 +200,49 @@ def test_external_agent_public_api_has_no_momo_aliases() -> None:
     assert momo_names.isdisjoint(set(external_agent_all))
 
 
+def test_review_and_readiness_residue_is_gitignored() -> None:
+    _require_git_checkout()
+    probe = subprocess.run(
+        [
+            "git",
+            "check-ignore",
+            "-v",
+            ".agent-surface/readiness/example/readiness.json",
+            ".review_state_r2.md",
+        ],
+        cwd=REPO,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert probe.returncode == 0
+    assert ".agent-surface/" in probe.stdout
+    assert ".review_state*.md" in probe.stdout
+
+
+def test_private_proof_staging_is_gitignored() -> None:
+    _require_git_checkout()
+    probe = subprocess.run(
+        ["git", "check-ignore", "-v", "results/proofs-staging/example/proof.json"],
+        cwd=REPO,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert probe.returncode == 0
+    assert "results/proofs-staging/" in probe.stdout
+    status = subprocess.run(
+        ["git", "status", "--untracked-files=all", "--porcelain"],
+        cwd=REPO,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert not any("proofs-staging" in line for line in status.stdout.splitlines())
+
+
 def test_private_proof_store_is_gitignored() -> None:
+    _require_git_checkout()
     probe = subprocess.run(
         ["git", "check-ignore", "-v", "results/proofs/example/private.json"],
         cwd=REPO,

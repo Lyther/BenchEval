@@ -141,7 +141,9 @@ def test_gpqa_uses_only_the_inspect_done_log_as_verifier(tmp_path: Path) -> None
     assert outcome.primary_pass is False
     assert outcome.failure_class == "model_wrong_solution"
     assert outcome.counts_toward_pass_at_k is True
-    assert Path(outcome.verifier_log_path or "").resolve() == selected_log.resolve()
+    retained = Path(outcome.verifier_log_path or "")
+    assert retained.name == "gpqa-official-log.json"
+    assert retained.read_bytes() == selected_log.read_bytes()
     assert outcome.native_score["score_source"] == str(selected_log)
 
 

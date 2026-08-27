@@ -156,6 +156,7 @@ def test_codex_provider_config_write_never_follows_a_preplanted_symlink(
 
     def runner(command, *, cwd, timeout_sec):
         out_dir = Path(command[command.index("--jobs-dir") + 1])
+        out_dir.mkdir(parents=True, exist_ok=True)
         (out_dir / "result.json").write_text(_legacy_pass_result("codex-cli"), encoding="utf-8")
         return HarborCliResult(0, "", "", 0.1, tuple(command))
 
@@ -190,6 +191,7 @@ def test_harbor_result_read_swap_after_post_run_check_fails_closed(
 
     def runner(command, *, cwd, timeout_sec):
         out_dir = Path(command[command.index("--jobs-dir") + 1])
+        out_dir.mkdir(parents=True, exist_ok=True)
         captured["dir"] = out_dir
         (out_dir / "result.json").write_text('{"resolved": false}', encoding="utf-8")
         return HarborCliResult(0, "", "", 0.1, tuple(command))

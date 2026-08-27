@@ -321,6 +321,12 @@ def plan_control_plane(
             resolved_runtime_kind = runtime.runtime.kind
             model_binding = runtime.runtime.model_binding
             network = runtime.safety.network_default
+            if benchmark.id == "swe-bench-verified" and resolved_runtime_id == "claude-code":
+                raise BenchEvalError(
+                    "swe-bench-verified diagnostic is Codex-only for v1; "
+                    "claude-code is rejected until a pinned Inspect SWE + Claude "
+                    "lifecycle is proven",
+                )
         else:
             if harness_kind not in _MODEL_ONLY_HARNESSES:
                 raise BenchEvalError(

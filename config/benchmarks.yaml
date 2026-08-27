@@ -37,12 +37,23 @@ benchmarks:
     single_mode_required: true
     source_url: https://www.swebench.com/verified.html
     notes: >
-      Demoted from executable until the adapter pins a supported mini-SWE-agent
-      revision, selects instances via the official CLI, and binds the official
-      SWE-bench evaluator `resolved` result (not invented verifier.json).
+      Kept non-executable while the diagnostic-only adapter is completed. The
+      selected route uses locked Inspect Evals + Inspect SWE with the exact
+      selected runtime binary to generate one standard prediction, then scores
+      only with the pinned official SWE-bench evaluator. Both phases derive from
+      one immutable official Verified snapshot and bind an execution-time image
+      digest. mini-SWE would be a separate future agent scaffold, not this
+      runtime-selected lifecycle. A real diagnostic proof does not auto-promote
+      this row.
     adapter_id: swebench
     executable: false
     default_slice: swe-bench-verified-smoke-10
+    identity:
+      kind: hf-dataset-snapshot
+      repo: SWE-bench/SWE-bench_Verified
+      revision: 78f471bf655a3137b2e8a75af1501690ec009ec3
+      files:
+        data/test-00000-of-00001.parquet: sha256:030cfd7f2a704c4c0226e7f104c725a3b41230b1d3517f9c915ad7ea5be3fa25
   - id: bfcl-v4
     name: Berkeley Function Calling Leaderboard v4
     aliases:

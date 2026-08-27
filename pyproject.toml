@@ -59,6 +59,12 @@ bfcl = [
     # this runtime dependency; without it even `bfcl --help` fails.
     "soundfile>=0.13.1,<0.14.0",
 ]
+swe = [
+    # Exact official evaluator pin. Kept out of core and the generic Inspect
+    # extra: its Docker/dataset/CLI graph is only needed for the demoted SWE
+    # diagnostic and must not enter ordinary eval hosts.
+    "swebench==5.0.1",
+]
 
 [tool.uv]
 # bfcl-eval 2026.3.23 pins two vulnerable transitive versions even though its

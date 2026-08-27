@@ -35,7 +35,11 @@ from bencheval.domain import RunPlan
 from bencheval.evidence import read_evidence_jsonl
 from bencheval.exceptions import BenchEvalError
 from bencheval.ids import new_run_id
-from bencheval.live_proof import qualify_lane, registration_identity_mismatch
+from bencheval.live_proof import (
+    producer_content_ok,
+    qualify_lane,
+    registration_identity_mismatch,
+)
 from bencheval.live_run_manifest import (
     LiveRunRecord,
     LiveRunStatus,
@@ -47,6 +51,10 @@ from bencheval.model_registry import load_model_registry
 from bencheval.provider_registry import DEFAULT_PROVIDER_ID, load_provider_catalog
 from bencheval.report import generate_evidence_report_with_runtime_panel
 from bencheval.runtime_registry import load_runtime_catalog
+from bencheval.swebench_adapter import (
+    SWEBENCH_ADAPTER_ID,
+    default_swebench_process_runner,
+)
 
 
 def _benchmark_payload(benchmark: BenchmarkEntry) -> dict[str, object]:
@@ -188,6 +196,9 @@ def _run_command(args: argparse.Namespace) -> int:
             output_path=output,
             artifacts_dir=artifacts,
             run_id=rid,
+            swebench_process_runner=(
+                default_swebench_process_runner if plan.adapter_id == SWEBENCH_ADAPTER_ID else None
+            ),
         )
     except BenchEvalError as e:
         sys.stderr.write(f"error: {e}\n")
@@ -656,6 +667,14 @@ def _qualify_passed_registration(
     )
     if mismatch is not None:
         return f"error: passed registration identity mismatch: {mismatch}"
+    contents = {
+        row.adapter_metadata.get("producer_content_sha256") for row in qualification.eligible_rows
+    }
+    if any(not producer_content_ok(value) for value in contents) or len(contents) != 1:
+        return (
+            "error: passed registration requires one known producer_content_sha256 "
+            "on every eligible row"
+        )
     return None
 
 

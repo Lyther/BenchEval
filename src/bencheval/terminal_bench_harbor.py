@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
 from urllib.parse import urlsplit
@@ -22,7 +22,9 @@ from bencheval.path_safety import validate_control_plane_instance_id
 from bencheval.run_isolation import (
     dir_identity_error,
     open_owned_dir_fd,
+    open_untrusted_regular_leaf,
     prepare_instance_artifacts_dir,
+    write_bytes_at_exclusive,
     write_text_at_exclusive,
 )
 from bencheval.runtime_registry import load_runtime_catalog
@@ -36,6 +38,10 @@ HARBOR_DATASET_TASK_PREFIX = "terminal-bench/"
 # Concrete release identity stamped on evidence (replaces provisional plan labels).
 TERMINAL_BENCH_RELEASE_VERSION = "terminal-bench@2.1"
 TERMINAL_BENCH_ADAPTER_ID = "terminal-bench-harbor"
+# Harbor's job tree is transient. Official result bytes are copied to this
+# owned name before cleanup removes harbor-package.
+HARBOR_JOBS_DIR_NAME = "harbor-package"
+HARBOR_OFFICIAL_RESULT_NAME = "harbor-official-result.json"
 CLAUDE_CODE_NPM_IMPORT_PATH = "bencheval.harbor_claude_code_npm:ClaudeCodeNpmInstall"
 CODEX_NPM_IMPORT_PATH = "bencheval.harbor_codex_npm:CodexNpmInstall"
 
@@ -338,7 +344,7 @@ def build_harbor_run_command(
             "--include-task-name",
             harbor_dataset_task_name(instance_id),
             "--jobs-dir",
-            str(artifacts_dir.resolve()),
+            str((artifacts_dir / HARBOR_JOBS_DIR_NAME).resolve()),
             "--n-concurrent",
             "1",
         ],
@@ -518,24 +524,15 @@ def _pin_native_result(
     return _ResultPin(found=True, rel=rel, chain_fd=owned, dev=st.st_dev, ino=st.st_ino)
 
 
-def _read_result_text(
+def _read_result_bytes(
     result_file: Path,
     artifacts_dir: Path,
     instance_dir_fd: int | None,
     result_pin: _ResultPin | None = None,
-) -> str:
-    """Read a located result file, bound to the post-run pin when present.
-
-    With a pin, the bytes come from the pinned chain (O_NOFOLLOW relative to
-    the terminal dir fd) and both the opened fd and the pathname must still
-    name the pinned inode — a rename-and-recreate or symlink swap of any
-    component after the post-run check fails closed. fd-less direct callers
-    keep the documented pathname fallback. Honest residual (shared by all
-    four adapters): dirfd pinning cannot detect an in-place rewrite of a
-    harness-authored score file — it closes the swap variant.
-    """
+) -> bytes:
+    """Read located result bytes, bound to the post-run pin when present."""
     if result_pin is None:
-        return result_file.read_text(encoding="utf-8")
+        return result_file.read_bytes()
     rel = result_file.relative_to(artifacts_dir)
     if not result_pin.found or rel != result_pin.rel:
         raise AdapterFailureError(
@@ -544,7 +541,7 @@ def _read_result_text(
         )
     parent_fd = result_pin.chain_fd if result_pin.chain_fd is not None else instance_dir_fd
     try:
-        fd = os.open(result_file.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent_fd)
+        fd = open_untrusted_regular_leaf(result_file.name, dir_fd=parent_fd)
     except OSError as e:
         raise AdapterFailureError(
             f"harbor result vanished from the pinned chain: {e}",
@@ -552,8 +549,8 @@ def _read_result_text(
         ) from e
     try:
         st = os.fstat(fd)
-        with os.fdopen(fd, encoding="utf-8") as handle:
-            text = handle.read()
+        with os.fdopen(fd, "rb") as handle:
+            data = handle.read()
     except OSError as e:
         raise AdapterFailureError(
             f"harbor result read from the pinned chain failed: {e}",
@@ -576,7 +573,47 @@ def _read_result_text(
             "harbor result pathname no longer names the pinned inode",
             failure_label="evidence_corrupt",
         )
-    return text
+    return data
+
+
+def _read_result_text(
+    result_file: Path,
+    artifacts_dir: Path,
+    instance_dir_fd: int | None,
+    result_pin: _ResultPin | None = None,
+) -> str:
+    """Read a located result file, bound to the post-run pin when present.
+
+    With a pin, the bytes come from the pinned chain (O_NOFOLLOW relative to
+    the terminal dir fd) and both the opened fd and the pathname must still
+    name the pinned inode — a rename-and-recreate or symlink swap of any
+    component after the post-run check fails closed. fd-less direct callers
+    keep the documented pathname fallback. Honest residual (shared by all
+    four adapters): dirfd pinning cannot detect an in-place rewrite of a
+    harness-authored score file — it closes the swap variant.
+    """
+    if result_pin is None:
+        return result_file.read_text(encoding="utf-8")
+    return _read_result_bytes(
+        result_file,
+        artifacts_dir,
+        instance_dir_fd,
+        result_pin,
+    ).decode("utf-8")
+
+
+def _read_direct_child_bytes(dir_fd: int, name: str) -> bytes:
+    if "/" in name or name in ("", ".", ".."):
+        raise BenchEvalError(f"unsafe dirfd-relative file name: {name!r}")
+    descriptor = open_untrusted_regular_leaf(name, dir_fd=dir_fd)
+    try:
+        handle = os.fdopen(descriptor, "rb")
+        descriptor = -1
+        with handle:
+            return handle.read()
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
 
 
 def _numeric_gt_zero(value: object) -> bool:
@@ -853,6 +890,99 @@ def parse_harbor_instance_outcome(
     )
 
 
+def _retain_pinned_harbor_bytes(
+    result_pin: _ResultPin,
+    *,
+    instance_dir: Path,
+    instance_fd: int,
+    repo_root: Path,
+    latency_sec: float,
+    command: Sequence[str],
+) -> str | None:
+    """Copy pinned Harbor result bytes out of the transient jobs tree."""
+    if not result_pin.found or result_pin.rel is None:
+        return None
+    source = instance_dir / result_pin.rel
+    metadata = {"harbor_command": _sanitized_command_for_metadata(command)}
+    try:
+        data = _read_result_bytes(source, instance_dir, instance_fd, result_pin)
+        write_bytes_at_exclusive(instance_fd, HARBOR_OFFICIAL_RESULT_NAME, data)
+        written = _read_direct_child_bytes(instance_fd, HARBOR_OFFICIAL_RESULT_NAME)
+        if written != data:
+            raise AdapterFailureError(
+                "retained Harbor official result bytes do not match the scored bytes",
+                failure_label="evidence_corrupt",
+                latency_sec=latency_sec,
+                adapter_metadata=metadata,
+            )
+    except (OSError, BenchEvalError) as e:
+        if isinstance(e, AdapterFailureError):
+            raise
+        raise AdapterFailureError(
+            f"cannot retain official Harbor result bytes: {e}",
+            failure_label="evidence_corrupt",
+            latency_sec=latency_sec,
+            adapter_metadata=metadata,
+        ) from e
+    retained = instance_dir / HARBOR_OFFICIAL_RESULT_NAME
+    try:
+        return str(retained.resolve().relative_to(repo_root))
+    except ValueError:
+        return str(retained.resolve())
+
+
+def _retain_located_harbor_result(
+    *,
+    instance_dir: Path,
+    instance_fd: int,
+    instance_id: str,
+    repo_root: Path,
+    cli: HarborCliResult,
+) -> str | None:
+    result_pin = _pin_native_result(
+        instance_fd,
+        instance_dir,
+        instance_id=instance_id,
+        cli=cli,
+    )
+    try:
+        return _retain_pinned_harbor_bytes(
+            result_pin,
+            instance_dir=instance_dir,
+            instance_fd=instance_fd,
+            repo_root=repo_root,
+            latency_sec=cli.latency_sec,
+            command=cli.command,
+        )
+    finally:
+        if result_pin.chain_fd is not None:
+            os.close(result_pin.chain_fd)
+
+
+def _try_retain_after_budget_exceeded(
+    *,
+    instance_dir: Path,
+    instance_fd: int,
+    instance_id: str,
+    repo_root: Path,
+    command: Sequence[str],
+    latency_sec: float,
+) -> str | None:
+    timeout_cli = HarborCliResult(-1, "", "", latency_sec, tuple(command))
+    try:
+        return _retain_located_harbor_result(
+            instance_dir=instance_dir,
+            instance_fd=instance_fd,
+            instance_id=instance_id,
+            repo_root=repo_root,
+            cli=timeout_cli,
+        )
+    except AdapterFailureError as retain_error:
+        if retain_error.failure_label != "evidence_corrupt":
+            raise
+        return None
+
+
 def run_harbor_dataset_instance(
     *,
     plan: RunPlan,
@@ -906,13 +1036,36 @@ def run_harbor_dataset_instance(
         start = time.monotonic()
         try:
             cli = runner(command, cwd=repo_root, timeout_sec=wall)
-        except subprocess.TimeoutExpired as e:
-            elapsed = time.monotonic() - start
+        except (subprocess.TimeoutExpired, AdapterFailureError) as e:
+            if isinstance(e, AdapterFailureError) and e.failure_label != "runtime_budget_exceeded":
+                raise
+            elapsed = (
+                e.latency_sec
+                if isinstance(e, AdapterFailureError) and e.latency_sec
+                else time.monotonic() - start
+            )
+            retained_rel = _try_retain_after_budget_exceeded(
+                instance_dir=instance_dir,
+                instance_fd=instance_fd,
+                instance_id=instance_id,
+                repo_root=repo_root,
+                command=command,
+                latency_sec=elapsed,
+            )
+            if isinstance(e, AdapterFailureError):
+                if retained_rel is not None:
+                    e.adapter_metadata["harbor_official_result"] = retained_rel
+                raise
+            timeout_metadata = {
+                "harbor_command": _sanitized_command_for_metadata(command),
+            }
+            if retained_rel is not None:
+                timeout_metadata["harbor_official_result"] = retained_rel
             raise AdapterFailureError(
                 f"harbor CLI timed out after {wall}s",
                 failure_label="runtime_budget_exceeded",
                 latency_sec=elapsed,
-                adapter_metadata={"harbor_command": _sanitized_command_for_metadata(command)},
+                adapter_metadata=timeout_metadata,
             ) from e
         except OSError as e:
             elapsed = time.monotonic() - start
@@ -939,7 +1092,9 @@ def run_harbor_dataset_instance(
             )
         # Harbor nests the job result below --jobs-dir; bind the located chain
         # now (same window-free region as the root check) so the scored read
-        # in parse cannot be redirected by a post-check swap.
+        # in parse cannot be redirected by a post-check swap. Retain before
+        # parse so a later AdapterFailureError cannot lose official bytes to
+        # harbor-package cleanup.
         result_pin = _pin_native_result(
             instance_fd,
             instance_dir,
@@ -947,7 +1102,15 @@ def run_harbor_dataset_instance(
             cli=cli,
         )
         try:
-            return parse_harbor_instance_outcome(
+            retained_rel = _retain_pinned_harbor_bytes(
+                result_pin,
+                instance_dir=instance_dir,
+                instance_fd=instance_fd,
+                repo_root=repo_root,
+                latency_sec=cli.latency_sec,
+                command=cli.command,
+            )
+            outcome = parse_harbor_instance_outcome(
                 instance_id=instance_id,
                 cli=cli,
                 artifacts_dir=instance_dir,
@@ -959,6 +1122,9 @@ def run_harbor_dataset_instance(
                 expected_agent_name=harbor_agent_for_runtime(runtime_id),
                 expected_agent_version=_harbor_agent_version_pin(runtime_id),
             )
+            if retained_rel is None:
+                return outcome
+            return replace(outcome, raw_result_path=retained_rel)
         finally:
             if result_pin.chain_fd is not None:
                 os.close(result_pin.chain_fd)

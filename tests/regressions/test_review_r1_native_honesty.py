@@ -77,7 +77,7 @@ def test_f001_f002_swe_demoted_and_bfcl_admitted() -> None:
 
 def test_f001_f002_execute_refuses_demoted_adapters(tmp_path: Path) -> None:
     for benchmark_id, slice_id, runtime_id in (
-        ("swe-bench-verified", "swe-bench-verified-smoke-10", "claude-code"),
+        ("swe-bench-verified", "swe-bench-verified-smoke-10", "codex-cli"),
     ):
         plan = plan_control_plane(
             benchmark_id=benchmark_id,

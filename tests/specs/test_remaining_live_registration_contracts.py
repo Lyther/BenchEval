@@ -18,8 +18,13 @@ SUBSTITUTE_JUSTIFICATION
 - proof-limit: proves only local ``evidence register --status passed``
   qualification, identity binding, and no-append failure behavior; it does not
   prove Harbor execution, verifier correctness, provider auth, or readiness
-- real-proof: BLOCKED until the dev-box lane runs and registers its native
-  evidence through ``docs/ops/dev-box-pilot.md``
+- real-proof: retained Terminal-Bench proofs
+  ``sha256:fca2295d6844e4dda99799527561985885a90b59e01c865082510eaa63d90c06``
+  (codex-cli) and
+  ``sha256:afe6f655f7c3f4f940c83703a7c2f5231ae9a87fd998803fdf92ed04967b9592``
+  (claude-code); registered BFCL passed run
+  ``run-20260824-045622-854659-a46ae44d``. This module still does not prove
+  those live harnesses; it only gates ``evidence register --status passed``.
 """
 
 from __future__ import annotations
@@ -69,6 +74,12 @@ def _native_terminal_bench_record(
         "verifier_integrity_label": "native",
         "attempt_validity": "valid",
         "counts_toward_pass_at_k": True,
+        "adapter_metadata": {
+            "producer_package_version": "0.0.0",
+            "producer_content_sha256": (
+                "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+            ),
+        },
     }
     values.update(overrides)
     return EvidenceRecord(**values)
@@ -235,6 +246,12 @@ def _native_bfcl_record(score_path: Path, **overrides: object) -> EvidenceRecord
         "verifier_integrity_label": "native",
         "attempt_validity": "valid",
         "counts_toward_pass_at_k": True,
+        "adapter_metadata": {
+            "producer_package_version": "0.0.0",
+            "producer_content_sha256": (
+                "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+            ),
+        },
     }
     values.update(overrides)
     return EvidenceRecord(**values)

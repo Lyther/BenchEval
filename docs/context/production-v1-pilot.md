@@ -1,6 +1,6 @@
 # Production v1 internal pilot
 
-**Scope:** Product catalog has **8** YAML rows; Tier-0 gate admits **4 executable** benchmarks (`terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4` — BFCL admitted 2026-08-24 on the diagnostic-labeled dev-box lifecycle demonstration `run-20260824-040631-228703-4756f857` plus the registered `passed` run `run-20260824-045622-854659-a46ae44d`). `swe-bench-verified` is demoted until official evaluation is wired. `swe-bench-pro`, `cybergym`, and `exploitgym` stay cataloged/`adapter_pending`. Full dataset/image pulls are host-side (2TB test env), not CI.
+**Scope:** Product catalog has **8** YAML rows; Tier-0 gate admits **4 executable** benchmarks (`terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4` — BFCL admitted 2026-08-24 on the diagnostic-labeled dev-box lifecycle demonstration `run-20260824-040631-228703-4756f857` plus the registered `passed` run `run-20260824-045622-854659-a46ae44d`). `swe-bench-verified` stays demoted/`executable: false` with a diagnostic-only official-eval path. `swe-bench-pro`, `cybergym`, and `exploitgym` stay cataloged/`adapter_pending`. Full dataset/image pulls are host-side (2TB test env), not CI.
 
 ## Phase A — ship gates (no live deps)
 
@@ -15,7 +15,7 @@ Includes: real PyArrow/DuckDB export round trips, full-package coverage, the uni
 
 **Procedure:** [`docs/ops/dev-box-pilot.md`](../ops/dev-box-pilot.md) (prerequisites, proxy, matrix exit codes, `evidence register`).
 
-**Tier meaning:** Tier 1 = at least one real native-harness instance with a complete `EvidenceRecord`; minimum matrix proof = TB `smoke-5` × two Harbor runtimes + compare with ≥1 shared eligible instance (see runbook). Details: [`production-readiness.md`](production-readiness.md) §Tier 1–2.
+**Tier meaning:** Tier 1 = at least one real native-harness instance with a complete `EvidenceRecord`; minimum matrix proof = TB `tier1-one` × two Harbor runtimes + compare on the one shared eligible instance. `smoke-5` is an optional larger matrix selected through `BENCHEVAL_PILOT_TB_SLICE` (see runbook). Details: [`production-readiness.md`](production-readiness.md) §Tier 1–2.
 
 **Artifacts:** `results/evidence/`, `reports/`, `bundles/` (default `--redaction private`); `results/preflight/*.json` on blockers (negative evidence, not fake pass).
 
@@ -41,7 +41,7 @@ See [`production-readiness.md`](production-readiness.md) and ops runbook [`../op
 
 ```bash
 uv run bencheval evidence register \
-  --run-id <id> --benchmark terminal-bench --slice smoke-5 \
+  --run-id <id> --benchmark terminal-bench --slice tier1-one \
   --runtime claude-code --model <model-id> \
   --evidence results/evidence/<id>.jsonl \
   --report results/reports/<id>.md \

@@ -27,16 +27,16 @@ adapter research; it is not a pilot prerequisite or a supported `run` path.
 
 | Field | Contract |
 |-------|----------|
-| Binary | `inspect` plus `swebench` (official evaluator, not in the product lock yet) |
+| Binary | `inspect` plus exact `swebench==5.0.1` from the isolated `swe` dependency group |
 | Version | locked Inspect Evals / Inspect SWE pins; official `swebench==5.0.1` |
-| Command shape | `inspect eval inspect_evals/swe_bench` with the selected runtime solver, then `swebench eval verified -p <preds> -i <id> -j 1 --run-id <id> --report-dir <dir>` |
+| Command shape | Codex-only `inspect eval inspect_evals/swe_bench` (`codex-cli`); then `swebench eval <run-owned eval-input> -p <preds> -i <id> -j 1 --run-id <id> --report-dir <dir>`. `claude-code` is rejected before launch. |
 | Container | Docker per the official SWE-bench evaluator |
 | Env (names only) | Model provider env vars; no secrets in evidence export (`public` redaction) |
-| Outputs | Prediction JSONL, official evaluator logs, and exact requested-instance `report.json` retained under the run-owned artifacts root |
+| Outputs | Prediction JSONL, official/Inspect rows, transformation manifest, Inspect `.eval` log, schema-v2 aggregate, and per-instance `report.json` when the instance was executed |
 | Timeout | Generation and evaluation share one cumulative per-instance wall envelope; phase two receives only the remaining time |
 | Parser | Only boolean `report.json[instance_id]["resolved"]` is authoritative; local `verifier.json`/`result.json`, stdout, and exit code cannot grant a pass |
 
-Runtime profiles: `claude-code`, `codex-cli` (`config/runtimes/claude-code.yaml`, `config/runtimes/codex-cli.yaml`). mini-SWE-agent remains a separately named future agent scaffold, not this diagnostic path.
+v1 SWE diagnostic is Codex-only (`config/runtimes/codex-cli.yaml`). Harbor still admits both `claude-code` and `codex-cli`. mini-SWE-agent remains a separately named future agent scaffold, not this diagnostic path.
 
 ## BFCL v4 (executable)
 
@@ -72,7 +72,7 @@ Do **not** fail on log silence alone. Distinguish: clean exit, alive-but-quiet, 
 
 | Label | Meaning |
 |-------|---------|
-| `executable_adapter` | TB / GPQA / HLE / BFCL control-plane adapters (`swe-bench-verified` demoted until official evaluate) |
+| `executable_adapter` | TB / GPQA / HLE / BFCL control-plane adapters (`swe-bench-verified` stays demoted; diagnostic official-eval only) |
 | `manifest_only` | Slice/manifest without full lifecycle adapter |
 | `metadata_only` | Catalog entry only (e.g. CyBench until adapter ships) |
 

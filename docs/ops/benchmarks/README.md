@@ -6,9 +6,9 @@ Operator notes for product catalog rows. BenchEval ships control-plane glue and,
 | --- | --- | --- |
 | `terminal-bench` | Harbor 2.1 (Tier-1 `fix-git` on both admitted runtimes) | `--runtime` XOR `--agent` |
 | `gpqa-diamond` | Inspect Evals (Tier-1: `run-20260825-160511-036214-304c2cee`) | model-only; parse official Inspect scores |
-| `hle` | CAIS scripts (Tier-0) | model-only; `BENCHEVAL_HLE_HOME`; parse judge metrics |
-| `swe-bench-verified` | **demoted** | not executable until official SWE-bench evaluate is wired |
-| `bfcl-v4` | BFCL eval (Tier-0) | model-only; official `bfcl generate`+`evaluate` lifecycle, gated on the supported-model manifest |
+| `hle` | CAIS scripts (Tier-1 registered) | model-only; `BENCHEVAL_HLE_HOME`; parse judge metrics |
+| `swe-bench-verified` | **demoted** | `--diagnostic` dispatch materializes the pinned row and injects a real runner; catalog stays non-executable and cannot register `passed` |
+| `bfcl-v4` | BFCL eval (Tier-1 registered) | model-only; official `bfcl generate`+`evaluate` lifecycle, gated on the supported-model manifest |
 | `swe-bench-pro` | **pending** | needs real official task selector from Harbor dataset |
 | `exploitgym` | **pending** | needs real official task id/source from host harness |
 | `cybergym` | **not executable** | catalog/`adapter_pending` until full official server+submit lifecycle |

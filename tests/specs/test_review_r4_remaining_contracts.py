@@ -1,18 +1,6 @@
 """RED contracts for the locally provable remaining launch-control gaps.
 
 SUBSTITUTE_JUSTIFICATION
-- substitute: deterministic Harbor process result in
-  test_runtime_identity_tracks_proxy_presence_without_hashing_credential_values
-- replaces: Docker/Harbor/provider execution at the process boundary
-- necessity: the assertion requires three controlled launch environments (no proxy, credential A,
-  credential B) while holding every other runtime input constant; a real charged provider run
-  cannot safely or deterministically manufacture that metamorphic sequence
-- real-option: the real Harbor pilot is unavailable without Docker and provider credentials
-- proof-limit: proves the local launch command and emitted runtime_config_hash relationship only;
-  it does not prove proxy reachability, Docker isolation, Harbor, or provider behavior
-- real-proof: BLOCKED on the provisioned dev-box pilot with sanitized effective-launch manifests
-
-SUBSTITUTE_JUSTIFICATION
 - substitute: launch-boundary observers in the SWE-bench, BFCL, GPQA, and HLE timeout tests
 - replaces: the external harness process after BenchEval computes its timeout
 - necessity: the contract is the exact timeout supplied to the real subprocess boundary, and the
@@ -150,7 +138,7 @@ def test_swebench_launch_timeout_does_not_exceed_one_instance_budget(
     base_plan = plan_control_plane(
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
-        runtime_id="claude-code",
+        runtime_id="codex-cli",
         model_id=_MODEL,
     )
     plan = base_plan.model_copy(

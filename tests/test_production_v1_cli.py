@@ -18,7 +18,10 @@ from tests.factories import make_control_plane_evidence_record as _cp_record
 # - necessity: a non-dry CLI run must reach output rendering without a charged provider call
 # - real-option: real GPQA CLI smoke on the provisioned dev-box
 # - proof-limit: proves CLI default-path behavior only, not adapter execution
-# - real-proof: BLOCKED until a live GPQA pilot retains evidence and Inspect logs
+# - real-proof: imported GPQA proofs
+#   ``sha256:aa19d02b7d1457d0f43d9588b3d08c042e967a981ed8537068412e1797ff0eda``,
+#   ``sha256:90978d9e161419aba7ca9c48ceedabc1a009403a7e36deeee861b22a7c21c032``,
+#   ``sha256:a8f17d90cd44dea3f6a032f7db406ec8061f878626c8b2a7615552fe4c6da2f8``
 
 
 def test_benchmark_list_executable_filter_matches_catalog_contract(
@@ -97,7 +100,7 @@ def test_control_plane_run_defaults_output_under_results(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    def fake_execute(*, plan, output_path, artifacts_dir, run_id=None):
+    def fake_execute(*, plan, output_path, artifacts_dir, run_id=None, **_kwargs):
         from bencheval.control_plane_executor import ControlPlaneRunSummary
 
         output_path.parent.mkdir(parents=True, exist_ok=True)

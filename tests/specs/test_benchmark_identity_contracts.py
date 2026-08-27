@@ -18,16 +18,24 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import get_args
 
+import datasets
+import huggingface_hub
 import pytest
 import yaml
 
+import bencheval.hle_adapter as hle_adapter
 from bencheval.benchmark_plan import plan_control_plane
-from bencheval.benchmark_registry import load_benchmark_catalog
+from bencheval.benchmark_registry import (
+    BfclPackageDataIdentity,
+    HfDatasetSnapshotIdentity,
+    load_benchmark_catalog,
+)
 from bencheval.cli import _qualify_passed_registration, main
 from bencheval.config_cache import clear_config_loader_caches
 from bencheval.control_plane_executor import (
@@ -36,12 +44,14 @@ from bencheval.control_plane_executor import (
     control_plane_interpretation_label,
     execute_control_plane_run,
 )
+from bencheval.domain import InterpretationLabel
 from bencheval.evidence import EvidenceRecord, JsonlEvidenceSink, read_evidence_jsonl
 from bencheval.exceptions import AdapterFailureError, BenchEvalError
 from bencheval.gpqa_adapter import GpqaCliResult, run_gpqa_slice
 from bencheval.hle_adapter import HleCliResult, hle_run_paths, run_hle_slice
 from bencheval.live_proof import qualify_lane
 from bencheval.provenance_gates import is_provisional_benchmark_version
+from tests.factories import make_control_plane_evidence_record
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -336,8 +346,6 @@ def test_bfcl_catalog_identity_pins_all_smoke_category_files() -> None:
     # file behind them must be pinned. irrelevance has no possible_answer file
     # in v4 by design (it scores on "no function called"), so the pin set is
     # nine files, not ten.
-    from bencheval.benchmark_registry import BfclPackageDataIdentity
-
     identity = load_benchmark_catalog().by_id_or_alias("bfcl-v4").identity
     assert isinstance(identity, BfclPackageDataIdentity)
     assert dict(identity.files) == _BFCL_FILES
@@ -827,6 +835,58 @@ def test_capture_hle_identity_binds_snapshot_and_cache(tmp_path: Path) -> None:
     assert captured == f"hle@{revision[:16]}+data-{data_tag}"
 
 
+def test_hle_fetcher_rejects_hostile_exact_revision_ambient_cache(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An exact-revision ambient cache with altered bytes must fail before launch.
+
+    SUBSTITUTE_JUSTIFICATION
+    - substitute: monkeypatched ``huggingface_hub.snapshot_download`` and
+      ``datasets.load_dataset`` that fail the pre-warm after a local snapshot
+    - replaces: a real datasets materialization of the pinned cais/hle revision
+    - necessity: the removed ambient-copy fallback fired only when pre-warm
+      failed; that failure must be forced without corrupting the operator cache
+    - real-option: a live load_dataset of cais/hle cannot safely be made to fail
+      after the official snapshot is present
+    - proof-limit: proves fail-closed pre-warm and no ambient copy, not Hub bytes
+    - real-proof: post-fix live HLE smoke on the operator host
+    """
+    from bencheval.hle_adapter import _fetch_hle_snapshot_and_prewarm
+
+    assert not hasattr(hle_adapter, "_copy_ambient_hle_datasets_cache")
+
+    planted = (
+        tmp_path / "ambient" / "cais___hle" / "default" / "0.0.0" / _HLE_REVISION / "hle-test.arrow"
+    )
+    planted.parent.mkdir(parents=True)
+    planted.write_bytes(b"not-official-hle-data")
+    monkeypatch.setenv("HF_DATASETS_CACHE", str(tmp_path / "ambient"))
+    monkeypatch.setenv("HF_HOME", str(tmp_path / "hf-home"))
+
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda **kwargs: str(snapshot))
+
+    def fail_load(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise OSError("prewarm failed")
+
+    monkeypatch.setattr(datasets, "load_dataset", fail_load)
+
+    run_owned = tmp_path / "run-owned-cache"
+    with pytest.raises(BenchEvalError, match="pre-warm"):
+        _fetch_hle_snapshot_and_prewarm(
+            repo=_HLE_REPO,
+            revision=_HLE_REVISION,
+            datasets_cache=run_owned,
+        )
+    leaked = list(run_owned.rglob("*")) if run_owned.exists() else []
+    assert not any(
+        path.read_bytes() == b"not-official-hle-data" for path in leaked if path.is_file()
+    )
+
+
 def test_capture_hle_identity_rejects_preexisting_materialized_cache(tmp_path: Path) -> None:
     """An ambient cache with plausible directory names is never trusted."""
     from bencheval.hle_adapter import _prepare_fresh_hle_datasets_cache
@@ -900,8 +960,6 @@ def test_default_fetcher_addresses_the_dataset_repo_type(
     - real-proof: dev-box live lane downloads and digest-verifies the real
       pinned snapshot before launch
     """
-    import datasets
-    import huggingface_hub
 
     from bencheval.hle_adapter import _fetch_hle_snapshot_and_prewarm
 
@@ -930,10 +988,91 @@ def test_default_fetcher_addresses_the_dataset_repo_type(
     assert download_kwargs["repo_id"] == _HLE_REPO
     assert download_kwargs["revision"] == _HLE_REVISION
     assert download_kwargs["repo_type"] == "dataset"
+    assert download_kwargs["local_files_only"] is True
     load_args, load_kwargs = calls["load_dataset"]
     assert load_args == (_HLE_REPO,)
     assert load_kwargs["revision"] == _HLE_REVISION
     assert load_kwargs["cache_dir"] == str(datasets_cache)
+
+
+def test_hle_prewarm_builds_from_local_hub_snapshot_without_datasets_offline(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A cached hub snapshot must become Arrow without a gated Hub round-trip.
+
+    SUBSTITUTE_JUSTIFICATION
+    - substitute: monkeypatched ``huggingface_hub.snapshot_download`` and
+      ``datasets.load_dataset`` that record the first pre-warm environment
+    - replaces: converting a local cais/hle hub snapshot into a run-owned
+      datasets cache
+    - necessity: the assertion is the exact offline/build flags; a real
+      load_dataset of the gated dataset cannot run in this unit test
+    - real-option: operator-host pre-warm against the already cached snapshot
+    - proof-limit: proves env flags only, not official parquet bytes
+    - real-proof: post-fix live HLE smoke on the operator host
+    """
+    from bencheval.hle_adapter import _fetch_hle_snapshot_and_prewarm
+
+    seen: dict[str, str | None] = {}
+
+    def fake_load_dataset(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        seen["HF_HUB_OFFLINE"] = os.environ.get("HF_HUB_OFFLINE")
+        seen["HF_DATASETS_OFFLINE"] = os.environ.get("HF_DATASETS_OFFLINE")
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda **kwargs: str(tmp_path))
+    monkeypatch.setattr(datasets, "load_dataset", fake_load_dataset)
+
+    _fetch_hle_snapshot_and_prewarm(
+        repo=_HLE_REPO,
+        revision=_HLE_REVISION,
+        datasets_cache=tmp_path / "datasets-cache",
+    )
+
+    assert seen["HF_HUB_OFFLINE"] == "1"
+    assert seen["HF_DATASETS_OFFLINE"] is None
+
+
+def test_default_fetcher_retries_online_when_local_snapshot_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A gated hub login is only required when the pinned snapshot is absent.
+
+    SUBSTITUTE_JUSTIFICATION
+    - substitute: monkeypatched ``huggingface_hub.snapshot_download`` that
+      rejects the local-only request, then succeeds online
+    - replaces: a missing local HF hub snapshot plus a real gated download
+    - necessity: the retry order must be forced without a live hub login
+    - real-option: delete the cached snapshot and download cais/hle live
+    - proof-limit: proves request order only, not remote bytes
+    - real-proof: dev-box live lane uses the cached snapshot or a real token
+    """
+
+    from bencheval.hle_adapter import _fetch_hle_snapshot_and_prewarm
+
+    calls: list[dict[str, object]] = []
+
+    def fake_snapshot_download(**kwargs: object) -> str:
+        calls.append(kwargs)
+        if kwargs.get("local_files_only") is True:
+            raise OSError("not in local cache")
+        return str(tmp_path)
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", fake_snapshot_download)
+    monkeypatch.setattr(datasets, "load_dataset", lambda *args, **kwargs: None)
+
+    snapshot = _fetch_hle_snapshot_and_prewarm(
+        repo=_HLE_REPO,
+        revision=_HLE_REVISION,
+        datasets_cache=tmp_path / "datasets-cache",
+    )
+
+    assert snapshot == tmp_path
+    assert calls[0]["local_files_only"] is True
+    assert "local_files_only" not in calls[1]
+    assert calls[1]["repo_type"] == "dataset"
 
 
 def test_default_hle_runner_uses_run_owned_datasets_cache(
@@ -955,9 +1094,6 @@ def test_default_hle_runner_uses_run_owned_datasets_cache(
       real candidate and official judge calls used the fresh run-owned cache,
       qualified as one eligible native attempt, and cleanup removed the cache
     """
-    import bencheval.hle_adapter as hle_adapter
-    from bencheval.benchmark_registry import HfDatasetSnapshotIdentity
-
     home = _plain_hle_home(tmp_path)
     monkeypatch.setenv("BENCHEVAL_HLE_HOME", str(home))
     monkeypatch.setenv("BYTELLM_API_KEY", "test-credential-placeholder")
@@ -1049,9 +1185,6 @@ def test_default_hle_runner_rejects_materialized_cache_file_mutation(
       real candidate and official judge calls used the fresh run-owned cache,
       qualified as one eligible native attempt, and cleanup removed the cache
     """
-    import bencheval.hle_adapter as hle_adapter
-    from bencheval.benchmark_registry import HfDatasetSnapshotIdentity
-
     home = _plain_hle_home(tmp_path)
     monkeypatch.setenv("BENCHEVAL_HLE_HOME", str(home))
     monkeypatch.setenv("BYTELLM_API_KEY", "test-credential-placeholder")
@@ -1414,8 +1547,6 @@ def _demoted_gpqa_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
 
 def test_run_plan_carries_diagnostic_flag_default_false() -> None:
-    from bencheval.domain import InterpretationLabel
-
     assert _gpqa_plan().diagnostic is False
     assert _gpqa_plan(diagnostic=True).diagnostic is True
     assert "diagnostic" in get_args(InterpretationLabel)
@@ -1467,17 +1598,17 @@ def test_run_without_diagnostic_still_rejects_demoted_benchmark(
     assert "executable" in capsys.readouterr().err
 
 
-def test_run_diagnostic_rejects_benchmark_without_wired_adapter(
+def test_run_diagnostic_admits_demoted_wired_swe_without_promoting(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # swe-bench-verified is demoted AND its adapter has no executor dispatch;
-    # --diagnostic must not manufacture a launch path for it.
+    # SWE is catalog-demoted but now has diagnostic-capable dispatch. Dry-run
+    # may plan; it still cannot register passed (see passed-registration tests).
     code = main(
         [
             "run",
             "swe-bench-verified/swe-bench-verified-smoke-10",
             "--runtime",
-            "claude-code",
+            "codex-cli",
             "--model",
             "kimi-k2.7-code",
             "--provider",
@@ -1486,8 +1617,8 @@ def test_run_diagnostic_rejects_benchmark_without_wired_adapter(
             "--dry-run",
         ],
     )
-    assert code == 1
-    assert "executable" in capsys.readouterr().err
+    assert code == 0
+    assert "executable" not in capsys.readouterr().err
 
 
 @pytest.mark.usefixtures("_demoted_gpqa_home")
@@ -1512,8 +1643,6 @@ def test_executor_rejects_diagnostic_for_unwired_adapter() -> None:
 
 
 def test_passed_registration_rejects_demoted_benchmark_evidence(tmp_path: Path) -> None:
-    from tests.factories import make_control_plane_evidence_record
-
     evidence = tmp_path / "evidence.jsonl"
     JsonlEvidenceSink().append_jsonl(evidence, make_control_plane_evidence_record(instance_id="x"))
 
@@ -1534,8 +1663,6 @@ def test_passed_registration_rejects_demoted_benchmark_evidence(tmp_path: Path) 
 def test_passed_registration_keeps_qualify_path_for_executable_benchmark(
     tmp_path: Path,
 ) -> None:
-    from tests.factories import make_control_plane_evidence_record
-
     evidence = tmp_path / "evidence.jsonl"
     JsonlEvidenceSink().append_jsonl(evidence, make_control_plane_evidence_record(instance_id="x"))
 
@@ -1592,8 +1719,6 @@ def test_run_diagnostic_rejects_executable_benchmark(
 def test_passed_registration_rejects_diagnostic_rows_on_executable_benchmark(
     tmp_path: Path,
 ) -> None:
-    from tests.factories import make_control_plane_evidence_record
-
     evidence = tmp_path / "evidence.jsonl"
     JsonlEvidenceSink().append_jsonl(
         evidence,

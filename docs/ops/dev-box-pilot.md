@@ -2,7 +2,7 @@
 
 Operational runbook for executing the Phase B live control-plane pilot on a **dev-box-cpu** (or equivalent operator VPS). Tier definitions: [`docs/context/production-readiness.md`](../context/production-readiness.md).
 Scope summary: [`docs/context/production-v1-pilot.md`](../context/production-v1-pilot.md).
-Design: [`docs/context/concept-hld.md`](../context/concept-hld.md).
+Design: [`docs/context/concept-zero.md`](../context/concept-zero.md).
 
 Phase B = live matrix with real credentials and **native harness runtimes**. It is gated and non-fatal to blockers: blocked steps produce **negative preflight evidence** (`results/preflight/*.json`), never fake passes.
 
@@ -12,10 +12,10 @@ Phase B = live matrix with real credentials and **native harness runtimes**. It 
 
 The minimum live proof this runbook targets (matches `scripts/run-live-pilot-matrix.sh` exit codes):
 
-1. `terminal-bench` `smoke-5` for **both** `claude-code` and `codex-cli` Harbor runtimes (same `model_id` so the compare is runtime-only).
+1. `terminal-bench` `tier1-one` (the script default) for **both** `claude-code` and `codex-cli` Harbor runtimes, with the same `model_id` so the compare is runtime-only. Set `BENCHEVAL_PILOT_TB_SLICE=smoke-5` for the optional five-instance matrix.
 2. `bencheval compare` of those two evidence files succeeds (single axis: `runtime_comparison`).
 
-`bfcl-v4` is executable (admitted 2026-08-24 on the diagnostic-labeled lifecycle demonstration `run-20260824-040631-228703-4756f857` plus the registered `passed` run `run-20260824-045622-854659-a46ae44d`); `swe-bench-verified` is cataloged but **not** executable — it still awaits official evaluate wiring. Neither is part of the TB minimum proof matrix below.
+`bfcl-v4` is executable (admitted 2026-08-24 on the diagnostic-labeled lifecycle demonstration `run-20260824-040631-228703-4756f857` plus the registered `passed` run `run-20260824-045622-854659-a46ae44d`); `swe-bench-verified` is cataloged but **not** executable. Its diagnostic lifecycle is proven on `sha256:5f7f79ce…373e52` and remains ineligible for `passed` registration. Neither is part of the TB minimum proof matrix below.
 
 ## 1. Prerequisites on dev-box-cpu
 
@@ -30,7 +30,7 @@ The minimum live proof this runbook targets (matches `scripts/run-live-pilot-mat
 uv sync --dev --extra eval --extra analytics  # Tier-0 gate + live harness dependencies
 ```
 
-BFCL/SWE lanes are not prerequisites for the minimum pilot. BFCL is executable but outside the TB matrix and needs the additional locked group (`uv sync --group bfcl`) when run; SWE-bench Verified stays demoted.
+BFCL/SWE lanes are not prerequisites for the minimum pilot. BFCL is executable but outside the TB matrix and needs the additional locked group (`uv sync --group bfcl`) when run; SWE-bench Verified stays demoted and uses the exact isolated `swe` group (`swebench==5.0.1`) for official evaluation only.
 
 Keep all artifacts under `results/` — it is gitignored. Do not commit live evidence, raw outputs, or bundles unless you explicitly intend to publish.
 
@@ -114,8 +114,8 @@ export BENCHEVAL_CLAUDE_CODE_ALLOWED_TOOLS='Bash,Read,Write'
 
 What it does, per step:
 
-- `terminal-bench` lanes (`claude-code`, `codex-cli`): `bencheval doctor --backend harbor --model <m> --profile E2` then `bencheval run terminal-bench/smoke-5 --runtime <rt> -y`. On doctor fail → preflight record + step fails. On run fail → artifacts emitted and the lane's evidence is still qualified: a nonzero benchmark exit (e.g. a scored model-wrong-solution result) does not fail the step when complete eligible native evidence was produced; the step fails only when the evidence does not qualify.
-- Non-pilot catalog lanes (`bfcl-v4`, `swe-bench-verified`) are **not** invoked by the matrix: bfcl-v4 is executable but outside the TB minimum proof; CLI `run` refuses swe-bench-verified until official evaluate wiring.
+- `terminal-bench` lanes (`claude-code`, `codex-cli`): `bencheval doctor --backend harbor --model <m> --profile E2` then `bencheval run terminal-bench/<selected-slice> --runtime <rt> -y`, where `<selected-slice>` defaults to `tier1-one` and may be `smoke-5`. On doctor fail → preflight record + step fails. On run fail → artifacts emitted and the lane's evidence is still qualified: a nonzero benchmark exit (e.g. a scored model-wrong-solution result) does not fail the step when complete eligible native evidence was produced; the step fails only when the evidence does not qualify.
+- Non-pilot catalog lanes (`bfcl-v4`, `swe-bench-verified`) are **not** invoked by the matrix: bfcl-v4 is executable but outside the TB minimum proof; ordinary CLI `run` refuses swe-bench-verified and `--diagnostic` is the only legal SWE path.
 - Compare: only when **both** TB lanes produced evidence, runs `bencheval compare` of `tb-claude-code-<stamp>` vs `tb-codex-cli-<stamp>`.
 
 Artifacts written under `results/` (all gitignored):
@@ -137,7 +137,7 @@ The matrix exits with a code that encodes how much proof was collected. Treat th
 | `0` | **Preflight-only** | No live evidence; only `preflight/*.json`; `BENCHEVAL_ALLOW_PREFLIGHT_ONLY=1`, `BLOCKED>0`, `FAILED=0` |
 | `1` | **Minimum proof not met** | TB pair, compare, or shared-eligible set incomplete |
 
-`bfcl-v4` / `swe-bench-verified` are not part of the exit-0 minimum: bfcl-v4 is executable (admitted 2026-08-24) and may be run directly; swe-bench-verified stays non-executable until official evaluate is wired.
+`bfcl-v4` / `swe-bench-verified` are not part of the exit-0 minimum: bfcl-v4 is executable (admitted 2026-08-24) and may be run directly; swe-bench-verified stays non-executable before and after its diagnostic implementation unless a later explicit promotion decision changes it.
 
 The summary line tells you which row you hit:
 
@@ -157,7 +157,7 @@ Record a manual one-off run by following the matrix's file conventions so the sa
 
    ```bash
    STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-   uv run bencheval run terminal-bench/smoke-5 --runtime codex-cli \
+   uv run bencheval run terminal-bench/tier1-one --runtime codex-cli \
        --model "$BENCHEVAL_PILOT_MODEL" -y \
        --output "results/evidence/tb-codex-cli-${STAMP}.jsonl" \
        --artifacts-dir "results/raw/tb-codex-cli-${STAMP}"
@@ -170,7 +170,7 @@ Record a manual one-off run by following the matrix's file conventions so the sa
    ```bash
    uv run python scripts/write_preflight.py \
        --output "results/preflight/tb-codex-cli-${STAMP}.json" \
-       --benchmark terminal-bench --slice smoke-5 --runtime codex-cli \
+       --benchmark terminal-bench --slice tier1-one --runtime codex-cli \
        --model "$BENCHEVAL_PILOT_MODEL" --ok false \
        --reason "docker not available"
    ```
@@ -180,7 +180,7 @@ Record a manual one-off run by following the matrix's file conventions so the sa
    ```bash
    uv run bencheval evidence register \
        --run-id "tb-codex-cli-${STAMP}" \
-       --benchmark terminal-bench --slice smoke-5 --runtime codex-cli \
+       --benchmark terminal-bench --slice tier1-one --runtime codex-cli \
        --model "${BENCHEVAL_PILOT_MODEL}" \
        --evidence "results/evidence/tb-codex-cli-${STAMP}.jsonl" \
        --report "results/reports/tb-codex-cli-${STAMP}.md" \
@@ -224,6 +224,6 @@ Rules of thumb:
 | Harbor doctor `fail` | `harbor` CLI not installed | `uv sync --extra eval` |
 | Docker doctor `fail` | daemon down / socket perms | `docker info`; start daemon |
 | Compare exits with dual-axis error | TB runtimes used different `model_id` | set `BENCHEVAL_PILOT_CLAUDE_MODEL`/`_CODEX_MODEL` to the same alias |
-| Demoted SWE run attempted | Catalog row is non-executable | SWE: do not invoke until official evaluate wiring (BFCL is executable and runs directly) |
+| Ordinary demoted SWE run attempted | Catalog row is `executable: false` | Use `bencheval run swe-bench-verified --diagnostic ...`; ordinary `run` is refused. This never registers `passed`. BFCL is executable and runs directly |
 | Anthropic router rejects `messages[].role=system` | needs top-level `system` | `BENCHEVAL_ANTHROPIC_SYSTEM_ROLE_SHIM=1` |
 | npm slow inside TB container | default registry throttled | `BENCHEVAL_CLAUDE_CODE_NPM_REGISTRY` |

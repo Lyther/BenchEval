@@ -114,3 +114,26 @@ def test_absolute_in_root_reference_remains_portable(tmp_path: Path) -> None:
     reference = Path(read_evidence_jsonl(bundle / "evidence.jsonl")[0].artifact_paths[0])
     assert not reference.is_absolute()
     assert (bundle / reference).read_bytes() == source.read_bytes()
+
+
+def test_private_legacy_export_rejects_a_reference_below_a_skipped_symlink_ancestor(
+    tmp_path: Path,
+) -> None:
+    raw = tmp_path / "raw"
+    source = raw / "real" / "official.json"
+    source.parent.mkdir(parents=True)
+    source.write_text('{"resolved": false}\n', encoding="utf-8")
+    (raw / "alias").symlink_to(source.parent, target_is_directory=True)
+    evidence = tmp_path / "evidence.jsonl"
+    _evidence(evidence, "alias/official.json")
+    bundle = tmp_path / "bundle"
+
+    with pytest.raises(BenchEvalError, match=r"symlink|copy|artifact|referenced"):
+        export_run_bundle(
+            evidence_path=evidence,
+            output_dir=bundle,
+            raw_dir=raw,
+            redaction="private",
+        )
+
+    assert not bundle.exists() or not any(bundle.iterdir())

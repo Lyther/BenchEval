@@ -106,6 +106,12 @@ def _write_valid_evidence(path: Path, *, run_id: str = "run-passed") -> None:
         verifier_integrity_label="native",
         attempt_validity="valid",
         counts_toward_pass_at_k=True,
+        adapter_metadata={
+            "producer_package_version": "0.0.0",
+            "producer_content_sha256": (
+                "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+            ),
+        },
     )
     path.write_text(record.model_dump_json() + "\n", encoding="utf-8")
 

@@ -89,6 +89,7 @@ def test_build_harbor_run_command_claude_code(monkeypatch: pytest.MonkeyPatch) -
     assert cmd[cmd.index("--include-task-name") + 1] == "terminal-bench/fix-git"
     assert "--task-name" not in cmd
     assert "--jobs-dir" in cmd
+    assert Path(cmd[cmd.index("--jobs-dir") + 1]).name == "harbor-package"
     assert "--n-concurrent" in cmd and "1" in cmd
 
 

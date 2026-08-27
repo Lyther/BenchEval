@@ -1,15 +1,5 @@
 """Round-11 review findings: Harbor real-schema verdicts (F002) + agent version pins (F003).
 
-F002 — Harbor's official per-trial result schema (``TrialResult`` in
-``harbor/models/trial/result.py``) carries the verifier verdict at
-``verifier_result.rewards["reward"]``; the official passing rule
-(``harbor/analyze/analyzer.py``) is ``reward == 1.0 and exception_info is None``.
-The legacy top-level ``resolved``/``success`` booleans BenchEval scored are not
-the official schema. F003 — Harbor runs must pin the agent version
-(``--agent-kwarg version=...``), the evidence row's ``runtime_version`` must be
-the container-side ``agent_info.version`` (never the host CLI), and a missing
-or mismatched ``agent_info`` fails closed as ``runtime_config_drift``.
-
 SUBSTITUTE_JUSTIFICATION
 - substitute: (a) the recorded artifact
   ``tests/regressions/data/tb_harbor_trial_result_pass.json`` (a verbatim copy of
@@ -437,13 +427,14 @@ def test_f003_harbor_plans_skip_the_host_version_probe(
     swe_plan = plan_control_plane(
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
-        runtime_id="claude-code",
+        runtime_id="codex-cli",
         model_id="kimi-k2.7-code",
     )
     swe = _capture_runtime_provenance(swe_plan)
-    assert calls == [("claude", "--version")]
+    assert calls == []
     assert swe is not None
-    assert swe.runtime_version == "host-x.y.z"
+    assert swe.runtime_version is None
+    assert swe.runtime_config_hash is not None
 
 
 def test_f003_agent_version_pin_changes_runtime_config_hash() -> None:

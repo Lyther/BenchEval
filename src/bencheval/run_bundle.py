@@ -8,6 +8,7 @@ import os
 import platform
 import shutil
 import socket
+import stat
 import subprocess
 import tarfile
 from datetime import UTC, datetime
@@ -119,10 +120,58 @@ def _safe_relative_parts(value: str) -> tuple[str, ...] | None:
     return parts
 
 
-def _contained_regular_file(path: Path, root: Path) -> Path | None:
-    abs_path = Path(os.path.abspath(path))
+def _lexical_under_root(path: Path, root: Path) -> Path | None:
+    abs_root = Path(os.path.abspath(root))
+    candidate = path if path.is_absolute() else abs_root / path
+    lexical = Path(os.path.normpath(str(candidate)))
     try:
-        abs_path.relative_to(root)
+        lexical.relative_to(abs_root)
+    except ValueError:
+        return None
+    return lexical
+
+
+def _has_symlink_component(path: Path, root: Path) -> bool:
+    """True when any path component under ``root`` is a symlink (no follow)."""
+    abs_root = Path(os.path.abspath(root))
+    lexical = _lexical_under_root(path, abs_root)
+    if lexical is None:
+        return True
+    current = abs_root
+    for part in lexical.relative_to(abs_root).parts:
+        current = current / part
+        try:
+            if stat.S_ISLNK(os.lstat(current).st_mode):
+                return True
+        except OSError:
+            return True
+    return False
+
+
+def _existing_symlink_component(path: Path, root: Path) -> bool:
+    """True only when an existing component under ``root`` is a symlink."""
+    abs_root = Path(os.path.abspath(root))
+    lexical = _lexical_under_root(path, abs_root)
+    if lexical is None:
+        return False
+    current = abs_root
+    for part in lexical.relative_to(abs_root).parts:
+        current = current / part
+        try:
+            if stat.S_ISLNK(os.lstat(current).st_mode):
+                return True
+        except OSError:
+            return False
+    return False
+
+
+def _contained_regular_file(path: Path, root: Path) -> Path | None:
+    abs_root = Path(os.path.abspath(root))
+    if _has_symlink_component(path, abs_root):
+        return None
+    abs_path = Path(os.path.abspath(path if path.is_absolute() else abs_root / path))
+    try:
+        abs_path.relative_to(abs_root)
     except ValueError:
         return None
     if abs_path.is_symlink() or not abs_path.is_file():
@@ -179,6 +228,8 @@ def _resolve_private_artifact(
         found = _relative_under_declared_root(value, root)
         if found is not None:
             return found
+    if any(_existing_symlink_component(Path(value), root) for root in (raw_abs, capture_abs)):
+        raise BenchEvalError(f"referenced artifact path contains a symlink: {value}")
     raise BenchEvalError(f"missing referenced artifact: {value}")
 
 
