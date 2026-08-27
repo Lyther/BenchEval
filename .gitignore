@@ -38,6 +38,7 @@ results/manifests/*
 !results/manifests/README.md
 results/proofs/*
 !results/proofs/README.md
+results/proofs-staging/
 config/selftest/**/runs/
 config/tasks/**/runs/
 
@@ -49,6 +50,8 @@ config/tasks/**/runs/
 *.code-workspace
 
 # Local AI / agentic overlays — NEVER commit. Keep all assistant context local.
+.agent-surface/
+.review_state*.md
 .claude/
 .obsidian/
 .cursor/
