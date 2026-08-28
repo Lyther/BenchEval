@@ -1,16 +1,20 @@
 """Peer#3 round-2 F001–F004 regressions.
 
 SUBSTITUTE_JUSTIFICATION
-- substitute: real FIFOs/symlinks/hardlinks plus injected SWE runners and
-  planted evidence rows
+- substitute: real FIFOs/symlinks/hardlinks, injected SWE runners, a
+  ``snapshot_download`` boundary returning an on-disk custom-cache snapshot,
+  and planted evidence rows
 - replaces: a same-UID harness helper that leaves a FIFO or swapped dataset
-  after the bounded subprocess exits, and a charged Claude SWE launch
+  after the bounded subprocess exits, a charged Claude SWE launch, and a live
+  Hugging Face download into a non-default cache
 - necessity: FIFO hang, directory symlink swap, unknown-producer qualification,
-  and Claude planning must be forced without charging a provider
+  evaluator working-directory selection, and custom-cache return-path handling
+  must be forced without charging a provider or mutating the operator cache
 - real-option: a live helper cannot safely or deterministically plant those
-  filesystem states after wall-limited harness exit
-- proof-limit: local reader/planner/qualification contracts only; not live
-  score truth or catalog admission
+  filesystem states after wall-limited harness exit; the real configured-cache
+  contract is independently defined by ``huggingface_hub.constants``
+- proof-limit: local reader/planner/qualification/cache/launch contracts only;
+  not live score truth, network download behavior, or catalog admission
 - real-proof: prior imported HLE/SWE proofs remain historical; new passed
   registration requires a canonical ``sha256:[0-9a-f]{64}`` producer digest
 - covered tests: every test in this module
@@ -18,6 +22,7 @@ SUBSTITUTE_JUSTIFICATION
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -35,6 +40,7 @@ from bencheval.exceptions import AdapterFailureError, BenchEvalError
 from bencheval.live_proof import producer_content_ok, qualify_lane
 from bencheval.swebench_adapter import (
     SwebenchCliResult,
+    _ensure_source_parquet,
     build_swebench_eval_command,
     run_swebench_instance,
 )
@@ -205,6 +211,88 @@ def test_producer_identity_is_content_bound_and_stable() -> None:
     assert first["producer_package_version"] != "unknown"
     assert first.get("producer_git_commit") != "unknown"
     assert first.get("producer_dirty") != "unknown"
+
+
+def test_producer_digest_includes_uv_style_hardlinked_sources(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import bencheval
+    import bencheval.control_plane_executor as executor
+
+    package = tmp_path / "site-packages" / "bencheval"
+    config = tmp_path / "checkout" / "config"
+    cache = tmp_path / "uv-cache"
+    package.mkdir(parents=True)
+    config.mkdir(parents=True)
+    cache.mkdir()
+
+    cached_init = cache / "__init__.py"
+    cached_module = cache / "worker.py"
+    cached_config = cache / "benchmarks.yaml"
+    cached_init.write_text('VERSION = "1"\n', encoding="utf-8")
+    cached_module.write_text('VALUE = "before"\n', encoding="utf-8")
+    cached_config.write_text("benchmarks: []\n", encoding="utf-8")
+    os.link(cached_init, package / "__init__.py")
+    os.link(cached_module, package / "worker.py")
+    os.link(cached_config, config / "benchmarks.yaml")
+
+    monkeypatch.setattr(bencheval, "__file__", str(package / "__init__.py"))
+    monkeypatch.setattr(executor, "_repo_root", lambda: tmp_path / "checkout")
+
+    before = executor._producer_content_digest()
+    cached_module.write_text('VALUE = "after"\n', encoding="utf-8")
+    after = executor._producer_content_digest()
+
+    assert before != after
+
+
+def test_swe_download_uses_returned_snapshot_in_configured_hub_cache(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import huggingface_hub
+    from huggingface_hub import constants as hf_constants
+
+    import bencheval.swebench_adapter as adapter
+
+    configured_hub = tmp_path / "configured-hub"
+    returned_snapshot = configured_hub / "returned-snapshot"
+    blob = configured_hub / "blobs" / "official-parquet"
+    payload = b"configured-cache-official-parquet"
+    calls: list[dict[str, object]] = []
+
+    def download(**kwargs: object) -> str:
+        calls.append(kwargs)
+        blob.parent.mkdir(parents=True)
+        blob.write_bytes(payload)
+        source = returned_snapshot / adapter._SWE_SOURCE_PARQUET
+        source.parent.mkdir(parents=True)
+        source.symlink_to(blob)
+        return str(returned_snapshot)
+
+    empty_home = tmp_path / "empty-home"
+    empty_home.mkdir()
+    monkeypatch.setenv("HOME", str(empty_home))
+    monkeypatch.setenv("HF_HUB_CACHE", str(configured_hub))
+    monkeypatch.setattr(hf_constants, "HF_HUB_CACHE", str(configured_hub))
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", download)
+    monkeypatch.setattr(
+        adapter,
+        "_SWE_SOURCE_PARQUET_SHA256",
+        f"sha256:{hashlib.sha256(payload).hexdigest()}",
+    )
+
+    resolved = _ensure_source_parquet(None)
+
+    assert calls == [
+        {
+            "repo_id": adapter._SWE_VERIFIED_REPO,
+            "repo_type": "dataset",
+            "revision": adapter._SWE_VERIFIED_REVISION,
+        },
+    ]
+    assert resolved == blob.resolve()
 
 
 def _qualifying_row(*, producer: dict[str, str], artifact: Path) -> EvidenceRecord:
@@ -465,6 +553,62 @@ def test_swe_generation_symlink_swap_is_rejected_before_eval(tmp_path: Path) -> 
         )
     assert len(commands) == 1
     assert commands[0][:2] == ("inspect", "eval")
+
+
+def test_swe_official_evaluator_runs_from_the_project_root(
+    tmp_path: Path,
+) -> None:
+    repo_root = tmp_path / "checkout"
+    repo_root.mkdir()
+    artifacts = tmp_path / "external-artifacts"
+    working_directories: list[Path] = []
+
+    def runner(command, *, cwd, timeout_sec) -> SwebenchCliResult:
+        del timeout_sec
+        argv = tuple(str(part) for part in command)
+        working_directories.append(Path(cwd))
+        root = artifacts / _INSTANCE_ID
+        root.mkdir(parents=True, exist_ok=True)
+        if len(working_directories) == 1:
+            (root / "predictions.jsonl").write_text(
+                json.dumps(
+                    {
+                        "instance_id": _INSTANCE_ID,
+                        "model_name_or_path": "kimi-k2.7-code",
+                        "model_patch": "diff --git a/a b/a\n",
+                    },
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            official = root / "official-dataset"
+            official.mkdir()
+            (official / "test.jsonl").write_text("{}\n", encoding="utf-8")
+        return SwebenchCliResult(
+            0 if len(working_directories) == 1 else 1,
+            "",
+            "",
+            0.1,
+            argv,
+        )
+
+    run_swebench_instance(
+        plan=plan_control_plane(
+            benchmark_id="swe-bench-verified",
+            slice_id="swe-bench-verified-diagnostic-1",
+            runtime_id="codex-cli",
+            model_id="kimi-k2.7-code",
+            diagnostic=True,
+        ),
+        instance_id=_INSTANCE_ID,
+        artifacts_dir=artifacts,
+        repo_root=repo_root,
+        process_runner=runner,
+        timeout_sec=30,
+        run_id="swe-project-root",
+    )
+
+    assert working_directories == [repo_root, repo_root]
 
 
 def test_swe_planning_rejects_claude_code() -> None:

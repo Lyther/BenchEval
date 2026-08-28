@@ -224,8 +224,16 @@ def _official_row(row: Mapping[str, object]) -> dict[str, object]:
     return converted
 
 
+def _hub_cache_root() -> Path:
+    try:
+        from huggingface_hub.constants import HF_HUB_CACHE
+    except ImportError as e:
+        raise BenchEvalError("huggingface_hub is required to locate the SWE cache") from e
+    return Path(HF_HUB_CACHE)
+
+
 def _hub_parquet_path() -> Path:
-    hub = Path.home() / ".cache" / "huggingface" / "hub"
+    hub = _hub_cache_root()
     return (
         hub
         / "datasets--SWE-bench--SWE-bench_Verified"
@@ -246,9 +254,9 @@ def _path_is_under(child: Path, parent: Path) -> bool:
 def _resolve_source_parquet(path: Path) -> Path:
     from bencheval.identity_strings import file_sha256
 
-    hub_root = Path.home() / ".cache" / "huggingface" / "hub"
     read_path = path
     if path.is_symlink():
+        hub_root = _hub_cache_root()
         try:
             resolved = path.resolve(strict=True)
         except OSError as e:
@@ -279,12 +287,14 @@ def _ensure_source_parquet(source_parquet: Path | None) -> Path:
         raise BenchEvalError(
             "official SWE parquet is not cached and huggingface_hub is unavailable",
         ) from e
-    snapshot_download(
-        repo_id=_SWE_VERIFIED_REPO,
-        repo_type="dataset",
-        revision=_SWE_VERIFIED_REVISION,
+    snapshot = Path(
+        snapshot_download(
+            repo_id=_SWE_VERIFIED_REPO,
+            repo_type="dataset",
+            revision=_SWE_VERIFIED_REVISION,
+        ),
     )
-    return _resolve_source_parquet(_hub_parquet_path())
+    return _resolve_source_parquet(snapshot / _SWE_SOURCE_PARQUET)
 
 
 def _plain_value(value: object) -> object:
@@ -1571,7 +1581,7 @@ def _evaluate_official_predictions(
             latency_sec=generation.latency_sec,
             adapter_metadata={"swebench_command": " ".join(evaluate)},
         )
-    scored = runner(evaluate, cwd=instance_dir, timeout_sec=int(remaining))
+    scored = runner(evaluate, cwd=repo_root, timeout_sec=int(remaining))
     _assert_same_leaf(
         official,
         _bind_owned_leaf(instance_fd, (_OFFICIAL_DATASET_NAME, _DATASET_JSONL_NAME)),

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -288,20 +289,24 @@ _PRODUCER_SKIP_DIR_NAMES = frozenset({"__pycache__", ".git", ".ruff_cache", ".py
 _PRODUCER_UNTRACKED_PREFIXES = ("src/bencheval/", "config/")
 
 
-def _read_producer_file_bytes(path: Path) -> bytes | None:
-    from bencheval.run_isolation import open_untrusted_regular_leaf
-
+def _read_producer_file_bytes(path: Path) -> bytes:
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
     try:
-        descriptor = open_untrusted_regular_leaf(str(path))
-    except OSError:
-        return None
+        descriptor = os.open(path, flags)
+    except OSError as e:
+        raise BenchEvalError(f"cannot open producer content {path}: {e}") from e
     try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode) or opened.st_nlink < 1:
+            raise BenchEvalError(f"producer content is not a linked regular file: {path}")
         chunks: list[bytes] = []
         while True:
             chunk = os.read(descriptor, 1024 * 1024)
             if not chunk:
                 return b"".join(chunks)
             chunks.append(chunk)
+    except OSError as e:
+        raise BenchEvalError(f"cannot read producer content {path}: {e}") from e
     finally:
         os.close(descriptor)
 
@@ -317,8 +322,6 @@ def _iter_owned_files(root: Path, *, suffix: str | None = None) -> list[tuple[st
                 continue
             path = Path(dirpath) / name
             data = _read_producer_file_bytes(path)
-            if data is None:
-                continue
             entries.append((path.relative_to(root).as_posix(), data))
     return entries
 
@@ -329,7 +332,10 @@ def _producer_content_digest() -> str:
     digest = hashlib.sha256()
     digest.update(b"producer-content-v1\0")
     package_root = Path(bencheval.__file__).resolve().parent
-    for rel, data in _iter_owned_files(package_root, suffix=".py"):
+    package_entries = _iter_owned_files(package_root, suffix=".py")
+    if not package_entries:
+        raise BenchEvalError("producer package contains no Python source files")
+    for rel, data in package_entries:
         digest.update(b"pkg:")
         digest.update(rel.encode("utf-8"))
         digest.update(b"\0")
@@ -386,8 +392,6 @@ def _git_producer_fields(root: Path) -> dict[str, str]:
         if not rel.startswith(_PRODUCER_UNTRACKED_PREFIXES):
             continue
         data = _read_producer_file_bytes(root / rel)
-        if data is None:
-            continue
         extra.extend(rel.encode("utf-8"))
         extra.extend(b"\0")
         extra.extend(data)
