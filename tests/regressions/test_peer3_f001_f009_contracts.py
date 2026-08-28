@@ -258,10 +258,14 @@ def test_swe_execute_binds_provider_route_not_ambient_openai(
     monkeypatch.setenv("OPENAI_BASE_URL", "https://ambient.example/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "ambient-key")
     captured: dict[str, str] = {}
+    subprocess_calls: list[tuple[tuple[str, ...], Path]] = []
 
     def fake_run(*args: object, **kwargs: object) -> object:
         env = kwargs.get("env") or {}
         captured.update({k: str(v) for k, v in dict(env).items()})
+        argv = tuple(str(part) for part in args[0])
+        if "cwd" in kwargs:
+            subprocess_calls.append((argv, Path(str(kwargs["cwd"]))))
         return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
     monkeypatch.setattr("bencheval.swebench_adapter.subprocess.run", fake_run)
@@ -276,6 +280,11 @@ def test_swe_execute_binds_provider_route_not_ambient_openai(
         process_runner(
             ("inspect", "eval", "inspect_evals/swe_bench"),
             cwd=tmp_path,
+            timeout_sec=1,
+        )
+        process_runner(
+            ("swebench", "--help"),
+            cwd=tmp_path / "artifacts" / _INSTANCE_ID,
             timeout_sec=1,
         )
         return SwebenchInstanceOutcome(
@@ -313,6 +322,11 @@ def test_swe_execute_binds_provider_route_not_ambient_openai(
     rows = read_evidence_jsonl(output)
     assert captured["OPENAI_BASE_URL"] == "http://127.0.0.1:4400/v1"
     assert captured["OPENAI_API_KEY"] == "review-provider-key"
+    assert len(subprocess_calls) == 2
+    evaluator_argv, evaluator_cwd = subprocess_calls[1]
+    assert evaluator_cwd == tmp_path / "artifacts" / _INSTANCE_ID
+    assert evaluator_argv[evaluator_argv.index("--project") + 1] == str(Path.cwd())
+    assert evaluator_argv[evaluator_argv.index("--group") + 1] == "swe"
     launch = resolve_openai_compatible_launch("bytellm", require_api_key=False)
     assert rows[0].provider_config_hash == launch.config_hash
     assert rows[0].runtime_version == "0.148.0"

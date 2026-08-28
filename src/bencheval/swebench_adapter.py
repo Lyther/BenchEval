@@ -19,6 +19,7 @@ from bencheval.domain import FailureLabel, RunPlan
 from bencheval.exceptions import AdapterFailureError, BenchEvalError
 from bencheval.ids import new_run_id
 from bencheval.path_safety import validate_control_plane_instance_id
+from bencheval.paths import repo_root as _repo_root
 from bencheval.run_isolation import (
     AUTHORITATIVE_ARTIFACT_NAMES,
     dir_identity_error,
@@ -505,7 +506,17 @@ def resolve_swebench_subprocess(command: Sequence[str]) -> tuple[str, ...]:
             *launched,
         )
     if program == "swebench":
-        return ("uv", "run", "--isolated", "--group", "swe", "--", *launched)
+        return (
+            "uv",
+            "run",
+            "--isolated",
+            "--project",
+            str(_repo_root()),
+            "--group",
+            "swe",
+            "--",
+            *launched,
+        )
     raise BenchEvalError(f"unsupported swebench process {program!r}")
 
 
@@ -1581,7 +1592,7 @@ def _evaluate_official_predictions(
             latency_sec=generation.latency_sec,
             adapter_metadata={"swebench_command": " ".join(evaluate)},
         )
-    scored = runner(evaluate, cwd=repo_root, timeout_sec=int(remaining))
+    scored = runner(evaluate, cwd=instance_dir, timeout_sec=int(remaining))
     _assert_same_leaf(
         official,
         _bind_owned_leaf(instance_fd, (_OFFICIAL_DATASET_NAME, _DATASET_JSONL_NAME)),

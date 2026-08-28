@@ -555,7 +555,7 @@ def test_swe_generation_symlink_swap_is_rejected_before_eval(tmp_path: Path) -> 
     assert commands[0][:2] == ("inspect", "eval")
 
 
-def test_swe_official_evaluator_runs_from_the_project_root(
+def test_swe_official_evaluator_keeps_the_run_owned_working_directory(
     tmp_path: Path,
 ) -> None:
     repo_root = tmp_path / "checkout"
@@ -608,7 +608,7 @@ def test_swe_official_evaluator_runs_from_the_project_root(
         run_id="swe-project-root",
     )
 
-    assert working_directories == [repo_root, repo_root]
+    assert working_directories == [repo_root, artifacts / _INSTANCE_ID]
 
 
 def test_swe_planning_rejects_claude_code() -> None:
