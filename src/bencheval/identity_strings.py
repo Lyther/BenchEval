@@ -52,6 +52,14 @@ def gpqa_benchmark_identity(identity: InspectEvalsCsvIdentity) -> str:
     )
 
 
+def swebench_benchmark_identity(identity: HfDatasetSnapshotIdentity) -> str:
+    """``swe-bench-verified@<short-revision>+data-<short-sha>``."""
+    return (
+        f"swe-bench-verified@{identity.revision[:SHORT_DIGEST_HEX]}"
+        f"+data-{combined_data_sha256(identity.files)[:SHORT_DIGEST_HEX]}"
+    )
+
+
 def hle_benchmark_identity(identity: HfDatasetSnapshotIdentity) -> str:
     """``hle@<short-revision>+data-<short-sha>``; the repo stays in metadata."""
     return (

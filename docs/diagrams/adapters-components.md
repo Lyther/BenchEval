@@ -10,12 +10,12 @@ flowchart TB
         TB["terminal_bench_harbor.py<br/>adapter_id: terminal-bench-harbor<br/>harness: harbor"]
         GPQA["gpqa_adapter.py<br/>adapter_id: gpqa<br/>harness: inspect-evals"]
         HLE["hle_adapter.py<br/>adapter_id: hle<br/>harness: hle-native"]
+        BFCL["bfcl_native_adapter.py<br/>adapter_id: bfcl<br/>harness: bfcl-native"]
         Agent["external_agent_adapter.py<br/>config/agents/*.yaml command contract"]
     end
 
-    subgraph Demoted["Cataloged but non-executable until official evaluate"]
+    subgraph Demoted["Cataloged, diagnostic-only, never auto-promoted"]
         SWE["swebench_adapter.py<br/>adapter_id: swebench"]
-        BFCL["bfcl_native_adapter.py<br/>adapter_id: bfcl"]
     end
 
     subgraph Outside["Harness / runtime / agent ownership"]
@@ -25,7 +25,7 @@ flowchart TB
         ExtAgent["External agent CLI e.g. momo"]
     end
 
-    CPE -->|adapter_id match| TB & GPQA & HLE
+    CPE -->|adapter_id match| TB & GPQA & HLE & BFCL
     CPE -->|agent_id set| Agent
     TB --> HCLI
     GPQA --> Inspect
@@ -37,4 +37,4 @@ flowchart TB
     Cat -.->|executable: false| Demoted
 ```
 
-Notes: Research candidates stay in docs (`external-benchmark-catalog.md`), not product YAML. `harness_kind` is adapter-declared run-plan/evidence metadata, not a benchmark YAML knob. BFCL is executable (official generate → evaluate lifecycle); the SWE module remains in-tree but is refused by execute/CLI.
+Notes: Research candidates stay in docs (`external-benchmark-catalog.md`), not product YAML. `harness_kind` is adapter-declared run-plan/evidence metadata, not a benchmark YAML knob. BFCL is executable (official generate → evaluate). SWE is diagnostic-implemented and stays `executable: false`; it never auto-promotes.

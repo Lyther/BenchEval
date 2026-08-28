@@ -24,6 +24,7 @@ from bencheval.provider_registry import resolve_openai_compatible_launch
 from bencheval.run_isolation import (
     dir_identity_error,
     open_owned_dir_fd,
+    open_untrusted_regular_leaf,
     write_bytes_at_exclusive,
     write_text_at_exclusive,
 )
@@ -226,12 +227,12 @@ def _prepare_fresh_hle_datasets_cache(cache: Path) -> None:
 def _read_regular_file_digest_no_follow(path: Path) -> str:
     """Hash a plain leaf without following a symlink substituted at open time."""
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        fd = open_untrusted_regular_leaf(str(path))
     except OSError as e:
         raise BenchEvalError(f"cannot open hle datasets cache file {path}: {e}") from e
     try:
         file_stat = os.fstat(fd)
-        if not stat.S_ISREG(file_stat.st_mode):
+        if not stat.S_ISREG(file_stat.st_mode) or file_stat.st_nlink != 1:
             raise BenchEvalError(f"hle datasets cache entry is not a plain file: {path}")
         digest = hashlib.sha256()
         while chunk := os.read(fd, 1024 * 1024):
@@ -334,10 +335,10 @@ def _fetch_hle_snapshot_and_prewarm(
     revision: str,
     datasets_cache: Path,
 ) -> Path:
-    """Download the pinned HF snapshot and pre-warm the datasets cache (online).
+    """Resolve the pinned HF snapshot and pre-warm the run-owned datasets cache.
 
-    A cold-cache fully-offline ``load_dataset`` fails, so the pre-warm is
-    mandatory before the offline launch. Honors HF_ENDPOINT/HF_HOME.
+    Uses a local hub snapshot when the exact revision is already cached; a
+    gated download is only the fallback. Honors HF_ENDPOINT/HF_HOME.
     """
     try:
         from datasets import load_dataset
@@ -347,20 +348,92 @@ def _fetch_hle_snapshot_and_prewarm(
             f"hle identity verification requires huggingface-hub and datasets: {e}",
         ) from e
     try:
-        # repo_type="dataset" is mandatory: the default "model" endpoint 404s
-        # dataset repos such as cais/hle (observed against the live hub).
-        snapshot = Path(snapshot_download(repo_id=repo, revision=revision, repo_type="dataset"))
-    except Exception as e:
-        raise BenchEvalError(
-            f"cannot download pinned hle snapshot {repo}@{revision}: {e}",
-        ) from e
+        # Prefer an already-cached gated snapshot. The default "model" endpoint
+        # 404s dataset repos, so repo_type="dataset" is mandatory either way.
+        snapshot = Path(
+            snapshot_download(
+                repo_id=repo,
+                revision=revision,
+                repo_type="dataset",
+                local_files_only=True,
+            ),
+        )
+    except Exception:
+        try:
+            snapshot = Path(
+                snapshot_download(repo_id=repo, revision=revision, repo_type="dataset"),
+            )
+        except Exception as e:
+            raise BenchEvalError(
+                f"cannot download pinned hle snapshot {repo}@{revision}: {e}",
+            ) from e
     try:
-        load_dataset(repo, revision=revision, cache_dir=str(datasets_cache))
+        _load_hle_dataset(load_dataset, repo=repo, revision=revision, cache_dir=datasets_cache)
     except Exception as e:
         raise BenchEvalError(
             f"cannot pre-warm pinned hle dataset {repo}@{revision}: {e}",
         ) from e
     return snapshot
+
+
+def _load_hle_dataset(
+    load_dataset: Callable[..., object],
+    *,
+    repo: str,
+    revision: str,
+    cache_dir: Path,
+) -> None:
+    try:
+        _call_hle_load_dataset(
+            load_dataset,
+            repo=repo,
+            revision=revision,
+            cache_dir=cache_dir,
+            mode="hub_offline_build",
+        )
+    except Exception:
+        try:
+            _call_hle_load_dataset(
+                load_dataset,
+                repo=repo,
+                revision=revision,
+                cache_dir=cache_dir,
+                mode="offline",
+            )
+        except Exception:
+            _call_hle_load_dataset(
+                load_dataset,
+                repo=repo,
+                revision=revision,
+                cache_dir=cache_dir,
+                mode="online",
+            )
+
+
+def _call_hle_load_dataset(
+    load_dataset: Callable[..., object],
+    *,
+    repo: str,
+    revision: str,
+    cache_dir: Path,
+    mode: str,
+) -> None:
+    keys = ("HF_HUB_OFFLINE", "HF_DATASETS_OFFLINE")
+    previous = {key: os.environ.get(key) for key in keys}
+    try:
+        if mode == "hub_offline_build":
+            os.environ["HF_HUB_OFFLINE"] = "1"
+            os.environ.pop("HF_DATASETS_OFFLINE", None)
+        elif mode == "offline":
+            for key in keys:
+                os.environ[key] = "1"
+        load_dataset(repo, revision=revision, cache_dir=str(cache_dir))
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 def capture_hle_benchmark_identity(
@@ -847,11 +920,7 @@ def parse_hle_official_score(
             continue
         try:
             if judged_dir_fd is not None and path == judged_path:
-                judged_fd = os.open(
-                    path.name,
-                    os.O_RDONLY | os.O_NOFOLLOW,
-                    dir_fd=judged_dir_fd,
-                )
+                judged_fd = open_untrusted_regular_leaf(path.name, dir_fd=judged_dir_fd)
                 with os.fdopen(judged_fd, encoding="utf-8") as handle:
                     parsed = json.load(handle)
             else:

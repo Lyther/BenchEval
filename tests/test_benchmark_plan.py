@@ -27,15 +27,15 @@ def test_plan_terminal_bench_smoke() -> None:
     assert _execution_profile_for_plan(plan) == "E2"
 
 
-def test_plan_swe_smoke_claude_code() -> None:
+def test_plan_swe_smoke_codex_cli() -> None:
     plan = plan_control_plane(
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
-        runtime_id="claude-code",
+        runtime_id="codex-cli",
         model_id="kimi-k2.7-code",
     )
     assert plan.harness_kind == "swebench-native"
-    assert plan.runtime_id == "claude-code"
+    assert plan.runtime_id == "codex-cli"
     assert len(plan.instances) == 10
     assert plan.requires_harbor is False
     assert plan.requires_sandbox is True

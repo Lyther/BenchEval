@@ -28,7 +28,7 @@ from bencheval.control_plane_executor import control_plane_interpretation_label
         (
             "swe-bench-verified",
             "swe-bench-verified-smoke-10",
-            "claude-code",
+            "codex-cli",
             "kimi-k2.7-code",
             "contaminated_or_legacy",
         ),

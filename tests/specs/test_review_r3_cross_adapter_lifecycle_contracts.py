@@ -8,8 +8,9 @@ SUBSTITUTE_JUSTIFICATION
 - real-option: real dev-box pilots require unavailable harness scripts, datasets, and credentials
 - proof-limit: these tests prove only BenchEval's local run-control and cleanup response; they do
   not prove the external agents, benchmark harnesses, providers, or scorers
-- real-proof: BLOCKED until equivalent disposable dev-box pilots inspect both evidence and the
-  post-run artifact tree
+- real-proof: GPQA cleanup-replay `run-20260826-103433-678152-7ace1b73` /
+  `sha256:a8f17d90cd44dea3f6a032f7db406ec8061f878626c8b2a7615552fe4c6da2f8`.
+  External-agent budget crossing remains BLOCKED.
 """
 
 from __future__ import annotations
@@ -133,6 +134,8 @@ def test_gpqa_applies_cleanup_policy_and_preserves_official_log(tmp_path: Path) 
         transient_path = log_dir.parent / "materialized-workspace"
         transient_path.mkdir()
         (transient_path / "scratch.txt").write_text("ephemeral\n", encoding="utf-8")
+        assert env is not None
+        assert Path(env["XDG_CACHE_HOME"]).name == "materialized-workspace"
         official_logs.append(official_log)
         transient_paths.append(transient_path)
         done = {

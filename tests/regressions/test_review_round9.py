@@ -133,6 +133,7 @@ def test_harbor_result_symlink_at_candidate_path_fails_closed(
 
     def runner(command, *, cwd, timeout_sec):
         out_dir = Path(command[command.index("--jobs-dir") + 1])
+        out_dir.mkdir(parents=True, exist_ok=True)
         # A surviving same-uid mutator plants a symlink at the result
         # candidate path, pointing at attacker-controlled content outside the
         # pinned tree.

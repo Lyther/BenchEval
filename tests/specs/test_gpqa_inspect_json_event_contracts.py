@@ -253,7 +253,10 @@ def test_gpqa_epoch_expanded_official_rows_remain_complete_for_requested_limit(
     assert outcome.native_score["total"] == 8
     assert outcome.native_score["unique_samples"] == 2
     assert outcome.native_score["epochs"] == 4
-    assert Path(outcome.verifier_log_path or "").resolve() == selected_log.resolve()
+    retained = Path(outcome.verifier_log_path or "")
+    assert retained.name == "gpqa-official-log.json"
+    assert retained.read_bytes() == selected_log.read_bytes()
+    assert outcome.native_score["score_source"] == str(selected_log)
 
 
 def test_gpqa_rejects_epoch_row_count_that_is_not_unique_samples_times_epochs(

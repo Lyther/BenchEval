@@ -9,7 +9,7 @@ def test_write_and_load_preflight(tmp_path: Path) -> None:
         output_path=path,
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
-        runtime_id="claude-code",
+        runtime_id="codex-cli",
         model_id="kimi-k2.7-code",
         ok=False,
         reasons=["docker not available"],

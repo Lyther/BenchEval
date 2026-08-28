@@ -328,9 +328,29 @@ def open_owned_dir_fd(path: Path, *, role: str) -> int:
         raise BenchEvalError(f"cannot open {role} {path}: {e}") from e
 
 
+_UNTRUSTED_LEAF_FLAGS = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
+
+
 def _validate_dirfd_relative_name(name: str) -> None:
     if "/" in name or name in ("", ".", ".."):
         raise BenchEvalError(f"unsafe dirfd-relative file name: {name!r}")
+
+
+def open_untrusted_regular_leaf(name: str, *, dir_fd: int | None = None) -> int:
+    """Open a single-link regular file without blocking on FIFOs or following links."""
+    if dir_fd is not None:
+        _validate_dirfd_relative_name(name)
+        descriptor = os.open(name, _UNTRUSTED_LEAF_FLAGS, dir_fd=dir_fd)
+    else:
+        descriptor = os.open(os.fspath(name), _UNTRUSTED_LEAF_FLAGS)
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1:
+            raise OSError("not a single-link regular file")
+    except Exception:
+        os.close(descriptor)
+        raise
+    return descriptor
 
 
 def _exclusive_recreate_fd(dir_fd: int, name: str) -> int:
@@ -409,16 +429,11 @@ def read_json_at_nofollow(dir_fd: int, name: str) -> tuple[bool, object | None]:
     undecodable bytes retain that presence signal while returning no payload,
     so adapters can preserve their benchmark-specific malformed-output policy.
     """
-    _validate_dirfd_relative_name(name)
-    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
     try:
-        descriptor = os.open(name, flags, dir_fd=dir_fd)
+        descriptor = open_untrusted_regular_leaf(name, dir_fd=dir_fd)
     except OSError:
         return False, None
     try:
-        opened = os.fstat(descriptor)
-        if not stat.S_ISREG(opened.st_mode):
-            return False, None
         try:
             handle = os.fdopen(descriptor, "r", encoding="utf-8")
         except OSError:
@@ -462,6 +477,7 @@ __all__ = [
     "claim_exclusive_run_outputs",
     "dir_identity_error",
     "open_owned_dir_fd",
+    "open_untrusted_regular_leaf",
     "prepare_instance_artifacts_dir",
     "read_json_at_nofollow",
     "reject_symlink_path",

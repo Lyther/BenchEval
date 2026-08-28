@@ -5,8 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 import subprocess
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -70,6 +71,14 @@ from bencheval.run_isolation import (
     write_text_at_exclusive,
 )
 from bencheval.runtime_registry import load_runtime_catalog
+from bencheval.swebench_adapter import (
+    SWEBENCH_ADAPTER_ID,
+    SwebenchCliResult,
+    SwebenchInstanceOutcome,
+    SwebenchProcessRunner,
+    default_swebench_process_runner,
+    run_swebench_instance,
+)
 from bencheval.terminal_bench_harbor import (
     TERMINAL_BENCH_ADAPTER_ID,
     TERMINAL_BENCH_RELEASE_VERSION,
@@ -266,7 +275,7 @@ def _capture_runtime_provenance(
         profile.versioning.config_hash_inputs,
         root=_repo_root(),
     )
-    if plan.requires_harbor:
+    if plan.requires_harbor or plan.adapter_id == SWEBENCH_ADAPTER_ID:
         pin = profile.versioning.agent_version_pin
         pin_part = f"agent_version_pin={pin.strip()}" if pin and pin.strip() else None
         config_hash = _combine_config_hashes(file_hash, env_hash, pin_part)
@@ -276,12 +285,150 @@ def _capture_runtime_provenance(
     return _RuntimeProvenance(runtime_version=version, runtime_config_hash=config_hash)
 
 
+_PRODUCER_SKIP_DIR_NAMES = frozenset({"__pycache__", ".git", ".ruff_cache", ".pytest_cache"})
+_PRODUCER_UNTRACKED_PREFIXES = ("src/bencheval/", "config/")
+
+
+def _read_producer_file_bytes(path: Path) -> bytes:
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as e:
+        raise BenchEvalError(f"cannot open producer content {path}: {e}") from e
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode) or opened.st_nlink < 1:
+            raise BenchEvalError(f"producer content is not a linked regular file: {path}")
+        chunks: list[bytes] = []
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                return b"".join(chunks)
+            chunks.append(chunk)
+    except OSError as e:
+        raise BenchEvalError(f"cannot read producer content {path}: {e}") from e
+    finally:
+        os.close(descriptor)
+
+
+def _iter_owned_files(root: Path, *, suffix: str | None = None) -> list[tuple[str, bytes]]:
+    entries: list[tuple[str, bytes]] = []
+    if not root.is_dir():
+        return entries
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        dirnames[:] = sorted(name for name in dirnames if name not in _PRODUCER_SKIP_DIR_NAMES)
+        for name in sorted(filenames):
+            if suffix is not None and not name.endswith(suffix):
+                continue
+            path = Path(dirpath) / name
+            data = _read_producer_file_bytes(path)
+            entries.append((path.relative_to(root).as_posix(), data))
+    return entries
+
+
+def _producer_content_digest() -> str:
+    import bencheval
+
+    digest = hashlib.sha256()
+    digest.update(b"producer-content-v1\0")
+    package_root = Path(bencheval.__file__).resolve().parent
+    package_entries = _iter_owned_files(package_root, suffix=".py")
+    if not package_entries:
+        raise BenchEvalError("producer package contains no Python source files")
+    for rel, data in package_entries:
+        digest.update(b"pkg:")
+        digest.update(rel.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(data)
+        digest.update(b"\0")
+    config_root = _repo_root() / "config"
+    if config_root.is_dir():
+        for rel, data in _iter_owned_files(config_root):
+            digest.update(b"cfg:")
+            digest.update(rel.encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(data)
+            digest.update(b"\0")
+    return f"sha256:{digest.hexdigest()}"
+
+
+def _git_producer_fields(root: Path) -> dict[str, str]:
+    if not (root / ".git").exists():
+        return {}
+    try:
+        commit = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=5,
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    if not commit:
+        return {}
+    fields = {"producer_git_commit": commit}
+    try:
+        status = subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain", "-uall"],
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=5,
+        )
+        diff = subprocess.run(
+            ["git", "-C", str(root), "diff", "HEAD"],
+            check=True,
+            capture_output=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return fields
+    extra = bytearray()
+    for line in status.stdout.splitlines():
+        rel = line[3:].strip() if len(line) >= 4 else ""
+        if not rel.startswith(_PRODUCER_UNTRACKED_PREFIXES):
+            continue
+        data = _read_producer_file_bytes(root / rel)
+        extra.extend(rel.encode("utf-8"))
+        extra.extend(b"\0")
+        extra.extend(data)
+        extra.extend(b"\0")
+    dirty = bool(status.stdout.strip()) or bool(diff.stdout) or bool(extra)
+    fields["producer_dirty"] = "1" if dirty else "0"
+    if dirty:
+        fields["producer_dirty_digest"] = hashlib.sha256(
+            status.stdout.encode("utf-8") + b"\0" + diff.stdout + b"\0" + extra,
+        ).hexdigest()
+    return fields
+
+
+def _producer_identity() -> dict[str, str]:
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        package_version = version("bencheval")
+    except PackageNotFoundError as e:
+        raise BenchEvalError("producer package version is unavailable") from e
+    if not package_version.strip() or package_version.strip() == "unknown":
+        raise BenchEvalError("producer package version is unknown")
+    identity = {
+        "producer_package_version": package_version,
+        "producer_content_sha256": _producer_content_digest(),
+    }
+    identity.update(_git_producer_fields(_repo_root()))
+    return identity
+
+
 def _apply_provenance(
     record: EvidenceRecord,
     provenance: _RuntimeProvenance | None,
     provider_config_hash: str,
+    producer_identity: dict[str, str],
 ) -> EvidenceRecord:
-    update: dict[str, str | None] = {"provider_config_hash": provider_config_hash}
+    update: dict[str, object] = {"provider_config_hash": provider_config_hash}
     if provenance is not None:
         update["runtime_config_hash"] = provenance.runtime_config_hash
         # Keep a row-carried runtime_version (Harbor rows carry the
@@ -289,6 +436,9 @@ def _apply_provenance(
         # that carry none.
         if record.runtime_version is None:
             update["runtime_version"] = provenance.runtime_version
+    metadata = dict(record.adapter_metadata)
+    metadata.update(producer_identity)
+    update["adapter_metadata"] = metadata
     return record.model_copy(
         update=update,
     )
@@ -301,11 +451,17 @@ class _ProvenanceEvidenceSink:
     inner: JsonlEvidenceSink
     provenance: _RuntimeProvenance | None
     provider_config_hash: str
+    producer_identity: dict[str, str]
 
     def append_jsonl(self, path: Path, record: EvidenceRecord) -> None:
         self.inner.append_jsonl(
             path,
-            _apply_provenance(record, self.provenance, self.provider_config_hash),
+            _apply_provenance(
+                record,
+                self.provenance,
+                self.provider_config_hash,
+                self.producer_identity,
+            ),
         )
 
 
@@ -318,6 +474,7 @@ def _evidence_sink(plan: RunPlan) -> _ProvenanceEvidenceSink:
         JsonlEvidenceSink(),
         _capture_runtime_provenance(plan),
         provider_config_hash,
+        _producer_identity(),
     )
 
 
@@ -360,7 +517,12 @@ def _backend_for_plan(plan: RunPlan) -> ExecutionBackend:
     # rows stamp INSPECT_BACKEND, so budget-skip and adapter-failure rows must
     # stamp the same backend (review F004: bfcl was omitted here and mixed
     # "harbor" failure rows into "inspect" runs).
-    if plan.adapter_id in (GPQA_ADAPTER_ID, HLE_ADAPTER_ID, BFCL_ADAPTER_ID):
+    if plan.adapter_id in (
+        GPQA_ADAPTER_ID,
+        HLE_ADAPTER_ID,
+        BFCL_ADAPTER_ID,
+        SWEBENCH_ADAPTER_ID,
+    ):
         return INSPECT_BACKEND
     return HARBOR_BACKEND
 
@@ -619,6 +781,7 @@ def _evidence_from_scored_instance(
     verifier_log_path: str | None,
     counts_toward_pass_at_k: bool | None = None,
     cleanup_result: CleanupResult | None = None,
+    runtime_version: str | None = None,
 ) -> EvidenceRecord:
     artifact_paths = [p for p in paths if p]
     failure_labels: list[str] = []
@@ -649,6 +812,7 @@ def _evidence_from_scored_instance(
         harness_version=adapter_metadata.get("harness_version"),
         runtime_id=plan.runtime_id,
         runtime_kind=plan.runtime_kind,
+        runtime_version=runtime_version,
         agent_id=plan.agent_id,
         provider_id=plan.provider_id,
         judge_model_id=plan.judge_model_id,
@@ -747,10 +911,52 @@ def _evidence_from_bfcl_outcome(
     )
 
 
+def _evidence_from_swebench_outcome(
+    *,
+    plan: RunPlan,
+    run_id: str,
+    outcome: SwebenchInstanceOutcome,
+    execution_profile: ExecutionProfile,
+    cleanup_result: CleanupResult | None = None,
+) -> EvidenceRecord:
+    return _evidence_from_scored_instance(
+        plan=plan,
+        run_id=run_id,
+        instance_id=outcome.instance_id,
+        execution_profile=execution_profile,
+        backend=INSPECT_BACKEND,
+        primary_pass=outcome.primary_pass,
+        partial_score=outcome.partial_score,
+        cost_usd=outcome.cost_usd,
+        latency_sec=outcome.latency_sec,
+        failure_class=outcome.failure_class,
+        native_score=outcome.native_score,
+        adapter_metadata=outcome.adapter_metadata,
+        paths=(
+            outcome.verifier_log_path,
+            outcome.predictions_path,
+            outcome.summary_path,
+            *outcome.identity_artifact_paths,
+            outcome.stdout_path,
+            outcome.stderr_path,
+            outcome.workspace_diff_path,
+        ),
+        verifier_log_path=outcome.verifier_log_path,
+        cleanup_result=cleanup_result,
+        runtime_version=outcome.adapter_metadata.get("inspect_runtime_version"),
+    )
+
+
 # Adapters with a real executor dispatch in this module; ``--diagnostic`` may
 # relax the catalog ``executable`` gate only for these.
 _DIAGNOSTIC_CAPABLE_ADAPTER_IDS = frozenset(
-    {TERMINAL_BENCH_ADAPTER_ID, GPQA_ADAPTER_ID, HLE_ADAPTER_ID, BFCL_ADAPTER_ID},
+    {
+        TERMINAL_BENCH_ADAPTER_ID,
+        GPQA_ADAPTER_ID,
+        HLE_ADAPTER_ID,
+        BFCL_ADAPTER_ID,
+        SWEBENCH_ADAPTER_ID,
+    },
 )
 
 
@@ -826,6 +1032,7 @@ def execute_control_plane_run(
     gpqa_process_runner: GpqaProcessRunner | None = None,
     hle_process_runner: HleProcessRunner | None = None,
     bfcl_process_runner: BfclProcessRunner | None = None,
+    swebench_process_runner: SwebenchProcessRunner | None = None,
     agent_process_runner: ExternalAgentProcessRunner | None = None,
     momo_process_runner: ExternalAgentProcessRunner | None = None,
     gpqa_benchmark_identity: str | None = None,
@@ -867,6 +1074,14 @@ def execute_control_plane_run(
             bfcl_benchmark_identity=bfcl_benchmark_identity,
             run_id=run_id,
         )
+    if plan.adapter_id == SWEBENCH_ADAPTER_ID:
+        return _execute_swebench(
+            plan=plan,
+            output_path=output_path,
+            artifacts_dir=artifacts_dir,
+            swebench_process_runner=swebench_process_runner,
+            run_id=run_id,
+        )
     if plan.agent_id is not None:
         runner = agent_process_runner or momo_process_runner
         summary = execute_external_agent_run(
@@ -894,7 +1109,7 @@ def execute_control_plane_run(
     raise BenchEvalError(
         f"no executor for adapter_id={plan.adapter_id!r}; "
         f"supported: {TERMINAL_BENCH_ADAPTER_ID!r}, {GPQA_ADAPTER_ID!r}, "
-        f"{HLE_ADAPTER_ID!r}, {BFCL_ADAPTER_ID!r}",
+        f"{HLE_ADAPTER_ID!r}, {BFCL_ADAPTER_ID!r}, {SWEBENCH_ADAPTER_ID!r}",
     )
 
 
@@ -1228,6 +1443,124 @@ def _execute_bfcl(
                     primary_pass=outcome.primary_pass,
                 )
                 record = _evidence_from_bfcl_outcome(
+                    plan=plan,
+                    run_id=rid,
+                    outcome=outcome,
+                    execution_profile=execution_profile,
+                    cleanup_result=cleanup_result,
+                )
+            except AdapterFailureError as e:
+                cleanup_result = _apply_cleanup(
+                    plan=plan,
+                    instance_artifacts=instance_artifacts,
+                    primary_pass=False,
+                )
+                record = _record_instance_failure(
+                    plan=plan,
+                    run_id=rid,
+                    instance_id=instance_id,
+                    execution_profile=execution_profile,
+                    error=e,
+                    artifacts_dir=instance_artifacts,
+                    cleanup_result=cleanup_result,
+                )
+            spent_cost_usd += record.cost_usd
+            spent_wall_sec += record.latency_sec
+            if record.primary_pass:
+                passed += 1
+            sink.append_jsonl(output_path, record)
+
+        total = len(plan.instances)
+        return ControlPlaneRunSummary(
+            run_id=rid,
+            instance_count=total,
+            passed_count=passed,
+            failed_count=total - passed,
+            output_path=output_path.resolve(),
+        )
+    finally:
+        release_evidence_reservation(output_path)
+
+
+def _execute_swebench(
+    *,
+    plan: RunPlan,
+    output_path: Path,
+    artifacts_dir: Path | None,
+    swebench_process_runner: SwebenchProcessRunner | None,
+    run_id: str | None,
+) -> ControlPlaneRunSummary:
+    if swebench_process_runner is None:
+        raise BenchEvalError(
+            "swebench default process runner is disabled until the diagnostic "
+            "can be charged with a materialized dataset; inject a process_runner",
+        )
+    use_default_runner = swebench_process_runner is default_swebench_process_runner
+    if use_default_runner:
+        launch = resolve_openai_compatible_launch(plan.provider_id)
+
+        def swebench_process_runner(
+            command: Sequence[str],
+            *,
+            cwd: Path | None,
+            timeout_sec: int,
+        ) -> SwebenchCliResult:
+            return default_swebench_process_runner(
+                command,
+                cwd=cwd,
+                timeout_sec=timeout_sec,
+                env=launch.environment,
+            )
+
+    root = _repo_root()
+    rid = run_id or new_run_id()
+    run_artifacts = _claim_control_plane_outputs(
+        output_path=output_path,
+        artifacts_dir=artifacts_dir,
+        rid=rid,
+        root=root,
+        plan=plan,
+    )
+    try:
+        sink = _evidence_sink(plan)
+        execution_profile = _execution_profile_for_plan(plan)
+        passed = 0
+        spent_cost_usd = 0.0
+        spent_wall_sec = 0.0
+        for inst in plan.instances:
+            instance_id = inst.instance_id
+            if _budget_exhausted(
+                plan,
+                spent_cost_usd=spent_cost_usd,
+                spent_wall_sec=spent_wall_sec,
+            ):
+                record = _record_budget_skip(
+                    plan=plan,
+                    run_id=rid,
+                    instance_id=instance_id,
+                    execution_profile=execution_profile,
+                    spent_cost_usd=spent_cost_usd,
+                    spent_wall_sec=spent_wall_sec,
+                )
+                sink.append_jsonl(output_path, record)
+                continue
+            instance_artifacts = run_artifacts / instance_id
+            try:
+                outcome = run_swebench_instance(
+                    plan=plan,
+                    instance_id=instance_id,
+                    artifacts_dir=run_artifacts,
+                    repo_root=root,
+                    process_runner=swebench_process_runner,
+                    run_id=rid,
+                    materialize_inputs=use_default_runner,
+                )
+                cleanup_result = _apply_cleanup(
+                    plan=plan,
+                    instance_artifacts=instance_artifacts,
+                    primary_pass=outcome.primary_pass,
+                )
+                record = _evidence_from_swebench_outcome(
                     plan=plan,
                     run_id=rid,
                     outcome=outcome,

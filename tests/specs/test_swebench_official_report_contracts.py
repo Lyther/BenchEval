@@ -27,8 +27,9 @@ SUBSTITUTE_JUSTIFICATION
   evidence only; it does not prove mini-SWE generation, Docker evaluation,
   package/dataset/image identity, deadlines, cleanup, admission, or live
   benchmark correctness
-- real-proof: BLOCKED until the two-phase adapter is implemented and a real
-  diagnostic smoke is retained from the official evaluator on the dev-box
+- real-proof: charged diagnostic
+  ``sha256:5f7f79ce44eb8c00d7ee826914e8d4591206de2d3b876a2524ccad508e373e52``;
+  this module stays parser-only and cannot prove score truth or admission
 - covered tests: every test in this module
 """
 
@@ -193,7 +194,7 @@ def test_run_instance_rejects_post_launch_directory_swap(tmp_path: Path) -> None
     plan = plan_control_plane(
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
-        runtime_id="claude-code",
+        runtime_id="codex-cli",
         model_id="kimi-k2.7-code",
     )
     artifacts = tmp_path / "artifacts"

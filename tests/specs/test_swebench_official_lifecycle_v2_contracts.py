@@ -20,10 +20,10 @@ SUBSTITUTE_JUSTIFICATION
 - proof-limit: diagnostic command/orchestration contract only; it does not prove
   provider behavior, Inspect solver parity, Docker evaluation, dataset/image
   identity, score truth, live readiness, or catalog admission
-- real-proof: uncharged official-evaluator dummy
-  ``results/raw/swe-dummy-patch-20260825T1748Z/`` on the operator host. A
-  charged diagnostic is still BLOCKED until dataset/revision/image identity is
-  pinned and ``swebench`` is an explicit dependency
+- real-proof: charged diagnostic
+  ``sha256:5f7f79ce44eb8c00d7ee826914e8d4591206de2d3b876a2524ccad508e373e52``.
+  These tests remain orchestration-only and cannot prove official score truth
+  or catalog admission
 - covered tests: test_generation_command_uses_the_selected_inspect_runtime_solver,
   test_run_instance_orders_generation_before_official_scoring,
   test_missing_predictions_fail_closed_without_scoring_generate_report,
@@ -106,9 +106,26 @@ def test_run_instance_orders_generation_before_official_scoring(tmp_path: Path) 
                 + "\n",
                 encoding="utf-8",
             )
+            official = instance_root / "official-dataset"
+            official.mkdir()
+            (official / "test.jsonl").write_text("{}\n", encoding="utf-8")
         elif len(commands) == 2:
             (instance_root / "report.json").write_text(
                 json.dumps({_INSTANCE_ID: {"resolved": True}}),
+                encoding="utf-8",
+            )
+            (instance_root / "kimi-k2.7-code.swe-eval-lifecycle.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "resolved_ids": [_INSTANCE_ID],
+                        "unresolved_ids": [],
+                        "empty_patch_ids": [],
+                        "error_ids": [],
+                        "infra_failure_ids": [],
+                        "ambiguous_failure_ids": [],
+                    },
+                ),
                 encoding="utf-8",
             )
         return SwebenchCliResult(
@@ -131,7 +148,9 @@ def test_run_instance_orders_generation_before_official_scoring(tmp_path: Path) 
 
     assert len(commands) == 2
     assert commands[0][:3] == ("inspect", "eval", "inspect_evals/swe_bench")
-    assert commands[1][:3] == ("swebench", "eval", "verified")
+    owned_dataset = str((artifacts / _INSTANCE_ID / "eval-input").resolve())
+    assert commands[1][:3] == ("swebench", "eval", owned_dataset)
+    assert "verified" not in commands[1]
     assert "-p" in commands[1]
     assert "-i" in commands[1]
     assert commands[1][commands[1].index("-i") + 1] == _INSTANCE_ID
@@ -217,6 +236,9 @@ def test_run_instance_materializes_official_eval_report_from_logs(tmp_path: Path
                 + "\n",
                 encoding="utf-8",
             )
+            owned = instance_root / "official-dataset"
+            owned.mkdir()
+            (owned / "test.jsonl").write_text("{}\n", encoding="utf-8")
         elif len(commands) == 2:
             official = (
                 instance_root
@@ -230,6 +252,20 @@ def test_run_instance_materializes_official_eval_report_from_logs(tmp_path: Path
             official.parent.mkdir(parents=True)
             official.write_text(
                 json.dumps({_INSTANCE_ID: {"resolved": True}}),
+                encoding="utf-8",
+            )
+            (instance_root / f"kimi-k2.7-code.{run_id}.json").write_text(
+                json.dumps(
+                    {
+                        "schema_version": 2,
+                        "resolved_ids": [_INSTANCE_ID],
+                        "unresolved_ids": [],
+                        "empty_patch_ids": [],
+                        "error_ids": [],
+                        "infra_failure_ids": [],
+                        "ambiguous_failure_ids": [],
+                    },
+                ),
                 encoding="utf-8",
             )
         return SwebenchCliResult(

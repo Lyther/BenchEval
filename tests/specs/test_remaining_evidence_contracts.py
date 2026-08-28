@@ -246,7 +246,7 @@ def test_report_exposes_interpretation_axes_versions_and_integrity_without_core_
 def test_all_executable_plans_pin_a_benchmark_version() -> None:
     targets = (
         ("terminal-bench", "smoke-5", "claude-code"),
-        ("swe-bench-verified", "swe-bench-verified-smoke-10", "claude-code"),
+        ("swe-bench-verified", "swe-bench-verified-smoke-10", "codex-cli"),
         ("bfcl-v4", "smoke-5", None),
         ("gpqa-diamond", "smoke", None),
         ("hle", "smoke", None),

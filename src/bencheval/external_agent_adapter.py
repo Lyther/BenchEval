@@ -34,6 +34,7 @@ from bencheval.provider_registry import resolve_openai_compatible_launch
 from bencheval.run_isolation import (
     dir_identity_error,
     open_owned_dir_fd,
+    open_untrusted_regular_leaf,
     reject_symlink_path,
     release_evidence_reservation,
     write_text_at_exclusive,
@@ -221,7 +222,7 @@ def _open_capture_dir_fd(capture_root: Path, instance_id: str) -> int:
 
 def _read_text_at(dir_fd: int, name: str) -> str:
     """Read ``name`` relative to an open directory fd without following links."""
-    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dir_fd)
+    fd = open_untrusted_regular_leaf(name, dir_fd=dir_fd)
     with os.fdopen(fd, encoding="utf-8") as handle:
         return handle.read()
 

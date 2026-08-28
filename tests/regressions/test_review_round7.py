@@ -21,8 +21,10 @@ SUBSTITUTE_JUSTIFICATION (F110 stub Harbor runner + pre-planted link targets)
   - Docker/Harbor dependent and cannot schedule the link planting on demand
 - proof-limit: proves write anchoring and victim-inode preservation only; does
   not prove Harbor executes or scores
-- real-proof: BLOCKED - live terminal-bench lane on dev-box (operator
-  provisioning required); all Harbor results remain diagnostic only
+- real-proof: imported TB cleanup-replay proof
+  ``sha256:cd681305651cb985feccacb5e99f38edc8ac210b6e52c20dce3462a99f6e29c7``
+  (``run-20260826-104126-417176-facd93a7``); budget-crossing link planting
+  remains BLOCKED because a real Harbor process cannot schedule it
 
 SUBSTITUTE_JUSTIFICATION (F107/F108 stub runners + synthetic checkout)
 - substitute: disposable Inspect done-logs and HLE script pairs/artifacts
@@ -149,12 +151,15 @@ def _run_harbor_with_plant(
     planted: dict[str, Path] = {}
 
     def runner(command, *, cwd, timeout_sec):
-        out_dir = Path(command[command.index("--jobs-dir") + 1])
-        # The launched Harbor CLI receives --jobs-dir and plants a link at the
-        # BenchEval log target before returning success.
-        plant(out_dir / "stdout.log", victim)
-        planted["path"] = out_dir / "stdout.log"
-        (out_dir / "result.json").write_text(_legacy_pass_result("codex-cli"), encoding="utf-8")
+        jobs_dir = Path(command[command.index("--jobs-dir") + 1])
+        jobs_dir.mkdir(parents=True, exist_ok=True)
+        # Logs are written on the instance dir (parent of --jobs-dir), not
+        # inside the harbor-package transient. Plant the link at that write
+        # target before the post-exit exclusive recreate.
+        instance_dir = jobs_dir.parent
+        plant(instance_dir / "stdout.log", victim)
+        planted["path"] = instance_dir / "stdout.log"
+        (jobs_dir / "result.json").write_text(_legacy_pass_result("codex-cli"), encoding="utf-8")
         return HarborCliResult(0, "harbor-stdout", "", 0.1, tuple(command))
 
     outcome = run_terminal_bench_instance(

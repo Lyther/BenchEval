@@ -352,7 +352,7 @@ def test_f004_bfcl_planning_version_and_swe_demotion_refusal(tmp_path: Path) -> 
     swe_plan = plan_control_plane(
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
-        runtime_id="claude-code",
+        runtime_id="codex-cli",
         model_id=_MODEL,
     )
     with pytest.raises(BenchEvalError, match="executable_adapter"):

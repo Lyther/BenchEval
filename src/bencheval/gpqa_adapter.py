@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -23,12 +24,15 @@ from bencheval.provider_registry import resolve_openai_compatible_launch
 from bencheval.run_isolation import (
     dir_identity_error,
     open_owned_dir_fd,
+    write_bytes_at_exclusive,
     write_text_at_exclusive,
 )
 
 GPQA_ADAPTER_ID = "gpqa"
 _INSPECT_TASK = "inspect_evals/gpqa_diamond"
 _OFFICIAL_SCORES_NAME = "official_scores.json"
+_RETAINED_OFFICIAL_LOG = "gpqa-official-log.json"
+_GPQA_TRANSIENT_CACHE_HOME = "materialized-workspace"
 _INSPECT_EVALS_DIST = "inspect-evals"
 # Inspect plain/rich panels print "Log: <path>"; strip optional rich markup around it.
 _LOG_LOCATION_RE = re.compile(
@@ -54,6 +58,7 @@ class GpqaOfficialScore:
     source: str
     unique_samples: int | None = None
     epochs: int | None = None
+    scored_bytes: bytes = b""
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,11 +268,16 @@ def capture_gpqa_benchmark_identity(
     return gpqa_benchmark_identity(identity)
 
 
+def _gpqa_run_owned_cache_home(artifacts_dir: Path) -> Path:
+    return artifacts_dir / _GPQA_TRANSIENT_CACHE_HOME
+
+
 def _gpqa_prelaunch_benchmark_identity(
     *,
     plan: RunPlan,
     process_runner: GpqaProcessRunner | None,
     benchmark_identity: str | None,
+    cache_root: Path | None = None,
 ) -> str | None:
     """Fail closed before launch when the catalog pins a benchmark identity.
 
@@ -297,7 +307,7 @@ def _gpqa_prelaunch_benchmark_identity(
             )
         return benchmark_identity
     try:
-        return capture_gpqa_benchmark_identity(identity)
+        return capture_gpqa_benchmark_identity(identity, cache_root=cache_root)
     except BenchEvalError as e:
         raise AdapterFailureError(str(e), failure_label="runtime_config_drift") from e
 
@@ -399,7 +409,12 @@ def _gpqa_official_complete(official: GpqaOfficialScore, requested: int) -> bool
     return official.total == unique * epochs
 
 
-def _score_from_inspect_results(raw: dict[str, object], *, source: str) -> GpqaOfficialScore | None:
+def _score_from_inspect_results(
+    raw: dict[str, object],
+    *,
+    source: str,
+    scored_bytes: bytes,
+) -> GpqaOfficialScore | None:
     results = raw.get("results")
     if not isinstance(results, dict):
         return None
@@ -418,15 +433,15 @@ def _score_from_inspect_results(raw: dict[str, object], *, source: str) -> GpqaO
                     value = _as_float(metric.get("value"))
                     if value is not None and 0.0 <= value <= 1.0:
                         correct, total = _counts_for_accuracy(value, sample_total)
-                        return _official_score(value, correct, total, source, raw)
+                        return _official_score(value, correct, total, source, raw, scored_bytes)
                 value = _as_float(metric)
                 if value is not None and 0.0 <= value <= 1.0:
                     correct, total = _counts_for_accuracy(value, sample_total)
-                    return _official_score(value, correct, total, source, raw)
+                    return _official_score(value, correct, total, source, raw, scored_bytes)
         value = _as_float(entry.get("value"))
         if value is not None and 0.0 <= value <= 1.0:
             correct, total = _counts_for_accuracy(value, sample_total)
-            return _official_score(value, correct, total, source, raw)
+            return _official_score(value, correct, total, source, raw, scored_bytes)
     return None
 
 
@@ -436,6 +451,7 @@ def _official_score(
     total: int | None,
     source: str,
     raw: dict[str, object],
+    scored_bytes: bytes,
 ) -> GpqaOfficialScore:
     return GpqaOfficialScore(
         accuracy,
@@ -444,6 +460,7 @@ def _official_score(
         source,
         unique_samples=_unique_sample_count(raw),
         epochs=_inspect_epochs(raw),
+        scored_bytes=scored_bytes,
     )
 
 
@@ -469,45 +486,18 @@ def _looks_like_inspect_eval_log(
     return isinstance(scores, list)
 
 
-def _load_json_object(
-    path: Path,
+def _decode_inspect_json(
+    data: bytes,
     *,
+    suffix: str,
     expected_task: str,
     expected_model: str,
-    log_dir_fd: int | None = None,
 ) -> dict[str, object] | None:
-    suffix = path.suffix.lower()
-    if suffix == ".eval":
-        try:
-            from inspect_ai.log import read_eval_log
-        except ImportError:
-            return None
-        try:
-            log = read_eval_log(path, header_only=True)
-        except (OSError, UnicodeDecodeError, ValueError, TypeError):
-            return None
-        dumped = json.loads(log.model_dump_json())
-        return dumped if isinstance(dumped, dict) else None
-    if log_dir_fd is not None:
-        # Dirfd-relative, no-follow read from the pinned log-dir inode: a
-        # rename-and-recreate swap of inspect-logs after the pin cannot
-        # substitute a forged done-log (same-uid boundary, as in HLE).
-        try:
-            raw_fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=log_dir_fd)
-        except OSError:
-            return None
-        try:
-            with os.fdopen(raw_fd, encoding="utf-8") as handle:
-                text = handle.read()
-        except (OSError, UnicodeDecodeError):
-            return None
-    else:
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            return None
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
     if suffix == ".jsonl":
-        # Prefer the last JSON object that looks like an eval log.
         last: dict[str, object] | None = None
         for line in text.splitlines():
             line = line.strip()
@@ -529,6 +519,52 @@ def _load_json_object(
     except json.JSONDecodeError:
         return None
     return parsed if isinstance(parsed, dict) else None
+
+
+def _load_json_object(
+    path: Path,
+    *,
+    expected_task: str,
+    expected_model: str,
+    log_dir_fd: int | None = None,
+) -> tuple[dict[str, object], bytes] | None:
+    suffix = path.suffix.lower()
+    if suffix == ".eval":
+        try:
+            from inspect_ai.log import read_eval_log
+        except ImportError:
+            return None
+        try:
+            log = read_eval_log(path, header_only=True)
+        except (OSError, UnicodeDecodeError, ValueError, TypeError):
+            return None
+        dumped = json.loads(log.model_dump_json())
+        if not isinstance(dumped, dict):
+            return None
+        encoded = log.model_dump_json().encode()
+        return dumped, encoded
+    if log_dir_fd is not None:
+        # Dirfd-relative, no-follow read from the pinned log-dir inode. The
+        # bytes returned here are the scored payload; retain must not reopen
+        # the pathname after this descriptor is closed.
+        try:
+            data = _read_regular_bytes_at(log_dir_fd, path.name)
+        except OSError:
+            return None
+    else:
+        try:
+            data = path.read_bytes()
+        except OSError:
+            return None
+    parsed = _decode_inspect_json(
+        data,
+        suffix=suffix,
+        expected_task=expected_task,
+        expected_model=expected_model,
+    )
+    if parsed is None:
+        return None
+    return parsed, data
 
 
 def _log_locations_from_text(text: str) -> list[Path]:
@@ -674,22 +710,114 @@ def parse_gpqa_official_score(
         candidate_fd = (
             log_dir_fd if pinned_root is not None and candidate.parent == pinned_root else None
         )
-        parsed = _load_json_object(
+        loaded = _load_json_object(
             candidate,
             expected_task=expected_task,
             expected_model=expected_model,
             log_dir_fd=candidate_fd,
         )
-        if parsed is None or not _looks_like_inspect_eval_log(
+        if loaded is None:
+            continue
+        parsed, scored_bytes = loaded
+        if not _looks_like_inspect_eval_log(
             parsed,
             expected_task=expected_task,
             expected_model=expected_model,
         ):
             continue
-        score = _score_from_inspect_results(parsed, source=str(candidate))
+        score = _score_from_inspect_results(
+            parsed,
+            source=str(candidate),
+            scored_bytes=scored_bytes,
+        )
         if score is not None:
             return score
     return None
+
+
+def _read_regular_bytes_at(dir_fd: int, name: str) -> bytes:
+    if "/" in name or name in ("", ".", ".."):
+        raise OSError(f"unsafe dirfd-relative file name: {name!r}")
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
+    descriptor = os.open(name, flags, dir_fd=dir_fd)
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode) or opened.st_nlink != 1:
+            raise OSError("not a single-link regular file")
+        handle = os.fdopen(descriptor, "rb")
+        descriptor = -1
+        with handle:
+            return handle.read()
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _retain_scored_gpqa_log(
+    *,
+    official: GpqaOfficialScore,
+    log_dir: Path,
+    log_fd: int,
+    artifacts_dir: Path,
+    artifacts_fd: int,
+    latency_sec: float,
+    command: tuple[str, ...],
+) -> tuple[str, str]:
+    source = Path(official.source)
+    data = official.scored_bytes
+    try:
+        if not data:
+            raise AdapterFailureError(
+                "official GPQA score has no captured scored bytes",
+                failure_label="evidence_corrupt",
+                latency_sec=latency_sec,
+                adapter_metadata={"gpqa_command": " ".join(command)},
+            )
+        if source.parent.resolve() != log_dir.resolve() or source.name in ("", ".", ".."):
+            raise AdapterFailureError(
+                "official GPQA score source is not a direct child of the pinned log directory",
+                failure_label="evidence_corrupt",
+                latency_sec=latency_sec,
+                adapter_metadata={"gpqa_command": " ".join(command)},
+            )
+        try:
+            source_stat = os.lstat(source.name, dir_fd=log_fd)
+        except OSError as e:
+            raise AdapterFailureError(
+                f"official GPQA score source cannot be stated: {e}",
+                failure_label="evidence_corrupt",
+                latency_sec=latency_sec,
+                adapter_metadata={"gpqa_command": " ".join(command)},
+            ) from e
+        if not stat.S_ISREG(source_stat.st_mode) or source_stat.st_nlink != 1:
+            raise AdapterFailureError(
+                "official GPQA score source is not a single-link regular file",
+                failure_label="evidence_corrupt",
+                latency_sec=latency_sec,
+                adapter_metadata={"gpqa_command": " ".join(command)},
+            )
+        write_bytes_at_exclusive(artifacts_fd, _RETAINED_OFFICIAL_LOG, data)
+        written = _read_regular_bytes_at(artifacts_fd, _RETAINED_OFFICIAL_LOG)
+        if written != data:
+            raise AdapterFailureError(
+                "retained GPQA official log bytes do not match the scored bytes",
+                failure_label="evidence_corrupt",
+                latency_sec=latency_sec,
+                adapter_metadata={"gpqa_command": " ".join(command)},
+            )
+    except (OSError, BenchEvalError) as e:
+        if isinstance(e, AdapterFailureError):
+            raise
+        raise AdapterFailureError(
+            f"cannot retain official GPQA log bytes: {e}",
+            failure_label="evidence_corrupt",
+            latency_sec=latency_sec,
+            adapter_metadata={"gpqa_command": " ".join(command)},
+        ) from e
+    return (
+        os.path.abspath(artifacts_dir / _RETAINED_OFFICIAL_LOG),
+        "sha256:" + hashlib.sha256(data).hexdigest(),
+    )
 
 
 def _default_process_runner(
@@ -762,6 +890,8 @@ def run_gpqa_slice(
     try:
         artifacts_fd = open_owned_dir_fd(artifacts_dir, role="gpqa artifacts directory")
         log_fd = open_owned_dir_fd(log_dir, role="gpqa inspect log directory")
+        cache_home = _gpqa_run_owned_cache_home(artifacts_dir)
+        cache_root = cache_home / "inspect_evals"
         command = build_gpqa_run_command(
             plan=plan,
             sample_limit=len(plan.instances),
@@ -774,17 +904,25 @@ def run_gpqa_slice(
         )
         # Identity gate BEFORE any launch: verify the pinned dist/eval/CSV bytes
         # (or validate a test-boundary-supplied identity); drift aborts here.
+        # Default runner writes the CSV into a run-owned cache that the Inspect
+        # child also uses via XDG_CACHE_HOME (platformdirs import-time path).
+        if process_runner is None:
+            cache_fd = open_owned_dir_fd(cache_root, role="gpqa run-owned inspect cache")
+            os.close(cache_fd)
         benchmark_version = _gpqa_prelaunch_benchmark_identity(
             plan=plan,
             process_runner=process_runner,
             benchmark_identity=benchmark_identity,
+            cache_root=cache_root if process_runner is None else None,
         )
         # Aggregate harness: one Inspect eval covers every sample in a single
         # subprocess, so the run-total envelope is the only honest bound; no
         # per-instance limit is enforceable inside the aggregate process.
         wall = timeout_sec if timeout_sec is not None else max(1, plan.max_wall_clock_sec)
         runner = process_runner or _default_process_runner
-        cli = runner(command, cwd=repo_root, timeout_sec=wall, env=launch.environment)
+        launch_env = dict(launch.environment)
+        launch_env["XDG_CACHE_HOME"] = str(cache_home.resolve())
+        cli = runner(command, cwd=repo_root, timeout_sec=wall, env=launch_env)
 
         artifacts_identity_error = dir_identity_error(
             artifacts_fd,
@@ -852,6 +990,18 @@ def run_gpqa_slice(
             if cli.returncode == 0
             else None
         )
+        retained_log: str | None = None
+        score_digest: str | None = None
+        if official is not None:
+            retained_log, score_digest = _retain_scored_gpqa_log(
+                official=official,
+                log_dir=log_dir,
+                log_fd=log_fd,
+                artifacts_dir=artifacts_dir,
+                artifacts_fd=artifacts_fd,
+                latency_sec=cli.latency_sec,
+                command=cli.command,
+            )
         if cli.returncode != 0:
             primary_pass = False
             partial_score = 0.0
@@ -965,13 +1115,17 @@ def run_gpqa_slice(
                     "score_source": official.source,
                 },
             )
+        if score_digest is not None:
+            meta["score_artifact_sha256"] = score_digest
+            shared_native["score_artifact_sha256"] = score_digest
         # Aggregate official metrics only: one evidence row (not N fake per-sample passes).
         # cost_usd=0.0 below means "no provider metering captured", not zero spend.
         shared_native["cost_basis"] = "unmeasured_no_provider_metering"
         aggregate_id = f"{plan.benchmark_id}-{plan.slice_id}-aggregate"
         validate_control_plane_instance_id(aggregate_id)
-        # Summary alone is not a native verifier artifact — only Inspect log paths stamp.
-        verifier_path = official.source if official is not None else None
+        # Evidence and later private proof must name the retained copy, not the
+        # Inspect pathname that can be swapped after the scored descriptor drops.
+        verifier_path = retained_log
         return [
             GpqaInstanceOutcome(
                 instance_id=aggregate_id,

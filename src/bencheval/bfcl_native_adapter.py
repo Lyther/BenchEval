@@ -55,6 +55,7 @@ from bencheval.run_isolation import (
     AUTHORITATIVE_ARTIFACT_NAMES,
     dir_identity_error,
     open_owned_dir_fd,
+    open_untrusted_regular_leaf,
     prepare_instance_artifacts_dir,
     write_text_at_exclusive,
 )
@@ -477,10 +478,7 @@ def _find_official_score_candidates(
         descriptor: int | None = None
         try:
             info = os.lstat(path)
-            descriptor = os.open(
-                path,
-                os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0),
-            )
+            descriptor = open_untrusted_regular_leaf(str(path))
             opened = os.fstat(descriptor)
         except OSError as e:
             if descriptor is not None:
@@ -493,7 +491,9 @@ def _find_official_score_candidates(
         identity = (info.st_dev, info.st_ino)
         if (
             not stat.S_ISREG(info.st_mode)
+            or info.st_nlink != 1
             or not stat.S_ISREG(opened.st_mode)
+            or opened.st_nlink != 1
             or (opened.st_dev, opened.st_ino) != identity
         ):
             os.close(descriptor)
@@ -539,7 +539,7 @@ def _read_score_candidate_bytes(
             os.close(dir_fd)
             dir_fd = child_fd
         try:
-            file_fd = os.open(rel.parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dir_fd)
+            file_fd = open_untrusted_regular_leaf(rel.parts[-1], dir_fd=dir_fd)
         except OSError as e:
             raise AdapterFailureError(
                 f"bfcl score artifact unreadable: {candidate.path}: {e}",

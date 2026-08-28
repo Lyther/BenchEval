@@ -24,6 +24,7 @@ Relative references are therefore resolved against ``--repo-root`` (default:
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -70,6 +71,8 @@ _RUNTIME_PROVENANCE_AXES: tuple[str, ...] = (
     "runtime_version",
     "runtime_config_hash",
 )
+_UNKNOWN_PRODUCER = frozenset({"", "unknown"})
+_PRODUCER_CONTENT_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,7 +169,25 @@ def _row_disqualifiers(
     missing_refs = _missing_artifact_refs(record, repo_root=repo_root)
     if missing_refs:
         categories.append(f"missing-artifacts({','.join(missing_refs)})")
+    categories.extend(_producer_disqualifiers(record))
     return categories
+
+
+def producer_content_ok(value: object) -> bool:
+    return isinstance(value, str) and _PRODUCER_CONTENT_RE.fullmatch(value) is not None
+
+
+def _producer_disqualifiers(record: EvidenceRecord) -> list[str]:
+    metadata = record.adapter_metadata
+    content = metadata.get("producer_content_sha256")
+    git_commit = metadata.get("producer_git_commit")
+    if producer_content_ok(content):
+        return []
+    if content is not None:
+        return ["unknown-producer"]
+    if isinstance(git_commit, str) and git_commit.strip().lower() in _UNKNOWN_PRODUCER:
+        return ["unknown-producer"]
+    return []
 
 
 def qualify_lane(
@@ -215,6 +236,14 @@ def qualify_lane(
         seen_instance_ids.add(instance_id)
         eligible.append(row)
 
+    contents = {
+        row.adapter_metadata.get("producer_content_sha256")
+        for row in rows
+        if row.adapter_metadata.get("producer_content_sha256")
+    }
+    if len(contents) > 1:
+        reasons.append("producer-identity-drift")
+
     unique_eligible = len({r.instance_id for r in eligible if r.instance_id})
     if unique_eligible < expected_instances:
         breakdown = ", ".join(f"{key}={count}" for key, count in sorted(tallies.items()))
@@ -229,6 +258,7 @@ def qualify_lane(
             len(rows) >= expected_instances
             and unique_eligible >= expected_instances
             and len(run_ids) == 1
+            and len(contents) <= 1
         ),
         reasons=tuple(reasons),
         eligible_rows=tuple(eligible),
@@ -381,6 +411,7 @@ __all__ = [
     "eligible_native_instance_ids",
     "is_native_harness_attempt",
     "main",
+    "producer_content_ok",
     "qualify_lane",
     "registration_identity_mismatch",
     "shared_eligible_instances",

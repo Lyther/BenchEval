@@ -1,8 +1,8 @@
 # Architecture & Decisions
 
-> **Status:** ACCEPTED (vNext v0.3, reconciled 2026-08-25 after BFCL/HLE Tier-1 admission); implementation tracked in [`docs/roadmap.md`](roadmap.md)
+> **Status:** ACCEPTED current system; PROPOSED remaining v1 extensions (reconciled 2026-08-26). Source concept: [`docs/context/concept-zero.md`](context/concept-zero.md); implementation tracked in [`docs/roadmap.md`](roadmap.md)
 > **Supersedes:** vNext v0.2 (ACCEPTED 2026-05-29, Core-first) — preserved as `legacy_static` context only
-> **Operator contract / product SoT:** root [`README.md`](../README.md), this file, and [`docs/api/internal-contracts.md`](api/internal-contracts.md). [`docs/context/concept-hld.md`](context/concept-hld.md) is a **historical design ledger**, not live CLI instructions.
+> **Operator contract / product SoT:** root [`README.md`](../README.md), this file, and [`docs/api/internal-contracts.md`](api/internal-contracts.md). [`docs/context/concept-zero.md`](context/concept-zero.md) owns product intent and constraints. [`docs/context/concept-hld.md`](context/concept-hld.md) is a **historical design ledger**, not live CLI instructions.
 > **Scope:** Defined benchmarks → (runtime XOR agent)? → model via provider → evidence.
 
 ## 0. Product Principles
@@ -14,7 +14,17 @@
 5. **Runtime-owned environments.** Benchmarks and selected runtimes own sandboxes/containers. BenchEval does not ship a separate Docker plane.
 6. **Evidence over claims.** Reports preserve native artifacts and caveats; smoke ≠ full benchmark claim; green tests are not live proof.
 
-## 1. Product Shape (v0.3)
+### 0.1 Concept traceability
+
+- `G-01` / `G-02` official execution and provenance drive AR-01–AR-06 and AR-16: adapters own preflight, official authority, exact-byte retention, and typed failure separation.
+- `G-03` controlled comparison drives AR-07; only a shared eligible population with constant non-varied axes can produce a valid headline.
+- `G-04` durable evidence and `C-06` permanent local retention drive AR-12 and AR-14: `private_proof_v1` is offline-verifiable and has no delete lifecycle.
+- `G-05` SWE diagnostic-first and `N-06` no implicit promotion drive §18.1: a real diagnostic remains ineligible for `passed` until a later product decision.
+- `G-06` benchmark-specific readiness drives AR-09 and the Tier-2 ledgers.
+- `C-01` / `C-02` keep one Python CLI and the runtime-XOR-agent spine. `C-03` keeps credentials environment-only. `C-04` keeps substitute proof diagnostic. `C-05` defines the narrow human-intervention boundary.
+- `N-01`–`N-05` exclude hard-dollar control, MOMO admission, dual-use execution, service/storage expansion, and smoke-derived superiority claims from v1.
+
+## 1. Product Shape (v1)
 
 BenchEval is a thin evaluation control plane:
 
@@ -24,9 +34,9 @@ BenchEval is a thin evaluation control plane:
 benchmark/slice  →  (runtime | agent)?  →  model via provider  →  EvidenceRecord + artifacts
 ```
 
-**Tier-0 executable software (gate count = 4):** `terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4`. Catalog lists `swe-bench-verified` as non-executable until its official evaluate path is wired (`bfcl-v4` was admitted 2026-08-24 on the diagnostic-labeled dev-box lifecycle demonstration `run-20260824-040631-228703-4756f857` plus the registered `passed` run `run-20260824-045622-854659-a46ae44d`), plus `swe-bench-pro`, `cybergym`, and `exploitgym` as `adapter_pending`.
+**Tier-0 executable software (gate count = 4):** `terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4`. Catalog lists `swe-bench-verified` as non-executable: the official generation→evaluation diagnostic is implemented and remains ineligible for `passed` or auto-promotion (`bfcl-v4` was admitted 2026-08-24 on the diagnostic-labeled dev-box lifecycle demonstration `run-20260824-040631-228703-4756f857` plus the registered `passed` run `run-20260824-045622-854659-a46ae44d`), plus `swe-bench-pro`, `cybergym`, and `exploitgym` as `adapter_pending`.
 
-**Live-proof status:** `bfcl-v4`, `hle`, `gpqa-diamond`, and `terminal-bench` hold registered Tier-1 evidence. Terminal-Bench is one native `fix-git` attempt per admitted runtime (`claude-code` `run-20260825-173913-754489-4f43e296`, `codex-cli` `run-20260825-171829-685914-aa08dd1d`), both `model_wrong_solution` with official `reward == 0.0`, plus a valid shared-axis runtime compare (`comparison_valid`, `contaminated_or_legacy`). No benchmark is called Tier-2 until its benchmark-specific checklist is complete. `swe-bench-verified` remains non-executable until official generation and evaluation are one evidence-bound lifecycle.
+**Live-proof status:** `bfcl-v4`, `hle`, `gpqa-diamond`, and `terminal-bench` hold registered Tier-1 evidence. Terminal-Bench is one native `fix-git` attempt per admitted runtime (`claude-code` `run-20260825-173913-754489-4f43e296`, `codex-cli` `run-20260825-171829-685914-aa08dd1d`), both `model_wrong_solution` with official `reward == 0.0`, plus a valid shared-axis runtime compare (`comparison_valid`, `contaminated_or_legacy`). No benchmark is called Tier-2 until its benchmark-specific checklist is complete. `swe-bench-verified` remains non-executable: official generation and evaluation are one evidence-bound diagnostic lifecycle and never auto-promote the row.
 
 **Admitted execution profiles:** runtimes `claude-code`, `codex-cli`; providers `bytellm`, `ollama-cloud`. `momo` remains a discoverable **scaffold only**: planning or direct execution with it must fail before output reservation or provider/agent launch until a later admission decision.
 
@@ -63,13 +73,15 @@ flowchart LR
     AD --> A2[GPQA / Inspect Evals]
     AD --> A3[HLE / CAIS scripts]
     AD --> A4[BFCL / bfcl-eval]
-    AD --> A5[External agent]
+    AD --> A5[SWE diagnostic, demoted]
+    AD --> A6[External agent scaffold]
 
     A1 --> EN[Evidence normalizer]
     A2 --> EN
     A3 --> EN
     A4 --> EN
     A5 --> EN
+    A6 --> EN
     EN --> ES[Evidence store]
     ES --> CP[Compare / Report / Export]
 ```
@@ -125,11 +137,7 @@ Live product paths use upstream-owned harnesses: Harbor/Docker for Terminal-Benc
 | E3 | Calibration external | Public micro-slices | Adapter-backed; never Core-weighted |
 | E4 | Stretch sandbox | Expensive official-harness runs | Explicit review; research unless admitted |
 
-Dry-run planning reports `requires_harbor` / `requires_sandbox` when needed. Those flags are operator preflight signals, not a BenchEval-owned Docker plane.
-`recommended_profile` is catalog planning vocabulary: E3 does not itself imply
-a sandbox, while E4 does. New evidence normalizes the concrete launch to E0
-(model-only), E1 (non-Harbor sandbox), or E2 (Harbor); E3/E4 remain valid when
-reading historical evidence.
+Dry-run planning reports `requires_harbor` / `requires_sandbox` when needed. Those flags are operator preflight signals, not a BenchEval-owned Docker plane. `recommended_profile` is catalog planning vocabulary: E3 does not itself imply a sandbox, while E4 does. New evidence normalizes the concrete launch to E0 (model-only), E1 (non-Harbor sandbox), or E2 (Harbor); E3/E4 remain valid when reading historical evidence.
 
 ## 7. Data Contracts
 
@@ -249,7 +257,9 @@ Current official authority boundaries:
 | GPQA Diamond | Inspect Evals `inspect_evals/gpqa_diamond` | successful Inspect eval log accuracy |
 | HLE | official CAIS prediction then judge scripts | exact run-owned judged artifact |
 | BFCL v4 | `bfcl generate` then `bfcl evaluate` | official `BFCL_v4_<category>_score.json` JSONL |
-| SWE-bench Verified (demoted) | locked Inspect Evals + Inspect SWE generation, then official SWE-bench evaluator | requested instance in official `report.json`; local `verifier.json`/`result.json` has no authority |
+| SWE-bench Verified (demoted) | locked Inspect Evals + Inspect SWE generation, then official SWE-bench evaluator | executed instance: official `report.json` boolean `resolved`; official `empty_patch_ids` is a valid unevaluated model failure. Local `verifier.json`/`result.json` has no authority |
+
+The authority boundary extends through retention (AR-16), not only parsing. GPQA copies the exact scored Inspect-log bytes into the owned direct-child `gpqa-official-log.json` while the scored descriptor is held, stamps `score_artifact_sha256`, and points `verifier_log_path` at that copy. A later pathname or hardlink swap of the original Inspect log must not change what private proof contains.
 
 ### 8.2 Expansion rule
 
@@ -326,6 +336,7 @@ A report cannot claim model/runtime superiority unless: benchmark id identical; 
 | AR-13 | An agent profile marked `scaffold` remains discoverable but cannot produce a plan, reserve outputs, launch a provider, or enter evidence. |
 | AR-14 | Finalized private proofs are retained in the local proof store permanently; v1 exposes no delete, prune, replacement, retention-expiry, or garbage-collection operation. |
 | AR-15 | Raw live-run events remain authoritative; readers validate the complete history before deriving a non-destructive current-state projection. |
+| AR-16 | Bytes used for an official verdict remain identical to the bytes later retained in private proof, or the evidence is ineligible. |
 
 ### 13.5 Quality scenarios
 
@@ -370,7 +381,8 @@ A report cannot claim model/runtime superiority unless: benchmark id identical; 
 | CLI runtimes mutate global config | Medium | Ephemeral home/workspace; config hash capture. |
 | Native harness drift | High | Pin benchmark repo version, image digest, harness version, adapter version. |
 | Adapter maintenance burden | Medium | Native wrappers only; no task reimplementation. |
-| Machine-local proof loss | High | Portable private bundle/index design in the roadmap; never treat a host path as durable evidence. |
+| Machine-local proof loss | High | Export/import implemented `private_proof_v1`; transfer or refresh operator-host Tier-1 proofs before Tier-2 and never treat a host path alone as durable evidence. |
+| Scored-versus-retained byte drift | High | Copy exact scored bytes under an owned path before descriptor release, stamp the digest, and verify proof contains those bytes. GPQA exact-byte retention is implemented; remaining Tier-2 items are ledger-specific. |
 
 ## 16. Tech Debt (acknowledged)
 
@@ -404,7 +416,7 @@ The following are researched designs, not executable claims:
 
 ### 18.1 SWE-bench Verified diagnostic lifecycle
 
-The retained adapter is generation-only and already fail-closes unless official `report.json[instance_id]["resolved"]` is present; local `verifier.json`/`result.json` have no authority. That path still cannot be admitted until one pinned generation→official-evaluator lifecycle is proven. Three routes were compared:
+The retained adapter already contains injected-runner generation→official-evaluator sequencing. Local `verifier.json`/`result.json` have no authority. Official per-instance `report.json[instance_id]["resolved"]` is the pass/fail oracle when the instance was executed; official schema-v2 `empty_patch_ids` membership without that report is a valid submitted model failure. Diagnostic dispatch and schema-v2 coherence are wired. CLI `--diagnostic` injects the real process runner after run-owned parquet materialization and execution-time image-digest binding; `process_runner is None` still fail-closes. The charged diagnostic `run-20260826-095222-202465-019ab2b0` proved generation→official eval; official schema-v2 classified the instance as `error_ids` (patch apply failed), so the row is invalid-for-verdict evidence and not a promotion trigger. Three routes were compared:
 
 | Route | Fit | Decision |
 |---|---|---|
@@ -418,21 +430,24 @@ The selected lifecycle is:
 locked Inspect Evals task + Inspect SWE solver for the selected pinned runtime binary
   → export exactly one standard prediction JSONL row
   → pinned official SWE-bench evaluator over a run-owned pinned dataset row
-  → exact requested-instance `report.json[instance_id]["resolved"]`
-  → evidence with prediction/report bytes and task/solver/runtime/evaluator/dataset/image identities
+  → official schema-v2 aggregate plus, when executed, requested-instance
+    `report.json[instance_id]["resolved"]` (empty-patch classification is a
+    valid model failure and is not executed)
+  → evidence with prediction bytes, schema-v2 aggregate, and per-instance
+    report.json when the instance was executed
 ```
 
 The official evaluation guide defines the prediction fields as `instance_id`, `model_name_or_path`, and `model_patch`; the evaluator emits the requested instance's `report.json`: [SWE-bench evaluation guide](https://github.com/SWE-bench/SWE-bench/blob/v5.0.1/docs/guides/evaluation.md), [official evaluator](https://github.com/SWE-bench/SWE-bench/blob/v5.0.1/swebench/harness/run_evaluation.py), and [CLI evaluator](https://github.com/SWE-bench/SWE-bench/blob/v5.0.1/swebench/cli/evaluate.py). Inspect Evals documents its task/export boundary in its [SWE-bench task README](https://github.com/UKGovernmentBEIS/inspect_evals/blob/main/src/inspect_evals/swe_bench/README.md), while Inspect SWE documents the [Codex solver](https://meridianlabs-ai.github.io/inspect_swe/codex_cli.html).
 
-The implementation candidates are the already locked Inspect Evals `0.8.0` task 3-C and Inspect SWE `0.2.47`, the exact runtime binary pins already stored in runtime profiles, official `swebench==5.0.1` (tag commit `87ab1f6ced28f75ba73ca899dc759b019310944a`), and Verified dataset revision `78f471bf655a3137b2e8a75af1501690ec009ec3`. Only `swebench` is a new candidate dependency.
+Inspect generation and official evaluation use separate isolated `uv` envs: inspect-evals `0.8.0` still imports `MAP_REPO_VERSION_TO_SPECS` to write `model_patch`, so generation gets `swebench==4.1.0`; the official CLI stays exact `swebench==5.0.1`. Those pins do not share a venv.
 
-Uncharged 2026-08-25 spike facts (product venv + `uv run --no-sync --with swebench==5.0.1`; do not add `swebench` to the lock until both spikes finish):
+The selected versions are the already locked Inspect Evals `0.8.0` task version 3 and Inspect SWE `0.2.47`, the exact runtime binary pins already stored in runtime profiles, exact `swebench==5.0.1` (tag commit `87ab1f6ced28f75ba73ca899dc759b019310944a`), and the official Verified dataset revision `78f471bf655a3137b2e8a75af1501690ec009ec3`. The source parquet is `data/test-00000-of-00001.parquet`, 6,304,616 bytes, SHA-256 `030cfd7f2a704c4c0226e7f104c725a3b41230b1d3517f9c915ad7ea5be3fa25`. `swebench` belongs in an exact-pinned `swe` dependency group so its evaluator, Docker, dataset, and CLI graph does not enter core or the generic Inspect extra.
 
-- Inspect Evals `0.8.0` `swe_bench` defaults to `princeton-nlp/SWE-bench_Verified` @ `c104f840cc67f8b6eec6f759ebc8b2693d585d4a`. That pair loads 500 samples, includes `django__django-11099`, and still emits a tag-form image (`ghcr.io/epoch-research/swe-bench.eval.x86_64.django__django-11099:latest`), not a digest.
-- Revision `78f471bf655a3137b2e8a75af1501690ec009ec3` exists on `SWE-bench/SWE-bench_Verified` only. Loading that org/revision into inspect-evals `0.8.0` crashes because `PASS_TO_PASS` is already a list and the task still `json.loads` it. Extra columns include `difficulty`, `eval_type`, `image`, `log_parser`, `eval_script`; the row `image` is still tag-form.
-- Official CLI shape is `swebench eval verified -p <preds> -i <id> -j 1 --run-id <id> --report-dir <dir>` (dataset positional required; default `--run-id` is `run`). `--report-dir` writes `<model>.<run-id>.json` with `schema_version: 2` (`resolved_ids` / `unresolved_ids`). An empty `model_patch` is classified as `empty_patch_ids` and is **not** executed. A non-empty dummy patch (`results/raw/swe-dummy-patch-20260825T1748Z/`) completed Docker eval: `resolved: false` for `django__django-11099` in `logs/run_evaluation/<run_id>/<model>/<instance_id>/report.json` with the expected `{instance_id: {resolved: bool}}` shape. Adapter scoring still reads only that per-instance `report.json`, never the summary file.
+Uncharged 2026-08-26 compatibility research closed the earlier dataset ambiguity. A run-owned Hugging Face-style directory containing the selected official row loads successfully in Inspect Evals `0.8.0` when only `PASS_TO_PASS` and `FAIL_TO_PASS` are deterministically encoded as canonical JSON strings; the task decodes them to lists, selects exactly `django__django-11099`, reports task version 3, and accepts an immutable digest-form image template. This is an adapter-owned compatibility representation, not a second source snapshot. The official evaluator receives a separate run-owned row derived from the same verified source bytes. Retain the source row, both deterministic representations, a transformation manifest, and all digests.
 
-Before a charged diagnostic, keep the original pinned row, a run-owned one-row dataset with an execution-time resolved platform image digest, the transformation record, and all hashes. Both phases share one cumulative deadline and one run-owned artifact root. Either wrap inspect for list-typed metadata, or select one dataset/revision pair and record why the other pin was not used.
+The official CLI shape is `swebench eval <run-owned eval-input> -p <preds> -i <id> -j 1 --run-id <unique> --report-dir <dir>` (the default runner prefixes `uv run --isolated --project <BenchEval root> --group swe --`). The explicit project selects the pinned evaluator group without changing the evaluator cwd: official `logs/run_evaluation` output therefore remains under the run-owned instance directory. `eval-input` is a post-generation owned copy of the bound official row; Inspect never receives that path. Hub aliases such as `verified` are rejected on this diagnostic route. The v1 diagnostic is Codex-only. The schema-v2 aggregate is a required coherence oracle: an executed per-instance `report.json` without that summary, or with `error` / `infra_failure` / `ambiguous_failure` membership, or resolved/unresolved/empty-patch disagreement, is invalid evidence. Empty patches are valid submitted model failures and are not executed. Inspect generation binds an execution-time platform image digest. Both phases share one monotonic cumulative deadline and one run-owned artifact root.
+
+Historical Hub-alias diagnostic `sha256:fcc766f5932607c5250571cdfdf6603e62a8bb19a995a05f81edc561939235b5` used `swebench eval verified` and stamped `provisional:swe-bench-verified/public`. Retention-bound diagnostic `run-20260826-141431-679309-31a57785` / `sha256:5f7f79ce44eb8c00d7ee826914e8d4591206de2d3b876a2524ccad508e373e52` scored the run-owned `official-dataset` directory, stamped `swe-bench-verified@78f471bf655a3137+data-030cfd7f2a704c4c` plus `swebench==5.0.1`, and retains the official row, Inspect row, transformation manifest, bound Inspect `.eval`, predictions, and schema-v2 summary. `runtime_version` is `0.148.0` from the sandbox Codex binary. Official schema-v2 classified the instance as `error_ids` (patch apply failed), so there is no executed per-instance `report.json` and the row is invalid-for-verdict, not a promotion trigger. `cleanup_result=skipped`.
 
 Keep the benchmark non-executable and force `diagnostic` interpretation until a real smoke proves both phases. That proof triggers a separate human review; it never auto-promotes the catalog row. The contamination/quality caveat still prevents a frontier-quality claim.
 
@@ -446,11 +461,11 @@ Neither current adapter implements that lifecycle. The v1 product decision is to
 
 `results/manifests/runs.jsonl` is an append-only machine-local event index. `append_live_run` already enforces the append-time event contract: `model_id` is immutable; optional benchmark/slice/runtime axes may be filled once and are immutable thereafter; event timestamps do not move backward; same-status correction rows are allowed; `registered` may advance to any lifecycle state, `running` to completed/passed/failed/archived, `completed` to passed/failed/archived, and passed/failed only to themselves or archived.
 
-The reader still exposes raw append order, and current private `run_bundle_v1` output is a useful local export rather than a portable proof: relative retained paths can remain source-checkout-relative, referenced missing/skipped files do not necessarily fail export, no offline verifier/importer exists, and no external digest anchor binds its checksum list.
+The reader preserves raw append order and exposes a validated derived projection. `private_proof_v1` is the implemented portable/offline-verifiable format below. Legacy `run_bundle_v1` remains a local convenience export rather than durable proof; private legacy export must fail closed when an evidence-referenced path cannot be copied exactly, including a path beneath a skipped symlink ancestor.
 
 #### Selected private-proof format
 
-Use a BenchEval-owned **`private_proof_v1` directory**, evolving the current human-readable bundle and borrowing the completeness/path rules of [BagIt RFC 8493](https://www.rfc-editor.org/rfc/rfc8493.html) without claiming BagIt conformance. Full BagIt adds payload/tag conventions that do not remove the need for BenchEval run semantics. [OCI image layout](https://github.com/opencontainers/image-spec/blob/main/image-layout.md) and the [OCI distribution specification](https://github.com/opencontainers/distribution-spec/blob/main/spec.md) add content-addressed blobs, media types, descriptor graphs, and registry operations for an object-storage problem explicitly deferred from v1. Neither dependency is earned now.
+BenchEval implements a **`private_proof_v1` directory**, borrowing the completeness/path rules of [BagIt RFC 8493](https://www.rfc-editor.org/rfc/rfc8493.html) without claiming BagIt conformance. Full BagIt adds payload/tag conventions that do not remove the need for BenchEval run semantics. [OCI image layout](https://github.com/opencontainers/image-spec/blob/main/image-layout.md) and the [OCI distribution specification](https://github.com/opencontainers/distribution-spec/blob/main/spec.md) add registry complexity for an object-storage problem explicitly deferred from v1. Neither dependency is earned now.
 
 ```text
 results/proofs/
@@ -476,7 +491,7 @@ Private export is fail-closed:
 - require exactly one `run_id` across proof metadata, history, projection, and evidence (`RunPlan` has no `run_id`); a complete proof also binds shared frozen identity axes — benchmark, slice, model, runtime/agent, adapter, and planned instances — across plan, evidence, history, and projection, and rejects absent required axes or any non-null disagreement; and
 - keep public/redacted bundles as publication derivatives that private-proof verify/import rejects.
 
-`runs.jsonl` remains the raw machine-local lifecycle event log. Add whole-history reader validation and a derived **last-valid-event operational-view** projection: immutable run/model identities, first-non-null fill-once axes, last valid status/host/notes/time, latest non-null artifact locators, event count, and first/last timestamps. Projection never compacts or overwrites raw rows. Use an adjacent mode-0600 `fcntl.flock` file so read→validate→append→flush/fsync is one exclusive critical section; public reads take a shared lock. This deliberately targets the supported macOS/Linux operator hosts without adding a locking dependency.
+`runs.jsonl` remains the raw machine-local lifecycle event log. Whole-history reader validation and the derived **last-valid-event operational-view** are implemented: immutable run/model identities, first-non-null fill-once axes, last valid status/host/notes/time, latest non-null artifact locators, event count, and first/last timestamps. Projection never compacts or overwrites raw rows. An adjacent mode-0600 `fcntl.flock` file makes read→validate→append→flush/fsync one exclusive critical section; public reads take a shared lock. This deliberately targets the supported macOS/Linux operator hosts without adding a locking dependency.
 
 Offline verification must prove exact file-set equality, sizes, hashes, inventory digest, run-ID coherence, valid replayed history, stored-versus-derived projection equality, and containment/inventory of every retained reference. An expected proof digest or an existing local index anchors self-consistency; the digest detects corruption but does not authenticate the creator. Import verifies first, atomically installs under `sha256/<digest>`, and appends one idempotent `proof_index_v1` row to `proofs.jsonl`. Imported source lifecycle events are **not** replayed into local `runs.jsonl` because retaining a proof is not the same event as running it.
 

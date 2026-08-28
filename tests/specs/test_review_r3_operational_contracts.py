@@ -10,9 +10,10 @@ SUBSTITUTE_JUSTIFICATION
   call and cannot force the exact boundary condition without modifying the external service
 - proof-limit: these tests prove only BenchEval's local response to authentic-shaped Harbor results;
   they do not prove Harbor execution, provider billing, container isolation, or live cleanup
-- real-proof: BLOCKED until a dev-box has Docker, Harbor, provider credentials, and a disposable
-  benchmark task; run the equivalent real pilot with a deliberately tiny budget and inspect its
-  evidence and post-run artifact tree
+- real-proof: TB cleanup-replay `run-20260826-104126-417176-facd93a7` /
+  `sha256:cd681305651cb985feccacb5e99f38edc8ac210b6e52c20dce3462a99f6e29c7`.
+  Exact charged-cost boundary crossing remains BLOCKED until a disposable
+  tiny-budget Harbor pilot.
 """
 
 from __future__ import annotations
@@ -278,7 +279,7 @@ def test_swebench_stops_before_launching_past_the_cost_budget(tmp_path: Path) ->
     base_plan = plan_control_plane(
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
-        runtime_id="claude-code",
+        runtime_id="codex-cli",
         model_id="kimi-k2.7-code",
     )
     plan = base_plan.model_copy(
@@ -298,7 +299,7 @@ def test_swebench_stops_before_launching_past_the_wall_budget(tmp_path: Path) ->
     base_plan = plan_control_plane(
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
-        runtime_id="claude-code",
+        runtime_id="codex-cli",
         model_id="kimi-k2.7-code",
     )
     plan = base_plan.model_copy(
@@ -433,7 +434,11 @@ def test_control_plane_applies_cleanup_policy_and_records_the_result(tmp_path: P
     assert len(rows) == 1
     assert rows[0].primary_pass is True
     assert rows[0].cleanup_result == "success"
-    assert result_paths[0].is_file()
+    retained = (
+        tmp_path / "artifacts" / plan.instances[0].instance_id / "harbor-official-result.json"
+    )
+    assert retained.is_file()
+    assert not result_paths[0].exists()
     assert not transient_paths[0].exists()
 
 
@@ -442,7 +447,7 @@ def test_swebench_applies_cleanup_policy_without_deleting_verifier(tmp_path: Pat
     base_plan = plan_control_plane(
         benchmark_id="swe-bench-verified",
         slice_id="swe-bench-verified-smoke-10",
-        runtime_id="claude-code",
+        runtime_id="codex-cli",
         model_id="kimi-k2.7-code",
         cleanup_policy="always",
     )
