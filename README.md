@@ -10,6 +10,19 @@ Tier-0 executable software entries: **4** (`terminal-bench`, `gpqa-diamond`, `hl
 
 Current concept HLD: [`docs/context/concept-zero.md`](docs/context/concept-zero.md). Historical v0.3 ledger: [`docs/context/concept-hld.md`](docs/context/concept-hld.md). Architecture: [`docs/architecture.md`](docs/architecture.md). Diagrams: [`docs/diagrams/`](docs/diagrams/README.md).
 
+Optional local operator console: [`docs/prototypes/frontend-v1.md`](docs/prototypes/frontend-v1.md)
+and [`docs/api/operator-console-contract.md`](docs/api/operator-console-contract.md). Install and
+start it with:
+
+```bash
+uv sync --extra ui
+uv run bencheval ui                # loopback only; opens a capability URL
+uv run bencheval ui --no-open      # print the one-process launch URL instead
+```
+
+The generated images remain design references rather than screenshots. The CLI
+remains the stable automation surface; NiceGUI routes and events are private.
+
 ## 5-minute path
 
 ```bash
@@ -51,7 +64,7 @@ uv sync
 uv run bencheval list --format json
 ```
 
-Before the full contributor gate, install its real export and harness dependencies with `uv sync --dev --extra eval --extra analytics`. Use `uv sync --extra eval` for live Inspect / Harbor runs that do not need the analytics gate, and `uv sync --group bfcl` for the pinned BFCL CLI plus its required audio import dependency. BFCL is a repository-owned group because its model-handler graph is large and its audited dependency overrides must travel with the checkout; it can be combined with `eval` when one host needs both harness families. The SWE diagnostic path keeps exact `swebench==5.0.1` in a separate `swe` group because its Docker/evaluator graph is not part of the core or generic Inspect installation; the catalog row stays `executable: false`. Pilot gates: [`docs/context/production-v1-pilot.md`](docs/context/production-v1-pilot.md) (`make check-production-v1`).
+Before the full contributor gate, install its real export, harness, and console dependencies with `uv sync --dev --extra eval --extra analytics --extra ui`. Use `uv sync --extra eval` for live Inspect / Harbor runs that do not need the analytics or UI gates, and `uv sync --group bfcl` for the pinned BFCL CLI plus its required audio import dependency. BFCL is a repository-owned group because its model-handler graph is large and its audited dependency overrides must travel with the checkout; it can be combined with `eval` when one host needs both harness families. The SWE diagnostic path keeps exact `swebench==5.0.1` in a separate `swe` group because its Docker/evaluator graph is not part of the core or generic Inspect installation; the catalog row stays `executable: false`. Pilot gates: [`docs/context/production-v1-pilot.md`](docs/context/production-v1-pilot.md) (`make check-production-v1`).
 
 ## CLI overview
 

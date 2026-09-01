@@ -655,6 +655,11 @@ def _hle_harness_version(root: Path, *, pin: HleHarnessPin | None = None) -> str
     return version
 
 
+def hle_harness_version(root: Path | None = None) -> str | None:
+    """Capture the pinned official HLE checkout identity for local preflight."""
+    return _hle_harness_version(root or _hle_root())
+
+
 def _hle_eval_dir(root: Path) -> Path:
     return root / "hle_eval"
 
@@ -1458,6 +1463,7 @@ __all__ = [
     "build_hle_run_commands",
     "capture_hle_benchmark_identity",
     "hle_datasets_cache_error",
+    "hle_harness_version",
     "hle_output_stem",
     "hle_run_paths",
     "hle_work_dir",

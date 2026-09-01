@@ -4,16 +4,17 @@ SUBSTITUTE_JUSTIFICATION
 - substitute: injected SWE process runners, monkeypatched
   ``run_swebench_instance`` / ``subprocess.run``, and planted official-report
   files (including hardlinks/symlinks)
-- replaces: charged Inspect generation, Docker-backed official evaluation, and
-  a live provider child process
+- replaces: charged Inspect generation, Docker-backed official evaluation, a
+  live provider child process, and the local ``uv lock --check`` subprocess
 - necessity: hardlinked/symlink reports, ambient vs selected provider routes,
   and producer-identity stamping must be forced without a charged diagnostic
 - real-option: a live SWE diagnostic cannot safely guarantee an outside
   hardlink or a conflicting OPENAI_BASE_URL; producer identity is stamped on
   every real evidence row
-- proof-limit: local filesystem and executor-wrap contracts only; not official
-  score truth or catalog admission
-- real-proof: post-fix one-instance SWE diagnostic on the operator host
+- proof-limit: local filesystem and executor-wrap contracts only; not lock
+  freshness, official score truth, or catalog admission
+- real-proof: ``test_swe_preflight_project_root.py`` exercises the real lock
+  check; official execution still requires a post-fix one-instance diagnostic
 - covered tests: every test in this module
 """
 
@@ -322,11 +323,17 @@ def test_swe_execute_binds_provider_route_not_ambient_openai(
     rows = read_evidence_jsonl(output)
     assert captured["OPENAI_BASE_URL"] == "http://127.0.0.1:4400/v1"
     assert captured["OPENAI_API_KEY"] == "review-provider-key"
-    assert len(subprocess_calls) == 2
-    evaluator_argv, evaluator_cwd = subprocess_calls[1]
+    assert len(subprocess_calls) == 3
+    lock_argv, lock_cwd = subprocess_calls[1]
+    assert lock_argv[:3] == ("uv", "lock", "--check")
+    assert "--offline" in lock_argv
+    assert lock_cwd == Path.cwd()
+    evaluator_argv, evaluator_cwd = subprocess_calls[2]
     assert evaluator_cwd == tmp_path / "artifacts" / _INSTANCE_ID
     assert evaluator_argv[evaluator_argv.index("--project") + 1] == str(Path.cwd())
-    assert evaluator_argv[evaluator_argv.index("--group") + 1] == "swe"
+    assert "--locked" in evaluator_argv
+    assert evaluator_argv[evaluator_argv.index("--only-group") + 1] == "swe"
+    assert "--group" not in evaluator_argv
     launch = resolve_openai_compatible_launch("bytellm", require_api_key=False)
     assert rows[0].provider_config_hash == launch.config_hash
     assert rows[0].runtime_version == "0.148.0"

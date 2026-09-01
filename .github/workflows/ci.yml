@@ -28,7 +28,7 @@ jobs:
         run: uv python install 3.12
 
       - name: Sync
-        run: uv sync --dev --extra eval --extra analytics
+        run: uv sync --dev --extra eval --extra analytics --extra ui
 
       - name: Ruff (lint)
         run: uv run ruff check src tests scripts/

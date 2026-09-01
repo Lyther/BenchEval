@@ -18,6 +18,13 @@ CheckStatus = Literal["pass", "fail", "skip"]
 # Scope label for the Terminal-Bench minimum pilot host-dependency report.
 # It is not an ExecutionBackend because the profile combines Harbor and Docker.
 PILOT_DOCTOR_BACKEND = "pilot"
+OPERATOR_DOCTOR_BACKENDS = (
+    "inspect",
+    "harbor",
+    "bfcl-native",
+    "hle-native",
+    "swebench-native",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -328,6 +335,192 @@ def run_doctor(
 
     ok = all(check.status != "fail" for check in checks)
     return DoctorReport(backend=backend, ok=ok, checks=tuple(checks))
+
+
+def _bfcl_native_checks(model_id: str | None) -> list[DoctorCheck]:
+    from bencheval.benchmark_registry import BfclPackageDataIdentity, load_benchmark_catalog
+    from bencheval.bfcl_native_adapter import (
+        bfcl_harness_version,
+        bfcl_supported_models,
+        capture_bfcl_benchmark_identity,
+    )
+
+    try:
+        supported_models = bfcl_supported_models()
+    except (BenchEvalError, OSError) as exc:
+        model_check = DoctorCheck(
+            "bfcl_model_support",
+            "fail",
+            f"cannot inspect pinned BFCL model manifest: {exc}",
+        )
+    else:
+        supported = model_id is not None and model_id in supported_models
+        model_check = DoctorCheck(
+            "bfcl_model_support",
+            "pass" if supported else "skip" if model_id is None else "fail",
+            "model is supported by the pinned BFCL evaluator"
+            if supported
+            else "model id not supplied"
+            if model_id is None
+            else f"model {model_id!r} is not supported by the pinned BFCL evaluator",
+        )
+    identity = load_benchmark_catalog().by_id_or_alias("bfcl-v4").identity
+    if not isinstance(identity, BfclPackageDataIdentity):
+        return [
+            model_check,
+            DoctorCheck("bfcl_harness", "fail", "BFCL catalog identity is missing"),
+        ]
+    expected = f"bfcl-eval@{identity.bfcl_eval_version}"
+    captured = bfcl_harness_version()
+    checks = [
+        model_check,
+        DoctorCheck(
+            "bfcl_harness",
+            "pass" if captured == expected else "fail",
+            f"captured {captured} matches the pinned harness"
+            if captured == expected
+            else f"expected {expected}; captured {captured}",
+        ),
+    ]
+    try:
+        capture_bfcl_benchmark_identity(identity)
+    except (BenchEvalError, OSError) as exc:
+        checks.append(DoctorCheck("bfcl_package_data", "fail", str(exc)))
+    else:
+        checks.append(
+            DoctorCheck("bfcl_package_data", "pass", "pinned BFCL package data verified"),
+        )
+    return checks
+
+
+def _hle_native_checks() -> list[DoctorCheck]:
+    from bencheval.hle_adapter import hle_harness_version
+
+    try:
+        version = hle_harness_version()
+        harness_error = None
+    except (BenchEvalError, OSError) as exc:
+        version = None
+        harness_error = f"cannot inspect pinned official HLE checkout: {exc}"
+    harness_ok = version is not None and not version.endswith("-dirty")
+    checks = [
+        DoctorCheck(
+            "hle_harness",
+            "pass" if harness_ok else "fail",
+            f"pinned official HLE checkout available: {version}"
+            if harness_ok
+            else harness_error
+            or "pinned official HLE checkout unavailable; set BENCHEVAL_HLE_HOME",
+        ),
+    ]
+    missing_modules = [
+        name for name in ("datasets", "huggingface_hub") if not _module_available(name)
+    ]
+    checks.append(
+        DoctorCheck(
+            "hle_dependencies",
+            "fail" if missing_modules else "pass",
+            f"missing modules: {', '.join(missing_modules)}; run `uv sync --extra eval`"
+            if missing_modules
+            else "datasets and huggingface_hub available",
+        ),
+    )
+    token_present = any(env_var_present(name) for name in ("HF_TOKEN", "HUGGING_FACE_HUB_TOKEN"))
+    if not token_present and _module_available("huggingface_hub"):
+        try:
+            from huggingface_hub import get_token
+
+            token_present = bool(get_token())
+        except (ImportError, OSError):
+            token_present = False
+    checks.append(
+        DoctorCheck(
+            "hle_dataset_token",
+            "pass" if token_present else "fail",
+            "Hugging Face token present for gated cais/hle"
+            if token_present
+            else "HF_TOKEN is required for the gated cais/hle dataset",
+        ),
+    )
+    return checks
+
+
+def _swebench_native_checks() -> list[DoctorCheck]:
+    version, import_error = _try_import_inspect_ai()
+    checks = [
+        DoctorCheck(
+            "inspect_ai_import",
+            "pass" if version is not None and import_error is None else "fail",
+            f"inspect_ai {version} available"
+            if version is not None and import_error is None
+            else import_error or "inspect_ai is not installed; run `uv sync --extra eval`",
+        ),
+    ]
+    missing_modules = [
+        name
+        for name in ("inspect_evals", "inspect_swe", "huggingface_hub")
+        if not _module_available(name)
+    ]
+    checks.append(
+        DoctorCheck(
+            "swe_generation_dependencies",
+            "fail" if missing_modules else "pass",
+            f"missing modules: {', '.join(missing_modules)}; run `uv sync --extra eval`"
+            if missing_modules
+            else "Inspect SWE generation dependencies available",
+        ),
+    )
+    checks.append(
+        _binary_check("uv_cli", "uv", "install uv to launch the pinned evaluator group"),
+    )
+    from bencheval.swebench_adapter import swebench_project_root
+
+    group_ok = swebench_project_root() is not None
+    checks.append(
+        DoctorCheck(
+            "swe_evaluator_group",
+            "pass" if group_ok else "fail",
+            "pinned SWE evaluator dependency group configured"
+            if group_ok
+            else "pinned SWE evaluator group requires a BenchEval project checkout",
+        ),
+    )
+    docker_ok = docker_available()
+    checks.append(
+        DoctorCheck(
+            "docker",
+            "pass" if docker_ok else "fail",
+            "docker daemon reachable"
+            if docker_ok
+            else "docker daemon is required for official SWE evaluation",
+        ),
+    )
+    return checks
+
+
+def run_native_doctor(
+    harness_kind: str,
+    *,
+    model_id: str | None = None,
+    execution_profile: ExecutionProfile | None = None,
+) -> DoctorReport:
+    """Preflight adapter-owned native harness requirements before a charged launch."""
+    _ = execution_profile
+    if harness_kind == "bfcl-native":
+        checks = _bfcl_native_checks(model_id)
+    elif harness_kind == "hle-native":
+        checks = _hle_native_checks()
+    elif harness_kind == "swebench-native":
+        checks = _swebench_native_checks()
+    else:
+        raise BenchEvalError(f"doctor does not support native harness {harness_kind!r}")
+    if model_id is not None:
+        checks.append(_provider_credentials_check(model_id))
+    return DoctorReport(
+        backend=harness_kind,
+        ok=all(check.status != "fail" for check in checks),
+        checks=tuple(checks),
+    )
 
 
 def run_pilot_doctor(*, model_id: str | None = None) -> DoctorReport:

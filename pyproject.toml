@@ -42,6 +42,11 @@ eval = [
     "inspect-swe>=0.2.47,<0.3.0",
 ]
 analytics = ["duckdb>=1.2.0", "pyarrow>=18.0.0"]
+ui = [
+    # Optional local operator console. Bounded to the reviewed 3.x API; core
+    # imports remain NiceGUI-free when this extra is not installed.
+    "nicegui>=3.16.0,<4.0.0",
+]
 
 [dependency-groups]
 dev = [

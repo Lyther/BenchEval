@@ -1,6 +1,9 @@
 # Architecture & Decisions
 
-> **Status:** ACCEPTED current system; PROPOSED remaining v1 extensions (reconciled 2026-08-26). Source concept: [`docs/context/concept-zero.md`](context/concept-zero.md); implementation tracked in [`docs/roadmap.md`](roadmap.md)
+> **Status:** ACCEPTED current system and implemented local operator console;
+> remaining hardening/extensions are tracked separately (reconciled 2026-09-01).
+> Source concept: [`docs/context/concept-zero.md`](context/concept-zero.md);
+> implementation tracked in [`docs/roadmap.md`](roadmap.md)
 > **Supersedes:** vNext v0.2 (ACCEPTED 2026-05-29, Core-first) — preserved as `legacy_static` context only
 > **Operator contract / product SoT:** root [`README.md`](../README.md), this file, and [`docs/api/internal-contracts.md`](api/internal-contracts.md). [`docs/context/concept-zero.md`](context/concept-zero.md) owns product intent and constraints. [`docs/context/concept-hld.md`](context/concept-hld.md) is a **historical design ledger**, not live CLI instructions.
 > **Scope:** Defined benchmarks → (runtime XOR agent)? → model via provider → evidence.
@@ -13,6 +16,7 @@
 4. **Config-first expansion.** New slices/runtimes/models/agents/providers on an existing adapter family are YAML/manifest work.
 5. **Runtime-owned environments.** Benchmarks and selected runtimes own sandboxes/containers. BenchEval does not ship a separate Docker plane.
 6. **Evidence over claims.** Reports preserve native artifacts and caveats; smoke ≠ full benchmark claim; green tests are not live proof.
+7. **One truth, two entry points.** The CLI remains stable automation; the proposed local browser console calls the same typed application operations and never parses CLI stdout or owns scoring/storage semantics.
 
 ### 0.1 Concept traceability
 
@@ -23,6 +27,7 @@
 - `G-06` benchmark-specific readiness drives AR-09 and the Tier-2 ledgers.
 - `C-01` / `C-02` keep one Python CLI and the runtime-XOR-agent spine. `C-03` keeps credentials environment-only. `C-04` keeps substitute proof diagnostic. `C-05` defines the narrow human-intervention boundary.
 - `N-01`–`N-05` exclude hard-dollar control, MOMO admission, dual-use execution, service/storage expansion, and smoke-derived superiority claims from v1.
+- `G-07` / `G-08` add complete local-console coverage and CLI/UI parity. `C-07` keeps the console loopback-only; `C-08` keeps UI state and DTOs non-authoritative.
 
 ## 1. Product Shape (v1)
 
@@ -39,6 +44,8 @@ benchmark/slice  →  (runtime | agent)?  →  model via provider  →  Evidence
 **Live-proof status:** `bfcl-v4`, `hle`, `gpqa-diamond`, and `terminal-bench` hold registered Tier-1 evidence. Terminal-Bench is one native `fix-git` attempt per admitted runtime (`claude-code` `run-20260825-173913-754489-4f43e296`, `codex-cli` `run-20260825-171829-685914-aa08dd1d`), both `model_wrong_solution` with official `reward == 0.0`, plus a valid shared-axis runtime compare (`comparison_valid`, `contaminated_or_legacy`). No benchmark is called Tier-2 until its benchmark-specific checklist is complete. `swe-bench-verified` remains non-executable: official generation and evaluation are one evidence-bound diagnostic lifecycle and never auto-promote the row.
 
 **Admitted execution profiles:** runtimes `claude-code`, `codex-cli`; providers `bytellm`, `ollama-cloud`. `momo` remains a discoverable **scaffold only**: planning or direct execution with it must fail before output reservation or provider/agent launch until a later admission decision.
+
+**Proposed operator surface:** `bencheval ui` starts one loopback-only Python process and opens an optional browser console. It covers catalog, Run Builder, doctor/preflight, one active run session, validated run/evidence history, report/compare/export, private proofs, and readiness. It does not expose a public HTTP API, remote bind, credential editor, database, durable queue, or UI-only product behavior.
 
 ## 2. Identity axes
 
@@ -58,7 +65,9 @@ Full layered set: **[`docs/diagrams/`](diagrams/README.md)** — start at [syste
 
 ```mermaid
 flowchart LR
-    U[User CLI] --> BP[Run Planner]
+    U[User CLI] --> APP[Typed application operations]
+    UI[Local browser console<br/>IMPLEMENTED] -. loopback .-> APP
+    APP --> BP[Run Planner]
     BR[Executable benchmarks] --> BP
     SM[Slice manifests] --> BP
     MR[Model registry] --> BP
@@ -96,6 +105,7 @@ flowchart LR
 | Config format | **YAML** | Human-diffable, lintable, versioned. `config/*.yaml`. |
 | Validation | **Pydantic v2** | Already in deps. Used for `BenchmarkContract`, `SliceManifest`, `RuntimeProfile`, `ModelProfile`, extended `EvidenceRecord`. `frozen=True, extra="forbid"` per repo convention. |
 | CLI | **argparse** (`bencheval` entrypoint) | Already set; extend `cli.py`, don't replace. |
+| Local browser UI | **NiceGUI 3.x** (`ui` optional extra, IMPLEMENTED) | Python/backend-first, single local process, browser display and real-browser test support. Loopback only; CLI remains stable automation. |
 | Evidence store | **JSONL** (primary) + **Parquet/DuckDB** (analytics) | JSONL now; DuckDB/Parquet via existing `analytics` extra (`duckdb`, `pyarrow`) and `export.py`. **No database** — this is a CLI tool. |
 | Harness adapters | **External binaries, not vendored** | Harbor = external CLI (`uv tool install harbor`) and may use Docker internally; Inspect = optional `eval` extra; native/external-command = subprocess. Core library stays dependency-light (no `eval` requirement for core). |
 | Orchestration (heavy) | **Inspect AI** (optional `eval` extra) + **Harbor** (external) | Provider abstraction + sandbox; never reimplement benchmark semantics. |
@@ -123,7 +133,7 @@ flowchart LR
 | Evidence Normalizer | Convert native output → `EvidenceRecord`. | `evidence.py`. | `evidence.py` |
 | Evidence Store | Evidence JSONL + optional Parquet/DuckDB export. | `evidence.py`, `export.py`. | as listed |
 | Compare/Report/Export | Markdown/JSON reports + cross-run comparisons + run bundles. | `report.py`, `evidence_compare.py`, `export.py`, `run_bundle.py`. | as listed |
-| Dashboard | UI over stored evidence. | **Post-MVP** (non-goal now). | — |
+| Operator Console | Feature-complete local UI over typed application operations and canonical stores. | **IMPLEMENTED:** all operator pages/actions; browser/scale/accessibility hardening continues. | `application/` and `ui/` packages in §20 |
 
 ## 6. Execution Profiles
 
@@ -247,6 +257,14 @@ resolve typed slice and immutable identities
   → verify retained artifact identity, clean transient state, register only qualified evidence
 ```
 
+The console preflight route follows the derived official harness: generic
+Inspect for GPQA, Harbor plus Docker for Terminal-Bench, pinned package data for
+BFCL, the official checkout/dependencies/gated-token boundary for HLE, and
+Inspect-generation plus Docker and the pinned evaluator group for the SWE
+diagnostic. Charged confirmation fingerprints bind both the canonical plan and
+the normalized evidence/artifact output selections; launch rechecks those
+bytes and rejects any symlink component before the executor is called.
+
 Exit status, stdout, model self-report, and adapter-invented verdict files never become scoring authority when the upstream benchmark defines an official report. Multi-phase adapters share one cumulative run envelope. A demoted adapter may run only as explicitly labeled diagnostic evidence; diagnostic evidence cannot register `passed`.
 
 Current official authority boundaries:
@@ -337,6 +355,13 @@ A report cannot claim model/runtime superiority unless: benchmark id identical; 
 | AR-14 | Finalized private proofs are retained in the local proof store permanently; v1 exposes no delete, prune, replacement, retention-expiry, or garbage-collection operation. |
 | AR-15 | Raw live-run events remain authoritative; readers validate the complete history before deriving a non-destructive current-state projection. |
 | AR-16 | Bytes used for an official verdict remain identical to the bytes later retained in private proof, or the evidence is ineligible. |
+| AR-17 | CLI and console call the same typed application operations; page code and CLI-output parsing never own product semantics. |
+| AR-18 | The console is loopback-only with exact local Host/Origin and per-process capability protection before any mutation; changing the bind address is forbidden. |
+| AR-19 | UI/session/browser state is disposable and non-authoritative; canonical YAML, JSONL, artifacts, reports, and proof store remain the only durable state. |
+| AR-20 | At most one mutating RunSession is active; browser refresh/close never cancels, retries, resumes, or duplicates a launch automatically. |
+| AR-21 | Browser DTOs are closed, bounded, and secret-free; action availability is revalidated by domain operations rather than trusted from UI state. |
+| AR-22 | Complete console journeys meet applicable WCAG 2.2 AA behavior with keyboard, visible focus, labels/errors, announcements, reduced motion, and non-color status. |
+| AR-23 | Every current CLI product operation has an explicit console surface or is named as deliberately unsupported; UI release cannot silently omit proof/export/qualification truth. |
 
 ### 13.5 Quality scenarios
 
@@ -356,6 +381,11 @@ A report cannot claim model/runtime superiority unless: benchmark id identical; 
 | QS-12 | An already-written live registry contains an illegal transition or identity drift: reading or projecting it fails instead of presenting a false current state. |
 | QS-13 | MOMO is selected by CLI or a crafted direct plan: the request fails before any output path, subprocess, or provider call is created. |
 | QS-14 | A legacy comparison contains a passing infrastructure-failure row or asymmetric eligibility: the row remains visible, is excluded from headline rates, and an invalid comparison exits nonzero. |
+| QS-15 | A crafted browser event invokes an action shown disabled for a catalog-only benchmark, scaffold agent, invalid comparison, illegal transition, or proof deletion: the application/domain operation rejects it before side effects. |
+| QS-16 | A browser refreshes or a second tab opens during a run: both observe one RunSession/run ID and no second provider/harness launch occurs. |
+| QS-17 | The console restarts after a completed/failed run: validated history/evidence/proofs reconstruct the same durable view, while any lost in-memory session is explicitly non-resumable. |
+| QS-18 | A keyboard-only operator plans a dry run, resolves an error, inspects evidence, and exports a proof: focus and status remain perceivable and no pointer-only action exists. |
+| QS-19 | Local history/evidence grows to the measured U3 scale: cursor paging and preview caps bound memory/DOM/file reads without adding a database before evidence requires one. |
 
 ## 14. VETOs (unchanged where still relevant)
 
@@ -410,6 +440,11 @@ Every production module under `src/bencheval/` has one architectural home below.
 | Reports and exports | `report.py`, `export.py`, `run_bundle.py`, `proof_bundle.py` | Markdown/JSON reporting, Parquet/DuckDB analytics, publication bundles, and immutable `private_proof_v1`. |
 | CLI | `cli.py` | `list`, `catalog`, `run`, `doctor`, report/compare/export, evidence registration. |
 
+The proposed console does not belong in `cli.py`. Implementation adds the
+source tree in §20 and gradually moves handler-independent orchestration into
+`application/`; existing domain, adapter, evidence, and proof modules remain the
+owners of invariants and side effects.
+
 ## 18. Remaining adapter architecture
 
 The following are researched designs, not executable claims:
@@ -445,7 +480,7 @@ The selected versions are the already locked Inspect Evals `0.8.0` task version 
 
 Uncharged 2026-08-26 compatibility research closed the earlier dataset ambiguity. A run-owned Hugging Face-style directory containing the selected official row loads successfully in Inspect Evals `0.8.0` when only `PASS_TO_PASS` and `FAIL_TO_PASS` are deterministically encoded as canonical JSON strings; the task decodes them to lists, selects exactly `django__django-11099`, reports task version 3, and accepts an immutable digest-form image template. This is an adapter-owned compatibility representation, not a second source snapshot. The official evaluator receives a separate run-owned row derived from the same verified source bytes. Retain the source row, both deterministic representations, a transformation manifest, and all digests.
 
-The official CLI shape is `swebench eval <run-owned eval-input> -p <preds> -i <id> -j 1 --run-id <unique> --report-dir <dir>` (the default runner prefixes `uv run --isolated --project <BenchEval root> --group swe --`). The explicit project selects the pinned evaluator group without changing the evaluator cwd: official `logs/run_evaluation` output therefore remains under the run-owned instance directory. `eval-input` is a post-generation owned copy of the bound official row; Inspect never receives that path. Hub aliases such as `verified` are rejected on this diagnostic route. The v1 diagnostic is Codex-only. The schema-v2 aggregate is a required coherence oracle: an executed per-instance `report.json` without that summary, or with `error` / `infra_failure` / `ambiguous_failure` membership, or resolved/unresolved/empty-patch disagreement, is invalid evidence. Empty patches are valid submitted model failures and are not executed. Inspect generation binds an execution-time platform image digest. Both phases share one monotonic cumulative deadline and one run-owned artifact root.
+The official CLI shape is `swebench eval <run-owned eval-input> -p <preds> -i <id> -j 1 --run-id <unique> --report-dir <dir>` (the default runner prefixes `uv run --isolated --locked --project <BenchEval root> --only-group swe --`). The source file that owns the running adapter must belong to that project, the `swe` group must contain only the exact evaluator pin, and `uv.lock` must be current. The explicit project selects only the locked evaluator group without changing the evaluator cwd: official `logs/run_evaluation` output therefore remains under the run-owned instance directory. `eval-input` is a post-generation owned copy of the bound official row; Inspect never receives that path. Hub aliases such as `verified` are rejected on this diagnostic route. The v1 diagnostic is Codex-only. The schema-v2 aggregate is a required coherence oracle: an executed per-instance `report.json` without that summary, or with `error` / `infra_failure` / `ambiguous_failure` membership, or resolved/unresolved/empty-patch disagreement, is invalid evidence. Empty patches are valid submitted model failures and are not executed. Inspect generation binds an execution-time platform image digest. Both phases share one monotonic cumulative deadline and one run-owned artifact root.
 
 Historical Hub-alias diagnostic `sha256:fcc766f5932607c5250571cdfdf6603e62a8bb19a995a05f81edc561939235b5` used `swebench eval verified` and stamped `provisional:swe-bench-verified/public`. Retention-bound diagnostic `run-20260826-141431-679309-31a57785` / `sha256:5f7f79ce44eb8c00d7ee826914e8d4591206de2d3b876a2524ccad508e373e52` scored the run-owned `official-dataset` directory, stamped `swe-bench-verified@78f471bf655a3137+data-030cfd7f2a704c4c` plus `swebench==5.0.1`, and retains the official row, Inspect row, transformation manifest, bound Inspect `.eval`, predictions, and schema-v2 summary. `runtime_version` is `0.148.0` from the sandbox Codex binary. Official schema-v2 classified the instance as `error_ids` (patch apply failed), so there is no executed per-instance `report.json` and the row is invalid-for-verdict, not a promotion trigger. `cleanup_result=skipped`.
 
@@ -507,5 +542,270 @@ The following decisions are closed for v1:
 4. **SWE-bench Verified:** implement and retain a real diagnostic generation→official-evaluation proof, then make a separate promotion decision. No automatic admission.
 5. **Dual-use benchmarks:** CyberGym and ExploitGym remain catalog-only and non-executable. Their official PoC/exploit lifecycles and ExploitGym metric selection are outside v1.
 6. **HITL:** probe and automate ordinary host, dependency, credential-presence, and service prerequisites. Pause only when a runtime literally requires device/subscription login, CAPTCHA, hardware touch, unavailable administrator action, or a new product decision.
+7. **Operator console:** add an optional loopback-only NiceGUI surface with full current-feature coverage. CLI and UI share typed application operations; no public API, remote bind, database, durable queue, or UI-owned truth is introduced.
 
-After the current executable set, the next implementation candidate is the SWE-bench Verified diagnostic lifecycle. No later benchmark family is selected until that evidence is reviewed.
+After the current executable set, the next product implementation candidate is the local operator console. No later benchmark family is selected by this UI work; SWE promotion and every catalog/admission decision remain separate evidence-gated decisions.
+
+## 20. Local operator console (IMPLEMENTED)
+
+### 20.0 Evidence and source reconciliation
+
+- `VERIFIED_EXISTING`: the core remains a dependency-light Python CLI with 8 catalog
+  rows, 4 executable benchmarks, 2 admitted runtimes, 2 admitted providers, no
+  admitted agent, canonical YAML/JSONL/files, and report/compare/export/proof
+  operations; the optional `ui` extra adds the local console without entering
+  core imports.
+- `USER_DECISION`: the 2026-09-01 request adds a feature-complete front-end
+  prototype and design. It supersedes only the old dashboard exclusion; hosted,
+  multi-user, database, remote proof, deletion, dual-use execution, and
+  hard-dollar-control exclusions remain.
+- `DEPRECATED`: the Dashboard/Post-MVP statement in historical
+  `docs/context/concept-hld.md` is retained as history, not current intent. The
+  live sources are concept-zero, this architecture, roadmap, and contracts.
+- `ADOPTED`: NiceGUI 3.x based on its official Python/backend-first
+  browser model, local/native modes, async-task guidance, tables/downloads, real
+  browser testing, MIT license, and active release/repository state verified on
+  2026-09-01.
+- `REJECTED`: Reflex self-hosting adds separate frontend/backend/API URL; split
+  React/FastAPI adds Node and a public-like API; Textual does not satisfy the
+  requested browser-grade prototype. Revisit only if the local/single-process
+  architecture changes.
+- `IMPLEMENTED`: the command, typed operation/DTO layer, capability middleware,
+  single run session, complete page surface, and optional package dependency.
+  Generated images remain design evidence only. Cross-browser, accessibility,
+  scale, and charged-UI-run evidence remain quality gates.
+
+### 20.1 Executive decision
+
+Adopt a **single-process, loopback-only NiceGUI console** as an optional extra.
+The console is a presentation and interaction adapter over shared typed
+application operations. The CLI remains the stable automation interface; the
+browser transport is private implementation detail. No page calls adapters,
+parses CLI output, reads storage files directly, derives scoring/readiness, or
+persists authoritative state.
+
+This is the smallest architecture that covers every existing operator feature
+without introducing a hosted service, database, durable queue, public API, or
+Node-owned product contract. The design references are
+[`docs/prototypes/frontend-v1.md`](prototypes/frontend-v1.md) and its two PNG
+boards.
+
+### 20.2 Runtime view
+
+```text
+operator browser
+  ⇅ NiceGUI private event transport on 127.0.0.1
+one `bencheval ui` Python process
+  ├─ page/component state (ephemeral, non-authoritative)
+  ├─ one active RunSession (ephemeral process/task owner)
+  └─ typed application operations
+       ├─ current registries/planner/doctor/executor
+       ├─ evidence/history/report/compare/export
+       └─ private proof export/verify/import
+            ⇅
+       canonical YAML + JSONL + artifacts + proof store
+            ⇅
+       operator-owned harness/provider/runtime processes
+```
+
+- Startup command: `bencheval ui [--port <loopback-port>] [--no-open]`.
+- Bind address is fixed to `127.0.0.1`; there is no `--host` or remote mode.
+- The process may serve multiple tabs for the same local operator, but owns at
+  most one active mutating run session. Read-only queries may overlap.
+- Closing or refreshing a page does not cancel or retry a run. Explicit Cancel
+  is the only UI cancellation action.
+- A console restart reconstructs completed/failed/current registry state from
+  canonical files. It does not claim to resume an orphaned in-memory process;
+  reconciliation exposes the durable state and an actionable warning.
+- Long-running work uses NiceGUI background tasks around the existing synchronous
+  application operation. No durable scheduler, worker service, or queue exists.
+
+### 20.3 Component view
+
+- **Application operations:** transport-neutral functions that compose existing
+  registries, planner, doctor, executor, readers, qualification, report,
+  comparison, export, and proof modules. They own no benchmark semantics.
+- **View DTOs:** frozen, closed Pydantic projections with deliberate redaction,
+  pagination, action availability, and status vocabulary. Storage entities are
+  never serialized as a shortcut.
+- **UI shell:** navigation, global search, environment/readiness summary, theme,
+  keyboard shortcuts, status announcements, and the sole active-run strip.
+- **Run session controller:** owns the one background task/process reference,
+  cancellation signal, bounded live event/log buffer, and tab reattachment. It
+  never replaces manifest/evidence state.
+- **Pages:** Overview, Catalog, Run Builder, Runs & Evidence, Compare, Reports &
+  Exports, Proofs, Readiness, and Environment. The complete feature mapping is
+  canonical in `docs/prototypes/frontend-v1.md`.
+- **Existing domain modules:** remain sole owners of plan validity, official
+  authority, qualification, comparison eligibility, filesystem ownership,
+  redaction, proof integrity, and lifecycle transitions.
+
+### 20.4 Source tree and file responsibilities
+
+The responsibility map below is authoritative. The first implementation
+combines related operation functions in `application/operations.py` and page
+functions in `ui/pages.py`; split them only when measured change pressure earns
+the additional modules.
+
+```text
+src/bencheval/
+  application/
+    __init__.py         - In-process operation exports; no UI/framework imports.
+    dto.py              - Frozen request/view DTOs; no storage or UI imports.
+    operations.py       - Catalog, run, evidence, analysis, proof, and readiness composition.
+  ui/
+    __init__.py         - Optional-extra boundary; core import must not import NiceGUI.
+    app.py              - `bencheval ui` composition, loopback bind, launch capability, routing.
+    security.py         - Host/client/origin/capability-cookie and response-header enforcement.
+    session.py          - One active child process, cancellation, and reconnect projection.
+    pages.py            - Shell plus all nine feature pages; delegates every operation.
+    assets/
+      console.css       - Project tokens and focus/reduced-motion rules; no semantic business logic.
+tests/
+  test_operator_console.py - DTO/operation, security, optional-import, and CLI contracts.
+docs/prototypes/        - Design boards and feature-coverage specification; never runtime authority.
+```
+
+Dependency direction is `ui → application → existing domain modules`. Existing
+domain modules must not import `application` or `ui`; application modules must
+not import NiceGUI. `cli.py` is migrated to application operations incrementally
+so no large rewrite is required before the first read-only console slice.
+
+### 20.5 Security, privacy, and local abuse cases
+
+The console can launch charged subprocesses and reveal private local evidence,
+so “localhost” alone is not a complete boundary.
+
+- Bind IPv4 loopback only. Reject proxy headers, non-loopback Host, unexpected
+  Origin, CORS, iframe embedding, and remote/static exposure.
+- A random per-process capability nonce is exchanged by the initially opened
+  local URL for a `HttpOnly`, `SameSite=Strict` session cookie and removed from
+  visible history. Middleware also rejects non-loopback clients, Host, and
+  Origin; applies a strict same-site HttpOnly cookie and no-store responses; and
+  rejects framing. The exchange has deterministic hostile-request coverage and
+  a real Chromium proof.
+- Credentials remain environment-owned. DTOs expose name/presence/doctor result,
+  never values. Default log/artifact previews apply existing redaction; explicit
+  raw-private reveal is local, transient, labelled, and never browser-persisted.
+- Every path input is normalized and revalidated by the existing operation.
+  Browser-provided paths, filenames, MIME types, and rendered Markdown/HTML are
+  untrusted. Active content is never rendered from artifacts.
+- Diagnostic, catalog-only, scaffold, invalid comparison, illegal transition,
+  and proof-delete restrictions are enforced by application/domain operations,
+  not disabled buttons alone.
+
+### 20.6 Operations and accessibility
+
+- Package as a bounded `ui` optional extra after dependency/license/lock review;
+  core `uv sync` and `import bencheval` remain NiceGUI-free.
+- Startup prints the loopback URL, config/results/proof roots, and whether the
+  browser was opened. It never prints the capability nonce or secrets after
+  exchange.
+- Logs are local structured application logs with secret redaction. No telemetry
+  or external analytics is added.
+- Browser targets are current Chromium, Firefox, and WebKit on the supported
+  macOS/Linux operator hosts. Desktop is the run-launch target; tablet is
+  read/inspect capable; mobile launch is deferred.
+- Applicable WCAG 2.2 AA behavior is required: keyboard access, no trap, visible
+  and unobscured focus, labels/errors, minimum contrast, non-color status,
+  status-message announcements, reduced motion, and tabular equivalents for
+  charts.
+
+### 20.7 Architecture decisions
+
+- **ADR-UI-01 — ACCEPTED:** NiceGUI rather than Reflex, split
+  React/FastAPI, or Textual. Consequence: one Python deployment and private
+  transport, at the cost of framework coupling contained under `ui/`.
+- **ADR-UI-02 — ACCEPTED:** CLI and UI share application operations. Shelling out
+  is forbidden except where the existing domain operation itself invokes an
+  official external harness.
+- **ADR-UI-03 — ACCEPTED:** canonical stores stay YAML/JSONL/files; UI state is
+  disposable. No DB, queue, cache, or browser-owned lifecycle state.
+- **ADR-UI-04 — ACCEPTED:** loopback/single-user only. Remote or multi-user mode
+  requires a new auth/authorization/deployment architecture decision.
+- **ADR-UI-05 — ACCEPTED:** one active mutating run. Revisit only when operators
+  demonstrate a need for concurrent scheduling and the executor has safe
+  cancellation/recovery contracts.
+
+## Data and State
+
+Applicability: **REQUIRED**. BenchEval already owns configuration, plans,
+evidence, history, reports/exports, artifacts, and proof-index state. The console
+adds no authoritative store.
+
+- **Canonical configuration:** packaged or checkout YAML under `config/`, read
+  through existing registries and Pydantic models. UI never writes config.
+- **Run plan:** frozen `RunPlan` and anchored `run-plan.json`, created before
+  launch. A PlanPreviewDTO is derived, not persisted separately.
+- **Run lifecycle:** append-only `runs.jsonl`; full-history validation precedes
+  the derived current view. UI sorting/filtering never rewrites history.
+- **Evidence:** `EvidenceRecord` JSONL plus owned artifacts; official authority,
+  validity, failure, cost basis, and interpretation remain domain fields.
+- **Reports/analytics/public bundles:** derived files at exclusive operator-
+  selected destinations; never systems of record.
+- **Private proofs:** immutable `private_proof_v1` directories and append-only
+  proof index; permanent local retention and no delete lifecycle.
+- **RunSession:** process-memory state only — session ID/run ID, phase, task or
+  process handle, cancellation signal, bounded events/log tail, attached tab
+  count. It must be reconstructible as “no resumable session” after restart.
+- **UI preferences:** theme/density/reduced-motion may use browser storage but
+  are non-sensitive and non-authoritative. No path, credential, run, evidence,
+  proof, registration, or readiness state is stored there.
+
+Existing exclusive-write, append-lock, content-digest, path-containment, and
+corruption rules remain the transaction model. The console cannot repair or
+skip corrupted shared canonical state. A corrupt proof object is isolated as
+an unverified inventory row so healthy siblings and readiness remain visible;
+a corrupt proof index or run history still presents a page-level typed
+integrity error and the operator-owned recovery path. Backup remains
+filesystem/operator-owned.
+
+## Interfaces and Contracts
+
+Applicability: **REQUIRED**. Canonical implemented contract:
+[`docs/api/operator-console-contract.md`](api/operator-console-contract.md).
+
+The public compatibility boundary remains the CLI and exported Pydantic/domain
+types. The browser transport generated by NiceGUI is private and unversioned;
+there is no supported HTTP/REST/GraphQL/WebSocket API. The UI calls typed
+in-process operations returning frozen view DTOs.
+
+Contract rules:
+
+- Request DTOs validate syntax and UI-safe limits; existing domain operations
+  validate benchmark semantics, identities, paths, transitions, eligibility,
+  and integrity.
+- Operations return frozen view DTOs and raise `BenchEvalError` in-process. UI
+  handlers map failures to concise redacted messages; tracebacks and secret
+  values stay out of the browser. There is no serialized transport error schema.
+- Read operations are safe to repeat. Dry-run is pure. Start/cancel/register and
+  exclusive exports are never automatically retried. Proof import is idempotent
+  only for the same verified digest, matching the current domain contract.
+- Lists use opaque source-bound cursors and bounded limits; a source fingerprint
+  mismatch returns a refresh-required result instead of silently skipping rows.
+- Action availability is a domain projection (`allowed`, `disabled_reason`), not
+  authorization by UI state. Crafted event payloads are revalidated.
+- Compatibility changes to CLI, persisted schemas, proof format, or exported
+  domain DTOs follow their existing policies. UI DTOs may evolve before first
+  release; after release they use additive fields within a declared UI contract
+  version. Private transport details remain unsupported.
+
+## 21. Console risks, debt, and revisit triggers
+
+- **Framework/package weight:** NiceGUI may enlarge the optional dependency and
+  wheel/runtime surface. Phase U0 measures lock footprint, startup, build, and
+  clean-install behavior; reject it if core import or one-process packaging
+  cannot remain clean.
+- **Background cancellation:** existing adapters are synchronous and differ in
+  subprocess ownership. Live mutation waits until a real cancellation/timeout/
+  browser-reconnect spike proves no duplicate or orphaned launch.
+- **Local web attack surface:** state-changing controls remain disabled until
+  loopback Host/Origin/capability behavior passes a hostile browser test.
+- **Large JSONL/artifacts:** views use bounded readers, cursors, lazy artifact
+  metadata, and capped text previews. Revisit indexing only when measured local
+  data exceeds response/startup targets; do not preemptively add a database.
+- **Framework escape hatch:** application operations and DTOs remain NiceGUI-
+  free. If NiceGUI becomes unmaintained, inaccessible, or prevents packaging,
+  replace only `ui/`, not domain/application contracts.
+- **Remote/multi-user request:** triggers a new concept and auth/data/deployment
+  design; never expose this console by changing its bind address alone.

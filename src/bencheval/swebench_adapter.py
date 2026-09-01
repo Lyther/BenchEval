@@ -9,6 +9,7 @@ import re
 import stat
 import subprocess
 import time
+import tomllib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -19,7 +20,6 @@ from bencheval.domain import FailureLabel, RunPlan
 from bencheval.exceptions import AdapterFailureError, BenchEvalError
 from bencheval.ids import new_run_id
 from bencheval.path_safety import validate_control_plane_instance_id
-from bencheval.paths import repo_root as _repo_root
 from bencheval.run_isolation import (
     AUTHORITATIVE_ARTIFACT_NAMES,
     dir_identity_error,
@@ -77,6 +77,52 @@ _HUB_DATASET_ALIASES = frozenset(
         "princeton-nlp/SWE-bench_Verified",
     },
 )
+
+
+def _is_pinned_swe_project(root: Path) -> bool:
+    source = root / "src" / "bencheval" / "swebench_adapter.py"
+    try:
+        if not source.samefile(Path(__file__).resolve()):
+            return False
+    except OSError:
+        return False
+    if not (root / "config" / "benchmarks.yaml").is_file() or not (root / "uv.lock").is_file():
+        return False
+    try:
+        with (root / "pyproject.toml").open("rb") as handle:
+            project = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError):
+        return False
+    metadata = project.get("project", {})
+    groups = project.get("dependency-groups", {})
+    swe_group = groups.get("swe", []) if isinstance(groups, dict) else []
+    if not (
+        isinstance(metadata, dict)
+        and metadata.get("name") == "bencheval"
+        and swe_group == [_OFFICIAL_EVALUATOR_PACKAGE]
+    ):
+        return False
+    try:
+        lock_check = subprocess.run(
+            ["uv", "lock", "--check", "--offline", "--project", str(root)],
+            cwd=root,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return lock_check.returncode == 0
+
+
+def swebench_project_root() -> Path | None:
+    """Locate the BenchEval project that owns the pinned SWE evaluator group."""
+    package_path = Path(__file__).resolve()
+    if len(package_path.parents) <= 2:
+        return None
+    candidate = package_path.parents[2]
+    return candidate if _is_pinned_swe_project(candidate) else None
 
 
 def _as_bool_verdict(value: object) -> bool | None:
@@ -506,13 +552,20 @@ def resolve_swebench_subprocess(command: Sequence[str]) -> tuple[str, ...]:
             *launched,
         )
     if program == "swebench":
+        project_root = swebench_project_root()
+        if project_root is None:
+            raise BenchEvalError(
+                "official SWE evaluation requires a BenchEval project with "
+                "the pinned dependency-groups.swe evaluator",
+            )
         return (
             "uv",
             "run",
             "--isolated",
+            "--locked",
             "--project",
-            str(_repo_root()),
-            "--group",
+            str(project_root),
+            "--only-group",
             "swe",
             "--",
             *launched,
@@ -1702,4 +1755,5 @@ __all__ = [
     "parse_swebench_instance_outcome",
     "resolve_swebench_subprocess",
     "run_swebench_instance",
+    "swebench_project_root",
 ]

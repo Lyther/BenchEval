@@ -4,12 +4,13 @@
 > **Operator contract:** [`README.md`](../README.md), [`docs/architecture.md`](architecture.md), [`docs/api/internal-contracts.md`](api/internal-contracts.md).
 > **Production bar:** [`production-readiness.md`](context/production-readiness.md) + `make check-production-v1`.
 > **Principle:** Prefer official harnesses and evidence-bound claims. A benchmark becomes executable only after its official generation/execution and scoring phases form one identity-bound lifecycle; green software tests never substitute for live proof.
+> **Implemented UI extension:** [`docs/prototypes/frontend-v1.md`](prototypes/frontend-v1.md) and architecture §20–§21. The CLI remains stable automation; the optional console is loopback-only.
 
 ## Current roadmap
 
 Live operator instructions. The historical ledger below is archive-only.
 
-## Current state (2026-08-26)
+## Current state (2026-09-01)
 
 ### Tier-0 executable product surface
 
@@ -138,7 +139,7 @@ sequencing remains diagnostic; the real charged diagnostic is still required.
 - [x] CyberGym and ExploitGym remain catalog-only/non-executable; retained modules have pre-admission anchored I/O but no v1 lifecycle work.
 - [x] Catalog planning rejects CyberGym, ExploitGym, SWE-bench Pro, and other pending rows before launch; keep the regression gate when the catalog changes.
 - [x] **Not scheduled for v1:** mini-SWE may return only as a separately named agent scaffold; never run it under an admitted runtime identity.
-- [x] **Not scheduled for v1:** object/bucket storage, proof signing, dashboards, weighted portfolios, OCI/ORAS, database/service orchestration, additional benchmark families, and proof deletion/TTL/garbage collection. Reopen only on a demonstrated requirement.
+- [x] **Still not scheduled:** object/bucket storage, proof signing, weighted portfolios, OCI/ORAS, database/service orchestration, additional benchmark families, and proof deletion/TTL/garbage collection. The earlier dashboard deferral is superseded by the 2026-09-01 local operator-console decision; remote/multi-user service scope remains excluded.
 
 ### R7 — One-batch assignment plan
 
@@ -163,6 +164,288 @@ proofs immediately but must rebase before final ledger decisions and waits for
 the relevant adapter fix before GPQA/SWE reruns. Each software packet receives an
 independent `/qa-review`; live proof remains a separate evidence stream.
 
+## Operator console roadmap (IMPLEMENTED; hardening remains)
+
+Implementation status on 2026-09-01: U0.1–U0.4, U1, and U2 are implemented.
+U0.5 is partially proven by a real Chromium DOM/keyboard journey but lacks the
+automated axe and Firefox/WebKit matrix. U3 remains the active hardening lane;
+U4 release certification follows it. A green deterministic suite or one-browser
+walkthrough does not by itself close U3/U4.
+
+The following phases cover the complete existing product surface. They do not
+admit new benchmarks, promote SWE, add remote users, or change proof retention.
+Each implementation slice must preserve CLI behavior and canonical files.
+
+### U0 — Decision closure and executable spikes
+
+**Objective:** prove the proposed framework, local trust boundary, shared
+application contract, and long-running-session mechanics before page breadth.
+
+**Exit gate:** NiceGUI is either accepted with measured evidence or replaced by
+another single-process local route; state-changing UI has a proven local
+capability boundary and safe run-session cancellation/reconnect contract. No
+HITL is required.
+
+- [x] `U0.1` NiceGUI optional-extra and clean-install spike
+  - Files: throwaway spike outside production modules; proposed changes limited
+    to `pyproject.toml`, `uv.lock`, and a minimal `src/bencheval/ui/` only after
+    acceptance.
+  - Scope: evaluate current NiceGUI 3.x license, transitive/build footprint,
+    Python 3.12 compatibility, wheel/`uv tool install`, startup latency, browser
+    open/no-open, loopback bind, core import isolation, table/download support,
+    and real-browser test fixture. Do not add the dependency before the spike is
+    reviewed.
+  - Dependencies: none.
+  - Acceptance evidence: clean disposable install; `import bencheval` without
+    UI deps; minimal `bencheval ui --no-open` starts/stops on loopback; dependency
+    audit and license record; measured startup and lock diff.
+  - If it fails: spike NiceGUI native mode only if it preserves one process;
+    otherwise select a minimal server-rendered Python route. Do not fall through
+    to a split SPA without a new architecture review.
+
+- [x] `U0.2` Local mutation-capability and hostile-browser spike
+  - Files: `tests/ui/test_local_capability.py`; proposed `ui/app.py` boundary.
+  - Scope: bind `127.0.0.1`, exact Host/Origin, no CORS/iframe, per-process
+    capability exchange to strict cookie, nonce removal, invalid/replayed token,
+    DNS-rebinding-style Host, and cross-origin mutation attempts. Read-only and
+    mutation events must both be tested through a real browser/server.
+  - Dependencies: U0.1.
+  - Acceptance evidence: all hostile requests fail before application calls;
+    valid local browser reaches one harmless dry-run action; no token appears in
+    logs, durable files, or browser URL after exchange.
+  - If it fails: first release is read-only while the mutation boundary is
+    redesigned; never add a remote bind workaround.
+
+- [x] `U0.3` Typed application-operation parity baseline
+  - Files: proposed `src/bencheval/application/{dto,catalog_ops,run_ops,evidence_ops,analysis_ops,proof_ops,readiness_ops}.py`; `tests/application/`.
+  - Scope: define and implement the contract in
+    `docs/api/operator-console-contract.md` around existing modules. Capture
+    golden CLI operation results before refactoring handlers. No storage schema
+    or benchmark semantics change.
+  - Dependencies: none; may run in parallel with U0.1/U0.2.
+  - Acceptance evidence: CLI-before versus application-operation-after parity
+    for catalog, plan failures/success, doctor, validated history, compare,
+    report/export argument validation, and proof verify; Pydantic closed-schema
+    tests and full production gate.
+
+- [x] `U0.4` Real bounded RunSession cancellation/reconnect spike
+  - Files: proposed `ui/session.py`, a disposable real subprocess harness, and
+    `tests/ui/test_run_session.py`.
+  - Scope: one active mutation, background task, page refresh/second tab,
+    explicit cancel, timeout, browser close, process exit, output cap, and server
+    restart reconciliation. No provider or official benchmark substitution may
+    count as live acceptance; this spike proves session mechanics only.
+  - Dependencies: U0.1 and U0.3.
+  - Acceptance evidence: real local child lifecycle has no duplicate launch,
+    bounded cancellation, no lost completed evidence, and explicit non-resumable
+    state after server restart.
+  - If it fails: ship read-only/dry-run UI first and defer live mutation.
+
+- [ ] `U0.5` Browser accessibility harness
+  - Files: `tests/ui/test_accessibility.py`, `ui/theme.py`, test configuration.
+  - Scope: decide the real browser/axe route and prove keyboard, focus, labels,
+    status announcements, non-color meaning, reduced motion, and chart table
+    fallback on the minimal shell.
+  - Dependencies: U0.1.
+  - Acceptance evidence: Chromium real-browser journey and automated scan with
+    zero critical/serious findings; manual Firefox/WebKit keyboard spot-check
+    protocol recorded for later phases.
+
+### U1 — Read-only production-shaped walking skeleton
+
+**Objective:** ship the local entry point, shared read operations, shell,
+Overview, Catalog, Environment, and existing run detail without mutation.
+
+**Exit gate:** a clean-box operator starts `bencheval ui`, navigates every
+read-only page by keyboard, and sees canonical local data with no UI dependency
+in core installs. Mutation remains disabled until U0.2/U0.4 pass.
+
+- [x] `U1.1` Package the optional entry point and shell
+  - Files: `pyproject.toml`, `uv.lock`, `cli.py`, `ui/{__init__,app,pages,security,session}.py`,
+    `ui/assets/console.css`.
+  - Scope: add `bencheval ui --port --no-open`, loopback only, lazy NiceGUI
+    import, navigation, skip link, global status, display preferences, and
+    graceful missing-extra error. Do not add host/auth/config editing.
+  - Dependencies: U0.1, U0.2, U0.5.
+  - Acceptance evidence: core and UI clean installs; start/stop smoke; missing-
+    extra CLI error; real-browser shell and keyboard checks; `make check-production-v1`.
+
+- [x] `U1.2` Catalog and Overview vertical path
+  - Files: `application/{dto,operations}.py`, `ui/pages.py`.
+  - Scope: actual 8/4 catalog, models, runtimes, agents, providers, action
+    availability, Tier-0/Tier-1/Tier-2 truth, recent validated runs, proof health.
+    No benchmark/run action may be enabled from page-local inference.
+  - Dependencies: U0.3, U1.1.
+  - Acceptance evidence: DTO-versus-registry parity; actual pending/diagnostic/
+    scaffold rows disabled; real browser filter/paging/deep-link tests.
+
+- [x] `U1.3` Environment/Doctor and read-only Runs & Evidence
+  - Files: `application/{dto,operations}.py`, `ui/pages.py`.
+  - Scope: config/results/proof roots, dependency/runtime/provider-variable
+    presence, doctor execution, validated raw/current history, completed run
+    detail, evidence/official result/artifact metadata/history. Default previews
+    are redacted and size capped.
+  - Dependencies: U1.1 and U0.3.
+  - Acceptance evidence: corrupted history fails closed; credential values never
+    enter DTO/HTML; hostile artifact content is served as text/download only;
+    restart shows the same durable projection.
+
+### U2 — Complete operator journeys
+
+**Objective:** add every current mutation and analytical/export/proof operation.
+
+**Exit gate:** all feature-coverage rows in
+`docs/prototypes/frontend-v1.md` pass through real application operations and a
+real browser. Charged/native benchmark proof remains a separate claim.
+
+- [x] `U2.1` Run Builder dry-run and plan parity
+  - Files: `application/{dto,operations}.py`, `ui/pages.py`.
+  - Scope: Axes → Plan → Preflight → Confirm; runtime XOR agent, model/provider,
+    budgets, network/caveats, diagnostic opt-in, paths, dry-run. No hidden
+    defaults or output reservation during planning. Confirmation fingerprints
+    bind normalized output selections, and preflight follows the derived
+    official harness instead of treating every native adapter as Inspect.
+  - Dependencies: U1, U0.3.
+  - Acceptance evidence: canonical `RunPlan` bytes/errors match CLI across all
+    executable, diagnostic, catalog-only, scaffold, and model-only paths.
+
+- [x] `U2.2` Live start, monitor, cancel, and run detail
+  - Files: `application/{dto,operations}.py`, `ui/{session,pages}.py`.
+  - Scope: explicit cost/charge confirmation, one active launch, live lifecycle
+    and bounded redacted log tail, explicit cancel, browser reconnect, evidence/
+    artifact refresh, preallocated run identity, explicit evidence truncation
+    metadata, and task outcome separate from registration. Orphan process-group
+    descendants are terminated even when their worker leader exits first.
+  - Dependencies: U0.2, U0.4, U2.1.
+  - Acceptance evidence: real bounded local subprocess browser journey plus one
+    previously admitted uncharged/dry lifecycle; charged/native run is `not run`
+    unless credentials/harness are deliberately supplied.
+
+- [x] `U2.3` Evidence qualification and registration
+  - Files: `application/{dto,operations}.py`, `ui/pages.py`.
+  - Scope: legal lifecycle actions, qualification reasons, fill-once axes,
+    producer/provenance gates, notes/host/locators. Diagnostic cannot register
+    passed; no automatic retry.
+  - Dependencies: U1.3, U2.2.
+  - Acceptance evidence: API/CLI/UI parity for legal and illegal transitions;
+    direct crafted event calls revalidate; concurrent tabs produce one append.
+
+- [x] `U2.4` Compare and reports
+  - Files: `application/{dto,operations}.py`, `ui/pages.py`.
+  - Scope: baseline/current selection, shared eligible validity, deltas/
+    intervals, exclusions, caveats, Markdown/JSON result generation. Charts are
+    projections with full table fallback and no universal score.
+  - Dependencies: U1.3.
+  - Acceptance evidence: compare DTO exactly matches canonical compare JSON;
+    invalid comparison never shows headline; one-instance/smoke caveats visible.
+
+- [x] `U2.5` Warehouse and run-bundle exports
+  - Files: `application/{dto,operations}.py`, `ui/pages.py`.
+  - Scope: Markdown report, Parquet, DuckDB, public redacted/private bundle,
+    optional comparison inputs, exclusive destination, progress and download.
+  - Dependencies: U2.4.
+  - Acceptance evidence: real files verify against CLI-generated equivalents;
+    public bundle secret/path negatives; conflict leaves no partial output.
+
+- [x] `U2.6` Permanent private-proof workflows
+  - Files: `application/{dto,operations}.py`, `ui/pages.py`, `proof_bundle.py`.
+  - Scope: list/inspect roles, export, verify expected digest, import/store,
+    legacy-unverifiable reasons, permanent retention. No delete/replace/TTL.
+  - Dependencies: U1.3.
+  - Acceptance evidence: source-checkout-removed proof verify/import through real
+    browser; digest-idempotent import; traversal/symlink/hardlink/extra/missing
+    rejects; no `runs.jsonl` replay and no delete control/event.
+
+- [x] `U2.7` Readiness and complete environment surface
+  - Files: `application/{dto,operations}.py`, `ui/pages.py`.
+  - Scope: benchmark ledgers and links, software/live/readiness separation,
+    blockers/unblock actions, optional-group and harness/runtime presence, doctor
+    rerun. Do not parse prose into a Tier-2 claim or expose secret values.
+  - Dependencies: U1.2/U1.3 and U2.3/U2.6.
+  - Acceptance evidence: current four Tier-1 benchmarks and no Tier-2 claim match
+    canonical ledger/proof evidence; stale or missing ledgers are explicit.
+
+### U3 — Hardening and launch readiness
+
+**Objective:** make the complete local console secure, responsive, accessible,
+recoverable, and installable for its actual single-user threat model.
+
+**Exit gate:** scoped `verify-readiness` passes for the local console claim. This
+does not advance benchmark tiers or prove every external harness.
+
+- [ ] `U3.1` Hostile local-web and artifact suite
+  - Files: `tests/ui/security/`, shared redaction/path tests.
+  - Scope: Host/Origin/rebinding/iframe/cross-site mutation, capability replay,
+    malformed event payloads, path traversal, symlink/hardlink/FIFO, hostile
+    Markdown/HTML, oversized logs/artifacts, secret names/values, crafted disabled
+    actions.
+  - Dependencies: U2 complete.
+  - Acceptance evidence: real server/browser attacks fail before side effects;
+    no secret in HTML, logs, downloads, screenshots, or browser storage.
+
+- [ ] `U3.2` Performance and bounded-data proof
+  - Files: bounded readers/cursor implementations and `tests/ui/performance/`.
+  - Scope: measure startup, Overview, 10k/100k manifest/evidence rows, proof list,
+    artifact metadata, log tail, and concurrent read-only tabs. No database until
+    measurements breach an agreed local threshold.
+  - Dependencies: U2.
+  - Acceptance evidence: explicit baseline and thresholds in `qa-measure` output;
+    no unbounded DOM/list/file read; performance regression gate for chosen scale.
+
+- [ ] `U3.3` Accessibility and browser matrix
+  - Files: all pages/components and `tests/ui/accessibility/`.
+  - Scope: complete keyboard journeys, focus/dialog behavior, status messages,
+    zoom/reflow, contrast, reduced motion, chart tables, Chromium/Firefox/WebKit.
+  - Dependencies: U2.
+  - Acceptance evidence: zero critical/serious automated findings; manual WCAG
+    2.2 AA checklist for complete flows; screenshots at desktop and tablet.
+
+- [ ] `U3.4` Packaging, upgrade, and failure rehearsal
+  - Files: package metadata, README/ops docs, release CI.
+  - Scope: clean source/wheel/tool installs, missing extra, occupied port,
+    interrupted process, console restart, canonical corruption, optional harness
+    absence, downgrade/rollback. Core package remains dependency-light.
+  - Dependencies: U3.1–U3.3.
+  - Acceptance evidence: clean-box install/uninstall; rollback to CLI-only build;
+    full production gate, dependency audit, gitleaks, and scoped readiness PASS.
+
+### U4 — Documentation, distribution, and handoff
+
+**Objective:** make the local console usable without tribal knowledge and keep
+generated visual/design assets distinct from real screenshots.
+
+**Exit gate:** documented install/use/recovery journeys match shipped bits and a
+fresh operator completes them. No HITL unless a selected benchmark/runtime itself
+requires a literal human-only action.
+
+- [ ] `U4.1` Operator and contributor documentation
+  - Files: README, `docs/ops/operator-console.md`, architecture, roadmap,
+    contracts, screenshots, optional-extra setup, security/recovery notes.
+  - Dependencies: U3.
+  - Acceptance evidence: docs commands execute on a clean install; prototype
+    images remain labelled design references and shipped screenshots are captured
+    from the real UI.
+
+- [ ] `U4.2` Release and handoff gate
+  - Files: CI/release metadata and final evidence report.
+  - Dependencies: U4.1.
+  - Acceptance evidence: `make check-production-v1`, UI browser suite, package
+    build/install, dependency/secret scans, local-console `verify-readiness` PASS,
+    and one full uncharged operator journey. External benchmark live proof is
+    reported separately as passed/failed/not run.
+
+### UI later / not now
+
+- Remote or multi-user service, accounts, RBAC, TLS termination, and deployment
+  behind a proxy — reopen concept/architecture first.
+- Parallel run scheduling, durable queue, resume-after-process-restart, and
+  notifications — revisit after measured single-run operator demand.
+- Database/search index — revisit only after U3.2 shows bounded file readers do
+  not meet real local data volume.
+- Config or credential editing, proof deletion/TTL, remote proof store/signing,
+  mobile run launch, weighted portfolios, and new benchmark admission — remain
+  explicit non-goals or separate product decisions.
+
 ### Requirement traceability
 
 | Architecture requirements | Roadmap proof |
@@ -179,6 +462,11 @@ independent `/qa-review`; live proof remains a separate evidence stream.
 | AR-13 agent admission | R1 MOMO scaffold gate |
 | AR-15 raw history and projection | R1 registry work |
 | AR-16 scored-byte retention | R4 GPQA and R5 SWE retained artifacts |
+| AR-17, AR-19, AR-21 shared operations/non-authoritative DTOs | U0.3, U1, U2 |
+| AR-18 loopback capability boundary | U0.2, U3.1 |
+| AR-20 single RunSession/no retry | U0.4, U2.2 |
+| AR-22 accessible complete journeys | U0.5, U3.3 |
+| AR-23 complete feature coverage | U1–U2, U4.2 |
 
 ### Hot files
 
