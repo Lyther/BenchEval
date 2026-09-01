@@ -6,7 +6,6 @@ import importlib.util
 import os
 import shutil
 import subprocess
-import tomllib
 from dataclasses import dataclass
 from typing import Literal
 
@@ -474,24 +473,16 @@ def _swebench_native_checks() -> list[DoctorCheck]:
     checks.append(
         _binary_check("uv_cli", "uv", "install uv to launch the pinned evaluator group"),
     )
-    try:
-        from bencheval.paths import repo_root
+    from bencheval.swebench_adapter import swebench_project_root
 
-        with (repo_root() / "pyproject.toml").open("rb") as handle:
-            groups = tomllib.load(handle).get("dependency-groups", {})
-        swe_group = groups.get("swe", []) if isinstance(groups, dict) else []
-        group_ok = isinstance(swe_group, list) and any(
-            isinstance(value, str) and value.startswith("swebench==") for value in swe_group
-        )
-    except (BenchEvalError, OSError, tomllib.TOMLDecodeError):
-        group_ok = False
+    group_ok = swebench_project_root() is not None
     checks.append(
         DoctorCheck(
             "swe_evaluator_group",
             "pass" if group_ok else "fail",
             "pinned SWE evaluator dependency group configured"
             if group_ok
-            else "pinned SWE evaluator group is missing from pyproject.toml",
+            else "pinned SWE evaluator group requires a BenchEval project checkout",
         ),
     )
     docker_ok = docker_available()

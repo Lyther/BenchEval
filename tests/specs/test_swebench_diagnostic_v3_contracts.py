@@ -451,8 +451,10 @@ def test_official_eval_stays_isolated_swebench_5(tmp_path: Path) -> None:
     separator = argv.index("--")
 
     assert argv[:3] == ("uv", "run", "--isolated")
+    assert "--locked" in argv
     assert argv[argv.index("--project") + 1] == str(Path.cwd())
-    assert argv[argv.index("--group") + 1] == "swe"
+    assert argv[argv.index("--only-group") + 1] == "swe"
+    assert "--group" not in argv
     assert argv[separator + 1 :] == eval_cmd
     assert eval_cmd[:2] == ("swebench", "eval")
     assert eval_cmd[2] == str(dataset_path.resolve())
