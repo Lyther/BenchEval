@@ -112,23 +112,34 @@ It maps to the existing planner and returns:
 - `PlanPreviewDTO`: benchmark/adapter/harness/runtime/agent/provider/model axes,
   benchmark identity, planned instance count, execution support, cost/wall
   envelopes, network policy, diagnostic state, caveats, and a stable fingerprint
-  over canonical plan bytes. The nested request retains operator-selected paths;
-- `DoctorViewDTO`: backend, overall state, and ordered
+  over canonical plan bytes plus normalized operator-selected evidence/artifact
+  paths. The nested request retains the original path selections;
+- `DoctorViewDTO`: selected backend/native harness, overall state, and ordered
   `DoctorCheckDTO{name,status,message}` values;
 - actions for Dry run and Start. Start requires the same plan fingerprint and
   expires if config/source revision changes.
 
 The UI cannot post a serialized `RunPlan` as authority. The operation replans
-from request axes and compares the fingerprint before charge.
+from request axes, rebinds the output selections, and compares the fingerprint
+before charge. Native BFCL, HLE, and SWE plans run adapter-specific package,
+checkout/dataset-token, or Docker/evaluator preflight rather than the generic
+Inspect doctor.
+
+When output selections are omitted, the default evidence/artifact paths are
+rooted under the process working directory and receive the same lexical
+symlink-component check as explicit paths. An operator whose checkout path
+itself traverses a user-controlled symlink must launch the console from the
+canonical non-symlinked checkout path.
 
 ### Run, evidence, and artifact DTOs
 
 `RunSummaryDTO` exposes lifecycle registration, identity axes, evidence/report/
 bundle locators, event count, host, and the last event time. `RunDetailDTO` adds
 the validated raw-history projection, bounded `EvidenceSummaryDTO` rows,
-qualification reasons, and legal actions. Task outcome, failure class, attempt
-validity, interpretation, cost, cost basis, and artifact locators live on those
-evidence summaries rather than on the lifecycle summary.
+the total evidence count and explicit truncation state, qualification reasons,
+and legal actions. Task outcome, failure class, attempt validity,
+interpretation, cost, cost basis, and artifact locators live on those evidence
+summaries rather than on the lifecycle summary.
 
 `EvidenceSummaryDTO.artifacts` contains bounded local artifact locators, while
 `ArtifactResultDTO` contains role, path, size, digest, visibility, validity, and
@@ -171,7 +182,7 @@ the UI never upgrades a tier by inference.
 |---|---|---|---|
 | `catalog.list/show` | kind/filter/page or kind/id → catalog DTO/page | registries + application projection | Read-only; repeatable |
 | `run.plan` | `PlanRequestDTO` → `PlanPreviewDTO` | planner/domain | Pure; repeatable |
-| `doctor.run` | backend/profile/model → `DoctorViewDTO` | doctor | Read-only probe; explicit repeat |
+| `doctor.run` | backend or native harness/profile/model → `DoctorViewDTO` | doctor | Read-only probe; explicit repeat |
 | `run.start` | plan request + fingerprint + confirmation → `RunSessionView` | replan, executor, output claim | Never auto-retry; duplicate/session conflict typed |
 | `run.session` | none/run ID → current session view | session owner + durable projection | Read-only |
 | `run.cancel` | session/run ID → cancellation result | session owner + adapter/process lifecycle | Explicit once; repeated terminal cancel is no-op result, not relaunch |

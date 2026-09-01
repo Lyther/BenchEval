@@ -7,7 +7,12 @@ from io import StringIO
 import pytest
 
 from bencheval.cli import main
-from bencheval.doctor import PILOT_DOCTOR_BACKEND, run_doctor, run_pilot_doctor
+from bencheval.doctor import (
+    OPERATOR_DOCTOR_BACKENDS,
+    PILOT_DOCTOR_BACKEND,
+    run_doctor,
+    run_pilot_doctor,
+)
 from bencheval.domain import ExecutionProfile
 
 # SUBSTITUTE_JUSTIFICATION
@@ -34,6 +39,16 @@ from bencheval.domain import ExecutionProfile
 #   test_inspect_doctor_docker_requirement_matches_profile
 
 _PILOT_BINARIES = ("harbor",)
+
+
+def test_operator_doctor_backends_include_native_harnesses() -> None:
+    assert OPERATOR_DOCTOR_BACKENDS == (
+        "inspect",
+        "harbor",
+        "bfcl-native",
+        "hle-native",
+        "swebench-native",
+    )
 
 
 def _patch_binaries(

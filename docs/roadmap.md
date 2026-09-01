@@ -302,7 +302,9 @@ real browser. Charged/native benchmark proof remains a separate claim.
   - Files: `application/{dto,operations}.py`, `ui/pages.py`.
   - Scope: Axes → Plan → Preflight → Confirm; runtime XOR agent, model/provider,
     budgets, network/caveats, diagnostic opt-in, paths, dry-run. No hidden
-    defaults or output reservation during planning.
+    defaults or output reservation during planning. Confirmation fingerprints
+    bind normalized output selections, and preflight follows the derived
+    official harness instead of treating every native adapter as Inspect.
   - Dependencies: U1, U0.3.
   - Acceptance evidence: canonical `RunPlan` bytes/errors match CLI across all
     executable, diagnostic, catalog-only, scaffold, and model-only paths.

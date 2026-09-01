@@ -35,7 +35,8 @@ from bencheval.application.dto import (
 from bencheval.benchmark_plan import plan_control_plane
 from bencheval.benchmark_registry import execution_support_label, load_benchmark_catalog
 from bencheval.control_plane_executor import diagnostic_capable_benchmark, execute_control_plane_run
-from bencheval.doctor import run_doctor, run_pilot_doctor
+from bencheval.doctor import run_doctor, run_native_doctor, run_pilot_doctor
+from bencheval.domain import RunPlan
 from bencheval.evidence import read_evidence_jsonl
 from bencheval.evidence_compare import (
     compare_evidence_runs,
@@ -89,6 +90,22 @@ def proof_inventory_counts(proofs: tuple[ProofViewDTO, ...]) -> tuple[int, int]:
     """Return verified and corrupt proof counts for truthful UI projections."""
     verified = sum(row.verified for row in proofs)
     return verified, len(proofs) - verified
+
+
+def _normalized_output_selection(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return str(Path(os.path.abspath(Path(value).expanduser())))
+
+
+def _plan_fingerprint(plan: RunPlan, request: PlanRequestDTO) -> str:
+    payload = {
+        "plan": plan.model_dump(mode="json", exclude_none=False),
+        "output_path": _normalized_output_selection(request.output_path),
+        "artifacts_dir": _normalized_output_selection(request.artifacts_dir),
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return f"sha256:{hashlib.sha256(canonical.encode()).hexdigest()}"
 
 
 def _digest_file(path: Path) -> str:
@@ -300,8 +317,7 @@ class OperatorOperations:
             model_id=request.model_id,
             diagnostic=request.diagnostic,
         )
-        canonical = plan.model_dump_json(exclude_none=False)
-        fingerprint = f"sha256:{hashlib.sha256(canonical.encode()).hexdigest()}"
+        fingerprint = _plan_fingerprint(plan, request)
         executable = benchmark.executable
         return PlanPreviewDTO(
             request=request,
@@ -309,7 +325,7 @@ class OperatorOperations:
             benchmark_version=plan.benchmark_version,
             adapter_id=plan.adapter_id,
             harness_kind=plan.harness_kind,
-            backend="harbor" if plan.harness_kind == "harbor" else "inspect",
+            backend=("inspect" if plan.harness_kind == "inspect-evals" else plan.harness_kind),
             execution_profile=load_benchmark_catalog()
             .by_id_or_alias(plan.benchmark_id)
             .recommended_profile,
@@ -329,7 +345,7 @@ class OperatorOperations:
     def doctor(
         self,
         *,
-        backend: Literal["inspect", "harbor"] | None,
+        backend: str | None,
         profile: str | None,
         model_id: str | None,
     ) -> DoctorViewDTO:
@@ -338,7 +354,14 @@ class OperatorOperations:
         else:
             if backend is None:
                 raise BenchEvalError("backend is required unless profile is pilot")
-            report = run_doctor(backend, model_id=model_id, execution_profile=profile)
+            if backend in {"inspect", "harbor"}:
+                report = run_doctor(backend, model_id=model_id, execution_profile=profile)
+            else:
+                report = run_native_doctor(
+                    backend,
+                    model_id=model_id,
+                    execution_profile=profile,
+                )
         return DoctorViewDTO(
             backend=report.backend,
             ok=report.ok,
@@ -348,7 +371,13 @@ class OperatorOperations:
             ),
         )
 
-    def start(self, request: PlanRequestDTO, *, expected_fingerprint: str) -> RunExecutionDTO:
+    def start(
+        self,
+        request: PlanRequestDTO,
+        *,
+        expected_fingerprint: str,
+        run_id: str | None = None,
+    ) -> RunExecutionDTO:
         preview = self.plan(request)
         if preview.fingerprint != expected_fingerprint:
             raise BenchEvalError("run plan changed; refresh and confirm the new plan")
@@ -356,18 +385,24 @@ class OperatorOperations:
             raise BenchEvalError(
                 "benchmark is not executable; explicit diagnostic mode is required"
             )
-        run_id = new_run_id()
+        rid = run_id or new_run_id()
         root = Path.cwd()
+        selected_output = _normalized_output_selection(request.output_path)
+        selected_artifacts = _normalized_output_selection(request.artifacts_dir)
         output = (
-            Path(request.output_path)
-            if request.output_path
-            else root / "results" / "evidence" / f"{run_id}.jsonl"
+            Path(selected_output)
+            if selected_output is not None
+            else root / "results" / "evidence" / f"{rid}.jsonl"
         )
         artifacts = (
-            Path(request.artifacts_dir)
-            if request.artifacts_dir
-            else root / "results" / "raw" / run_id
+            Path(selected_artifacts)
+            if selected_artifacts is not None
+            else root / "results" / "raw" / rid
         )
+        for role, path in (("evidence output", output), ("artifacts output", artifacts)):
+            symlink = _symlink_component(path)
+            if symlink is not None:
+                raise BenchEvalError(f"{role} contains a symlink component: {symlink}")
         plan = plan_control_plane(
             benchmark_id=request.benchmark_id,
             slice_id=request.slice_id,
@@ -381,7 +416,7 @@ class OperatorOperations:
             plan=plan,
             output_path=output,
             artifacts_dir=artifacts,
-            run_id=run_id,
+            run_id=rid,
             swebench_process_runner=(
                 default_swebench_process_runner if plan.adapter_id == SWEBENCH_ADAPTER_ID else None
             ),
@@ -520,6 +555,8 @@ class OperatorOperations:
             summary=summary,
             history=history,
             evidence=evidence,
+            evidence_total=len(records),
+            evidence_truncated=len(records) > len(evidence),
             qualification=qualification,
             actions=actions,
         )

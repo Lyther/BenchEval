@@ -257,6 +257,14 @@ resolve typed slice and immutable identities
   → verify retained artifact identity, clean transient state, register only qualified evidence
 ```
 
+The console preflight route follows the derived official harness: generic
+Inspect for GPQA, Harbor plus Docker for Terminal-Bench, pinned package data for
+BFCL, the official checkout/dependencies/gated-token boundary for HLE, and
+Inspect-generation plus Docker and the pinned evaluator group for the SWE
+diagnostic. Charged confirmation fingerprints bind both the canonical plan and
+the normalized evidence/artifact output selections; launch rechecks those
+bytes and rejects any symlink component before the executor is called.
+
 Exit status, stdout, model self-report, and adapter-invented verdict files never become scoring authority when the upstream benchmark defines an official report. Multi-phase adapters share one cumulative run envelope. A demoted adapter may run only as explicitly labeled diagnostic evidence; diagnostic evidence cannot register `passed`.
 
 Current official authority boundaries:

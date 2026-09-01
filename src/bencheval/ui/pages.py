@@ -14,6 +14,7 @@ from bencheval.application import (
     PlanRequestDTO,
     proof_inventory_counts,
 )
+from bencheval.doctor import OPERATOR_DOCTOR_BACKENDS
 from bencheval.exceptions import BenchEvalError
 from bencheval.live_run_manifest import default_runs_manifest_path
 from bencheval.proof_bundle import default_proofs_dir
@@ -35,12 +36,25 @@ NAVIGATION = (
 )
 
 
-def _notify_error(exc: BaseException) -> None:
-    message = redact_string(
+def _redacted_error_message(exc: BaseException) -> str:
+    return redact_string(
         str(exc).splitlines()[0][:500],
         extra_secrets=env_secret_values(),
     )
+
+
+def _notify_error(exc: BaseException) -> None:
+    message = _redacted_error_message(exc)
     ui.notify(message, type="negative", close_button=True, timeout=0)
+
+
+def _integrity_error_state(detail: str, exc: BaseException) -> None:
+    with ui.card().classes("be-card w-full p-5 border border-red-500"):
+        with ui.row().classes("items-center gap-3"):
+            ui.icon("error").classes("text-red-400")
+            ui.label("Integrity state unavailable").classes("text-xl font-bold")
+        ui.label(detail).classes("be-muted")
+        ui.label(_redacted_error_message(exc)).classes("be-mono text-sm text-red-300")
 
 
 def _shell(title: str, subtitle: str) -> None:
@@ -533,7 +547,8 @@ def proofs_page() -> None:
         proofs = OPS.proofs()
     except (BenchEvalError, OSError, ValueError) as exc:
         _notify_error(exc)
-        proofs = ()
+        _integrity_error_state("The proof index could not be verified.", exc)
+        return
     rows = [row.model_dump(mode="json") for row in proofs]
     columns = [
         {"name": "proof_id", "label": "Proof ID", "field": "proof_id", "align": "left"},
@@ -606,7 +621,8 @@ def readiness_page() -> None:
         rows = [row.model_dump(mode="json") for row in OPS.readiness()]
     except (BenchEvalError, OSError, ValueError) as exc:
         _notify_error(exc)
-        rows = []
+        _integrity_error_state("Readiness cannot be derived from unverified state.", exc)
+        return
     columns = [
         {"name": "benchmark_id", "label": "Benchmark", "field": "benchmark_id", "align": "left"},
         {"name": "software_state", "label": "Software", "field": "software_state"},
@@ -622,7 +638,11 @@ def readiness_page() -> None:
 def environment_page() -> None:
     _shell("Environment", "Presence and capability only; credential values never cross")
     with ui.card().classes("be-card w-full p-5"):
-        backend = ui.select(["inspect", "harbor"], value="inspect", label="Backend")
+        backend = ui.select(
+            OPERATOR_DOCTOR_BACKENDS,
+            value="inspect",
+            label="Backend or native harness",
+        )
         profile = ui.select(
             [None, "E0", "E1", "E2", "E3", "E4", "pilot"], label="Profile", clearable=True
         )

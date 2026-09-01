@@ -59,8 +59,8 @@ class PlanRequestDTO(BaseModel):
     agent_id: str | None = None
     provider_id: str = "bytellm"
     diagnostic: bool = False
-    output_path: str | None = None
-    artifacts_dir: str | None = None
+    output_path: str | None = Field(default=None, min_length=1)
+    artifacts_dir: str | None = Field(default=None, min_length=1)
 
 
 class PlanPreviewDTO(ViewDTO):
@@ -146,6 +146,8 @@ class RunDetailDTO(ViewDTO):
     summary: RunSummaryDTO
     history: tuple[dict[str, str | None], ...]
     evidence: tuple[EvidenceSummaryDTO, ...]
+    evidence_total: int
+    evidence_truncated: bool
     qualification: QualificationViewDTO | None
     actions: tuple[ActionDTO, ...]
 
