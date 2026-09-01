@@ -82,6 +82,27 @@ class PrivateProofExport:
     classification_reason: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class PrivateProofSummary:
+    proof_id: str
+    run_id: str
+    path: Path
+    classification: str
+    classification_reason: str | None
+    benchmark_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class PrivateProofScan:
+    """One index-bound proof inspection, including isolated object corruption."""
+
+    proof_id: str
+    run_id: str
+    path: Path
+    summary: PrivateProofSummary | None
+    error: str | None
+
+
 def default_proofs_dir() -> Path:
     return _repo_root() / "results" / "proofs"
 
@@ -814,7 +835,11 @@ def _open_owned_index_file(index: Path, flags: int) -> int:
     return descriptor
 
 
-def _load_proof_index_rows(index: Path) -> list[dict[str, object]]:
+def _load_proof_index_rows(
+    index: Path,
+    *,
+    validate_installed: bool = True,
+) -> list[dict[str, object]]:
     if index.is_symlink():
         raise BenchEvalError(f"corrupt proof index {index}: symlink rejected")
     if not index.exists():
@@ -857,6 +882,8 @@ def _load_proof_index_rows(index: Path) -> list[dict[str, object]]:
             raise BenchEvalError(f"corrupt proof index {index}: duplicate proof_id {proof_id}")
         seen_proof_ids.add(proof_id)
         rows.append(parsed)
+    if not validate_installed:
+        return rows
     for row in rows:
         proof_id = str(row["proof_id"])
         run_id = str(row["run_id"])
@@ -1002,13 +1029,125 @@ def import_private_proof(source: Path, *, store_root: Path) -> Path:
         return _import_verified(_unpack_archive(resolved, Path(tmp)), store)
 
 
+def _proof_summary(root: Path, proof_id: str) -> PrivateProofSummary:
+    metadata = _load_json_object(root / "proof.json", role="proof.json")
+    run_id = metadata.get("run_id")
+    if not isinstance(run_id, str):
+        raise BenchEvalError("verified proof is missing run_id")
+    plan_path = root / "run-plan.json"
+    benchmark_id = None
+    if plan_path.is_file() and not plan_path.is_symlink():
+        benchmark_id = RunPlan.model_validate_json(
+            plan_path.read_text(encoding="utf-8")
+        ).benchmark_id
+    return PrivateProofSummary(
+        proof_id=proof_id,
+        run_id=run_id,
+        path=root,
+        classification=str(metadata.get("classification", "unknown")),
+        classification_reason=(
+            str(metadata["classification_reason"])
+            if metadata.get("classification_reason") is not None
+            else None
+        ),
+        benchmark_id=benchmark_id,
+    )
+
+
+def inspect_private_proof(
+    source: Path,
+    *,
+    expected_proof_id: str | None = None,
+) -> PrivateProofSummary:
+    """Verify and describe a proof directory or portable ``.tar.gz`` archive."""
+    resolved = source.resolve()
+    if resolved.is_dir():
+        return _proof_summary(
+            resolved,
+            verify_private_proof(resolved, expected_proof_id=expected_proof_id),
+        )
+    with tempfile.TemporaryDirectory(prefix="bencheval-proof-inspect-") as tmp:
+        unpacked = _unpack_archive(resolved, Path(tmp))
+        summary = _proof_summary(
+            unpacked,
+            verify_private_proof(unpacked, expected_proof_id=expected_proof_id),
+        )
+        return PrivateProofSummary(
+            proof_id=summary.proof_id,
+            run_id=summary.run_id,
+            path=resolved,
+            classification=summary.classification,
+            classification_reason=summary.classification_reason,
+            benchmark_id=summary.benchmark_id,
+        )
+
+
+def scan_private_proofs(store_root: Path | None = None) -> tuple[PrivateProofScan, ...]:
+    """Inspect each indexed proof without letting one corrupt object hide its siblings."""
+    store = (store_root or default_proofs_dir()).resolve()
+    index = store / "proofs.jsonl"
+    if not index.exists():
+        return ()
+    scans: list[PrivateProofScan] = []
+    for row in _load_proof_index_rows(index, validate_installed=False):
+        path = store / str(row["installed_path"])
+        proof_id = str(row["proof_id"])
+        run_id = str(row["run_id"])
+        try:
+            if path.is_symlink() or not path.is_dir():
+                raise BenchEvalError(f"installed proof is missing or redirected: {path}")
+            verified_id = verify_private_proof(path, expected_proof_id=proof_id)
+            summary = _proof_summary(path, verified_id)
+            if summary.run_id != run_id:
+                raise BenchEvalError(f"proof index run_id disagrees for {proof_id}")
+        except (BenchEvalError, OSError, UnicodeError, ValueError) as exc:
+            scans.append(
+                PrivateProofScan(
+                    proof_id=proof_id,
+                    run_id=run_id,
+                    path=path,
+                    summary=None,
+                    error=str(exc),
+                ),
+            )
+            continue
+        scans.append(
+            PrivateProofScan(
+                proof_id=proof_id,
+                run_id=run_id,
+                path=path,
+                summary=summary,
+                error=None,
+            ),
+        )
+    return tuple(scans)
+
+
+def list_private_proofs(store_root: Path | None = None) -> tuple[PrivateProofSummary, ...]:
+    """Return the verified inventory, failing with the corrupt object's identity."""
+    summaries: list[PrivateProofSummary] = []
+    for scan in scan_private_proofs(store_root):
+        if scan.error is not None or scan.summary is None:
+            raise BenchEvalError(
+                f"proof {scan.proof_id} at {scan.path} is corrupt: "
+                f"{scan.error or 'verification produced no summary'}",
+            )
+        summaries.append(scan.summary)
+    return tuple(summaries)
+
+
 __all__ = [
     "INDEX_SCHEMA",
     "INVENTORY_SCHEMA",
     "PROOF_SCHEMA",
     "PrivateProofExport",
+    "PrivateProofScan",
+    "PrivateProofSummary",
     "default_proofs_dir",
     "export_private_proof",
     "import_private_proof",
+    "inspect_private_proof",
+    "list_private_proofs",
+    "scan_private_proofs",
     "verify_private_proof",
 ]

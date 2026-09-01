@@ -411,10 +411,10 @@ def _proof_export(args: argparse.Namespace) -> int:
 
 
 def _proof_verify(args: argparse.Namespace) -> int:
-    from bencheval.proof_bundle import verify_private_proof
+    from bencheval.proof_bundle import inspect_private_proof
 
-    proof_id = verify_private_proof(Path(args.path), expected_proof_id=args.expected)
-    sys.stdout.write(json.dumps({"proof_id": proof_id, "ok": True}, indent=2) + "\n")
+    proof = inspect_private_proof(Path(args.path), expected_proof_id=args.expected)
+    sys.stdout.write(json.dumps({"proof_id": proof.proof_id, "ok": True}, indent=2) + "\n")
     return 0
 
 
@@ -776,6 +776,16 @@ def _evidence_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def _ui_run(args: argparse.Namespace) -> int:
+    from bencheval.ui.app import run_console
+
+    try:
+        run_console(port=args.port, open_browser=not args.no_open)
+    except KeyboardInterrupt:
+        return 0
+    return 0
+
+
 def _add_benchmark_list_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--format", choices=("text", "json"), default="text")
     parser.add_argument("--category", choices=get_args(BenchmarkCategory), default=None)
@@ -963,6 +973,11 @@ def _build_parser() -> argparse.ArgumentParser:
     evidence_list.add_argument("--current", action="store_true")
     evidence_list.add_argument("--manifest-path", default=None)
     evidence_list.set_defaults(handler=_evidence_list)
+
+    console = sub.add_parser("ui", help="Start the loopback-only operator console")
+    console.add_argument("--port", type=int, default=8090)
+    console.add_argument("--no-open", action="store_true", help="Do not open the browser")
+    console.set_defaults(handler=_ui_run)
 
     return parser
 
