@@ -313,7 +313,9 @@ real browser. Charged/native benchmark proof remains a separate claim.
   - Files: `application/{dto,operations}.py`, `ui/{session,pages}.py`.
   - Scope: explicit cost/charge confirmation, one active launch, live lifecycle
     and bounded redacted log tail, explicit cancel, browser reconnect, evidence/
-    artifact refresh, task outcome separate from registration.
+    artifact refresh, preallocated run identity, explicit evidence truncation
+    metadata, and task outcome separate from registration. Orphan process-group
+    descendants are terminated even when their worker leader exits first.
   - Dependencies: U0.2, U0.4, U2.1.
   - Acceptance evidence: real bounded local subprocess browser journey plus one
     previously admitted uncharged/dry lifecycle; charged/native run is `not run`
