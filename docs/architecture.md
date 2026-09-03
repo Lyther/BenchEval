@@ -251,8 +251,7 @@ Nested `run`/`model`/`runtime`/`attempt`/`artifacts`/`integrity` blocks from HLD
 
 ### 7.5 Exposure evidence and study manifests (PROPOSED)
 
-The existing flat `EvidenceRecord` remains additive. Exposure phase E1 adds
-optional closed values; v0.2/v0.3 rows with all four absent continue to parse:
+The existing flat `EvidenceRecord` remains additive. Exposure phase E1 adds optional closed values; v0.2/v0.3 rows with all four absent continue to parse:
 
 ```python
 access_control_source: "not_applicable" | "official_default" | "official_profile" | "none" | "unknown" | None
@@ -261,42 +260,23 @@ repository_history: "not_applicable" | "future_history_removed" | "full_history_
 retrieval_audit: "not_run" | "no_retrieval_observed" | "retrieval_observed" | None
 ```
 
-These fields describe the concrete attempt, not the benchmark in general. An
-adapter may stamp a non-unknown state only from the official launch contract or
-a retained effective configuration. It may never translate `network_policy`
-directly. Model-only calls stamp all three access-control fields
-`not_applicable`; the provider route remains ordinary provenance. Pinned Inspect
-SWE may stamp official blocked egress only when the generated/effective sandbox
-configuration is retained. Harbor stamps `none` plus `uncontrolled` until its
-official runner can prove otherwise. `retrieval_audit` is independent and never
-changes `primary_pass`, `attempt_validity`, or native score.
+These fields describe the concrete attempt, not the benchmark in general. An adapter may stamp a non-unknown state only from the official launch contract or a retained effective configuration. It may never translate `network_policy` directly. Model-only calls stamp all three access-control fields `not_applicable`; the provider route remains ordinary provenance. Pinned Inspect SWE may stamp official blocked egress only when the generated/effective sandbox configuration is retained. Harbor stamps `none` plus `uncontrolled` until its official runner can prove otherwise. `retrieval_audit` is independent and never changes `primary_pass`, `attempt_validity`, or native score.
 
 `config/studies/*.yaml` introduces one small closed `ExposureStudyManifest`:
 
 - stable study id and schema version;
 - `freshness_contrast` or `representation_pair` kind;
 - canonical and candidate benchmark/slice ids;
-- relation class (`fresh_parallel` for BFCL Live,
-  `representation_equivalent` for tool order);
+- relation class (`fresh_parallel` for BFCL Live, `representation_equivalent` for tool order);
 - comparison mode (`stratified_unpaired` or `paired_by_source_instance`);
 - required constant axes and eligible-population rules;
 - declared strata or source-instance mapping requirements;
 - permitted interpretation and explicit forbidden claims; and
 - expected variant/materialization contract when applicable.
 
-The YAML is configuration, not evidence. At execution/report time it is
-canonicalized and hashed; the exact bytes plus resolved identities are retained
-in proof. The generated BFCL `variant-manifest.json` additionally records source
-identity/digest, transform id/version, deterministic balance algorithm, source
-instance id, canonical tool-name order, derived order, derived data digest, and
-unchanged producer/scorer digest. It contains no model output or score.
+The YAML is configuration, not evidence. At execution/report time it is canonicalized and hashed; the exact bytes plus resolved identities are retained in proof. The generated BFCL `variant-manifest.json` additionally records source identity/digest, transform id/version, deterministic balance algorithm, source instance id, canonical tool-name order, derived order, derived data digest, and unchanged producer/scorer digest. It contains no model output or score.
 
-BFCL Live uses a separate `bfcl-v4-live` catalog identity built from the ten
-pinned Live files. `bfcl-v4-tool-order-v1` uses a new derived-data identity that
-binds the canonical BFCL identity, transform version, study-manifest digest, and
-derived-file digest. Both rows stay `executable: false` and run only through the
-existing diagnostic gate until a future admission decision; neither can inherit
-the registered `bfcl-v4` Tier-1 status.
+BFCL Live uses a separate `bfcl-v4-live` catalog identity built from the ten pinned Live files. `bfcl-v4-tool-order-v1` uses a new derived-data identity that binds the canonical BFCL identity, transform version, study-manifest digest, and derived-file digest. Both rows stay `executable: false` and run only through the existing diagnostic gate until a future admission decision; neither can inherit the registered `bfcl-v4` Tier-1 status.
 
 ## 8. Adapter Rule
 
@@ -331,11 +311,7 @@ The console preflight route follows the derived official harness: generic Inspec
 
 Exit status, stdout, model self-report, and adapter-invented verdict files never become scoring authority when the upstream benchmark defines an official report. Multi-phase adapters share one cumulative run envelope. A demoted adapter may run only as explicitly labeled diagnostic evidence; diagnostic evidence cannot register `passed`.
 
-For a derived BFCL run, the adapter additionally verifies an exclusive run-owned
-package overlay before launch and after scoring. All official Python/config/scorer
-bytes must match the pinned distribution; only the files named by the derived
-identity may differ. The installed distribution is read-only input and is never
-restored after mutation because it is never mutated.
+For a derived BFCL run, the adapter additionally verifies an exclusive run-owned package overlay before launch and after scoring. All official Python/config/scorer bytes must match the pinned distribution; only the files named by the derived identity may differ. The installed distribution is read-only input and is never restored after mutation because it is never mutated.
 
 Current official authority boundaries:
 
@@ -448,7 +424,7 @@ An exposure report has a separate gate: the study manifest digest is retained; c
 | AR-29 | Exposure reports preserve both native result sets, validate exact paired/stratified populations, and emit no clean/cheating verdict, direct contamination estimate, or universal adjusted score. |
 | AR-30 | Smoke exposure studies prove plumbing only. Inferential output requires a declared effective population and a preselected uncertainty/test method appropriate to paired or unpaired data. |
 | AR-31 | The first freshness study is BFCL non-live versus Live; the first paired variant is one deterministic balanced BFCL tool-order permutation. No generic transform framework exists before a second proven family. |
-| AR-32 | Private proof retains the exact study manifest, effective-access evidence, source/derived data and variant manifest needed to reproduce interpretation; public exports redact private transcript/audit material. |
+| AR-32 | Portable study evidence consists of two verified `private_proof_v1` run objects plus an `exposure-study-lock-v1` manifest that content-binds both proof ids, the exact report inputs, and deterministic report output; public exports redact private transcript/audit material. |
 
 ### 13.5 Quality scenarios
 
@@ -480,7 +456,7 @@ An exposure report has a separate gate: the study manifest digest is retained; c
 | QS-24 | A tool-order materializer encounters a source/package symlink, hardlink, concurrent mutation, or code/scorer mismatch: leave the installed package and outside paths untouched and fail the diagnostic as integrity/config drift. |
 | QS-25 | Canonical and variant evidence have asymmetric instances or drift in model/provider/runtime/harness/access settings: invalidate the paired study rather than compare different populations. |
 | QS-26 | A successful five-case exposure smoke is reported: show raw counts and `plumbing_only`; do not emit confidence, significance, contamination, or superiority language. |
-| QS-27 | A valid full paired study is copied without its originating checkout: private proof verification recovers study/variant manifests and exact source/derived bytes before the report is trusted. |
+| QS-27 | A valid full paired study is copied without its originating checkout: verification requires both named run proofs plus the study lock, recovers study/variant manifests and exact source/derived bytes, and reproduces the locked report JSON digest before the interpretation is trusted. |
 
 ## 14. VETOs (unchanged where still relevant)
 
@@ -571,15 +547,7 @@ tests/regressions/
   test_exposure_report_integrity.py  - Asymmetric population, drift, smoke overclaim, and proof-retention regressions.
 ```
 
-`domain.py` owns the four closed access enums; `evidence.py` owns their additive
-record fields; `benchmark_registry.py` owns the derived BFCL identity type;
-`identity_strings.py` owns its stable label; `bfcl_native_adapter.py` remains the
-only official BFCL generate/evaluate/scoring boundary; `control_plane_executor.py`
-dispatches diagnostic catalog rows; `proof_bundle.py` retains evidence-referenced
-study files beneath `artifacts/study/` using the existing `artifact` role (no
-proof-schema expansion); `cli.py` exposes read-only study validate/report commands; and
-`application/{dto,operations}.py` plus `ui/pages.py` may project reports only in
-the final UI-integration phase. None of those files may absorb transform logic.
+`domain.py` owns the four closed access enums; `evidence.py` owns their additive record fields; `benchmark_registry.py` owns the derived BFCL identity type; `identity_strings.py` owns its stable label; `bfcl_native_adapter.py` remains the only official BFCL generate/evaluate/scoring boundary; `control_plane_executor.py` dispatches diagnostic catalog rows; `proof_bundle.py` retains evidence-referenced study files beneath `artifacts/study/` using the existing `artifact` role (no proof-schema expansion); `cli.py` exposes read-only study validate/report commands; and `application/{dto,operations}.py` plus `ui/pages.py` may project reports only in the final UI-integration phase. None of those files may absorb transform logic.
 
 ## 18. Remaining adapter architecture
 
@@ -831,90 +799,37 @@ Contract rules:
 
 ### 22.0 Evidence and source reconciliation
 
-- `VERIFIED_EXISTING`: BenchEval already preserves official native results,
-  immutable benchmark/harness/runtime/provider identities, eligible shared
-  populations, append-only evidence, and portable private proof. Those are the
-  substrate for a study; no second execution store is needed.
-- `VERIFIED_EXISTING`: `RunPlan.network_policy` is planner/runtime intent. Pinned
-  Inspect SWE defaults to a network-disabled task sandbox, Harbor explicitly
-  cannot enforce `deny`, and model-only harnesses use host provider egress without
-  exposing arbitrary tools to the model. Effective access therefore cannot be
-  reconstructed from the plan field.
-- `VERIFIED_EXISTING`: BFCL upstream commit `6ea57973…` contains the six Live
-  question files and four Live ground-truth files. The admitted catalog identity
-  covers only the nine non-live files used by `smoke-5`.
-- `VERIFIED_EXISTING`: the pinned BFCL CLI loads category data from its package
-  `data/` directory and has no arbitrary question-file option. Result/score paths
-  are configurable; source question data is not.
-- `ADOPTED`: official BFCL generate/evaluate and AST score artifacts remain the
-  only scorer path. Official access-control options may be selected and retained.
-- `REJECTED`: a BenchEval network proxy/allow-list, runtime or scorer patch,
-  installed-package mutation, generic transformation DSL, automatic multi-seed
-  scheduler, default reference-model correction, or in-project model training.
-- `SPIKE_REQUIRED`: exact PyPI wheel Live bytes/CLI behavior, run-owned BFCL
-  overlay import behavior, useful frontier population size, and the inferential
-  method beyond raw paired counts.
+- `VERIFIED_EXISTING`: BenchEval already preserves official native results, immutable benchmark/harness/runtime/provider identities, eligible shared populations, append-only evidence, and portable private proof. Those are the substrate for a study; no second execution store is needed.
+- `VERIFIED_EXISTING`: `RunPlan.network_policy` is planner/runtime intent. Pinned Inspect SWE defaults to a network-disabled task sandbox, Harbor explicitly cannot enforce `deny`, and model-only harnesses use host provider egress without exposing arbitrary tools to the model. Effective access therefore cannot be reconstructed from the plan field.
+- `VERIFIED_EXISTING`: BFCL upstream commit `6ea57973…` contains the six Live question files and four Live ground-truth files. The admitted catalog identity covers only the nine non-live files used by `smoke-5`.
+- `VERIFIED_EXISTING`: the pinned BFCL CLI loads category data from its package `data/` directory and has no arbitrary question-file option. Result/score paths are configurable; source question data is not.
+- `ADOPTED`: official BFCL generate/evaluate and AST score artifacts remain the only scorer path. Official access-control options may be selected and retained.
+- `REJECTED`: a BenchEval network proxy/allow-list, runtime or scorer patch, installed-package mutation, generic transformation DSL, automatic multi-seed scheduler, default reference-model correction, or in-project model training.
+- `SPIKE_REQUIRED`: exact PyPI wheel Live bytes/CLI behavior, run-owned BFCL overlay import behavior, useful frontier population size, and the inferential method beyond raw paired counts.
 
-Primary external evidence is the concept ledger E-12–E-22. Cursor's result
-establishes runtime retrieval as a material confound, not a universal requirement
-to remove network. The ICML mitigation study and option-position work establish
-that scorer equivalence does not remove behavioral-fidelity calibration. BFCL
-Live supplies the lowest-cost official freshness route, while its documented
-difficulty/composition shift forbids a direct contamination estimate.
+Primary external evidence is the concept ledger E-12–E-22. Cursor's result establishes runtime retrieval as a material confound, not a universal requirement to remove network. The ICML mitigation study and option-position work establish that scorer equivalence does not remove behavioral-fidelity calibration. BFCL Live supplies the lowest-cost official freshness route, while its documented difficulty/composition shift forbids a direct contamination estimate.
 
 ### 22.1 Architecture-significant requirements
 
-- `G-09` Goal: compare canonical evidence with a source-bound fresh or
-  representation-equivalent population while preserving both native result sets.
-  Architecture impact: a study manifest and read-only report layer; no replacement
-  score. Verification: BFCL Live contrast and a paired tool-order report.
-- `G-10` Goal: capture effective model-visible access separately from requested
-  policy. Architecture impact: additive attempt fields plus adapter-specific
-  capture. Verification: model-only, Inspect, and Harbor real-path probes.
-- `G-11` Goal: begin with BFCL Live, then one BFCL tool-order study only if the
-  spikes pass. Architecture impact: two diagnostic identities and a BFCL-specific
-  materializer, not a generic plugin system. Verification: exact wheel pins,
-  official scores, and source/derived manifest replay.
-- `G-12` Goal: constrain interpretation. Architecture impact: closed report
-  validity/non-claim rules and nonzero failure. Verification: golden reports plus
-  hostile population/access/verifier cases.
-- `C-09` Constraint: `network_policy` semantics are backward compatible.
-  Architecture impact: no rename, migration, or inference from historical plans.
-- `C-10` Constraint: official code/scorer bytes do not change. Architecture
-  impact: overlay verification surrounds every derived run. Verification:
-  pre/post-run producer/scorer hashes and installed-tree immutability.
-- `C-11` Constraint: relation, fidelity, freshness, verifier, access, and retrieval
-  are orthogonal. Architecture impact: separate fields and validation stages.
-- `C-12` / `C-13` Constraint: current frontier API models are primary and smoke
-  is plumbing only. Architecture impact: headroom/cost spike before population
-  selection; report has a raw-only smoke mode.
-- `Q-12`–`Q-18` Quality scenarios: plan/effective access disagreement, uncontrolled
-  Harbor, positive retrieval audit, BFCL pin failure, overlay integrity, asymmetric
-  paired evidence, and smoke overclaim all fail or downgrade exactly as specified
-  in the concept.
+- `G-09` Goal: compare canonical evidence with a source-bound fresh or representation-equivalent population while preserving both native result sets. Architecture impact: a study manifest and read-only report layer; no replacement score. Verification: BFCL Live contrast and a paired tool-order report.
+- `G-10` Goal: capture effective model-visible access separately from requested policy. Architecture impact: additive attempt fields plus adapter-specific capture. Verification: model-only, Inspect, and Harbor real-path probes.
+- `G-11` Goal: begin with BFCL Live, then one BFCL tool-order study only if the spikes pass. Architecture impact: two diagnostic identities and a BFCL-specific materializer, not a generic plugin system. Verification: exact wheel pins, official scores, and source/derived manifest replay.
+- `G-12` Goal: constrain interpretation. Architecture impact: closed report validity/non-claim rules and nonzero failure. Verification: golden reports plus hostile population/access/verifier cases.
+- `C-09` Constraint: `network_policy` semantics are backward compatible. Architecture impact: no rename, migration, or inference from historical plans.
+- `C-10` Constraint: official code/scorer bytes do not change. Architecture impact: overlay verification surrounds every derived run. Verification: pre/post-run producer/scorer hashes and installed-tree immutability.
+- `C-11` Constraint: relation, fidelity, freshness, verifier, access, and retrieval are orthogonal. Architecture impact: separate fields and validation stages.
+- `C-12` / `C-13` Constraint: current frontier API models are primary and smoke is plumbing only. Architecture impact: headroom/cost spike before population selection; report has a raw-only smoke mode.
+- `Q-12`–`Q-18` Quality scenarios: plan/effective access disagreement, uncontrolled Harbor, positive retrieval audit, BFCL pin failure, overlay integrity, asymmetric paired evidence, and smoke overclaim all fail or downgrade exactly as specified in the concept.
 
 ### 22.2 Candidate architectures and selection
 
-**Metadata-only caveats** add no execution units or code, but cannot bind or
-replay populations and cannot distinguish a valid paired study from two arbitrary
-runs. Rejected as insufficient.
+**Metadata-only caveats** add no execution units or code, but cannot bind or replay populations and cannot distinguish a valid paired study from two arbitrary runs. Rejected as insufficient.
 
-**Selected: narrow study layer over existing runs.** Four small Python modules,
-typed YAML, two demoted BFCL catalog identities after spikes, and existing
-JSONL/proof storage cover the need. Operators run canonical and candidate lanes
-through the ordinary control plane; a separate read-only report validates them.
-This adds zero deploy units, zero services, zero stateful stores, zero queues,
-zero caches, and no required third-party dependency. It deliberately duplicates
-the first BFCL-specific transform rather than speculating about reuse.
+**Selected: narrow study layer over existing runs.** Four small Python modules, typed YAML, two demoted BFCL catalog identities after spikes, and existing JSONL/proof storage cover the need. Operators run canonical and candidate lanes through the ordinary control plane; a separate read-only report validates them. This adds zero deploy units, zero services, zero stateful stores, zero queues, zero caches, and no required third-party dependency. It deliberately duplicates the first BFCL-specific transform rather than speculating about reuse.
 
-**Generic morphism/orchestration platform** would add plugins, inverse-output
-mappings, seed scheduling, benchmark-specific scripting, and new state. It is
-rejected until two independent admitted transform families demonstrate common
-invariants and the first study changes a product decision.
+**Generic morphism/orchestration platform** would add plugins, inverse-output mappings, seed scheduling, benchmark-specific scripting, and new state. It is rejected until two independent admitted transform families demonstrate common invariants and the first study changes a product decision.
 
-**Custom strict harness or controlled-training lab** could support different
-research questions but would modify the measured runtime or create a new model-
-training operation. It is outside the selected user/product boundary.
+**Custom strict harness or controlled-training lab** could support different research questions but would modify the measured runtime or create a new model-training operation. It is outside the selected user/product boundary.
 
 ### 22.3 System context and runtime boundaries
 
@@ -936,99 +851,45 @@ one BenchEval process
           └─ current evidence / raw artifacts / private proof
 ```
 
-No process stays resident after a CLI run. The optional console remains the same
-single NiceGUI process and consumes only application DTO projections. Official
-BFCL and provider subprocesses retain current lifecycle, credential, deadline,
-and failure ownership. The variant overlay is created inside the claimed run
-root before launch and is treated as untrusted/ephemeral input plus retained
-evidence; it is not installed globally.
+No process stays resident after a CLI run. The optional console remains the same single NiceGUI process and consumes only application DTO projections. Official BFCL and provider subprocesses retain current lifecycle, credential, deadline, and failure ownership. The variant overlay is created inside the claimed run root before launch and is treated as untrusted/ephemeral input plus retained evidence; it is not installed globally.
 
 The access boundary is observational:
 
-- **model-only:** arbitrary agent egress and repository history are
-  `not_applicable`; provider API connectivity remains ordinary launch provenance;
-- **Inspect SWE:** a blocked/restricted value is allowed only when the exact
-  generated/effective official sandbox configuration is retained;
-- **Harbor/TB:** until an official enforceable control exists, source=`none` and
-  egress=`uncontrolled` (or `unknown` if the launch cannot establish it);
+- **model-only:** arbitrary agent egress and repository history are `not_applicable`; provider API connectivity remains ordinary launch provenance;
+- **Inspect SWE:** a blocked/restricted value is allowed only when the exact generated/effective official sandbox configuration is retained;
+- **Harbor/TB:** until an official enforceable control exists, source=`none` and egress=`uncontrolled` (or `unknown` if the launch cannot establish it);
 - **historical evidence:** absent fields remain unknown/legacy;
-- **retrieval audit:** optional post-run analysis; it never supplies access proof
-  or scorer authority.
+- **retrieval audit:** optional post-run analysis; it never supplies access proof or scorer authority.
 
 ### 22.4 Component and flow view
 
-**Effective access capture.** `access_evidence.py` exposes closed constructors for
-model-only, retained official profile, and known-uncontrolled paths. Adapters pass
-the concrete retained launch facts; the helper rejects attempts to stamp blocked
-or restricted access from `RunPlan.network_policy` alone. It owns no process or
-firewall behavior.
+**Effective access capture.** `access_evidence.py` exposes closed constructors for model-only, retained official profile, and known-uncontrolled paths. Adapters pass the concrete retained launch facts; the helper rejects attempts to stamp blocked or restricted access from `RunPlan.network_policy` alone. It owns no process or firewall behavior.
 
-**Study registry.** `exposure_study.py` loads repository-owned manifests, validates
-the two supported kinds/modes, canonicalizes them, and calculates the study
-digest. It knows benchmark/slice ids and comparison invariants but not adapter
-launch or scoring semantics.
+**Study registry.** `exposure_study.py` loads repository-owned manifests, validates the two supported kinds/modes, canonicalizes them, and calculates the study digest. It knows benchmark/slice ids and comparison invariants but not adapter launch or scoring semantics.
 
-**BFCL Live path.** `bfcl_study.py` verifies the exact ten Live files against the
-new catalog identity, then delegates generation/evaluation to
-`bfcl_native_adapter.py`. There is no materialized variant or output mapping. The
-new `bfcl-v4-live` row stays diagnostic; its official native scores are real, but
-the study report treats them as an unpaired distribution.
+**BFCL Live path.** `bfcl_study.py` verifies the exact ten Live files against the new catalog identity, then delegates generation/evaluation to `bfcl_native_adapter.py`. There is no materialized variant or output mapping. The new `bfcl-v4-live` row stays diagnostic; its official native scores are real, but the study report treats them as an unpaired distribution.
 
-**BFCL tool-order path.** The materializer reads the pinned canonical JSONL,
-rejects unsafe/noncanonical source files, and emits a run-owned replacement with
-only `function` list order changed for declared `multiple` and
-`parallel_multiple` rows. The algorithm uses source identity, transform version,
-and instance id to produce a balanced deterministic target position; it records
-the before/after tool-name order for every row. It copies the pinned BFCL package
-into an exclusive overlay, verifies all official code/config/scorer files are
-byte-identical, replaces only the declared data file, and launches the same
-official CLI from that overlay. It never rewrites output because function names
-and ground truth are unchanged.
+**BFCL tool-order path.** The materializer reads the pinned canonical JSONL, rejects unsafe/noncanonical source files, and emits a run-owned replacement with only `function` list order changed for declared `multiple` and `parallel_multiple` rows. The algorithm uses source identity, transform version, and instance id to produce a balanced deterministic target position; it records the before/after tool-name order for every row. It copies the pinned BFCL package into an exclusive overlay, verifies all official code/config/scorer files are byte-identical, replaces only the declared data file, and launches the same official CLI from that overlay. It never rewrites output because function names and ground truth are unchanged.
 
-**Exposure report.** `exposure_report.py` parses evidence through the existing
-model, applies normal attempt eligibility, verifies manifest and immutable axes,
-then selects exactly one mode:
+**Exposure report.** `exposure_report.py` parses evidence through the existing model, applies normal attempt eligibility, verifies manifest and immutable axes, then selects exactly one mode:
 
-- `stratified_unpaired`: BFCL non-live versus Live; report native category counts,
-  rates/intervals, raw delta, and distribution/freshness caveats;
-- `paired_by_source_instance`: canonical versus tool order; require one eligible
-  row per source id on both sides, then report both native rates, paired delta,
-  canonical-only passes, candidate-only passes, concordant outcomes, and the
-  preselected uncertainty result.
+- `stratified_unpaired`: BFCL non-live versus Live; report native category counts, rates/intervals, raw delta, and distribution/freshness caveats;
+- `paired_by_source_instance`: canonical versus tool order; require one eligible row per source id on both sides, then report both native rates, paired delta, canonical-only passes, candidate-only passes, concordant outcomes, and the preselected uncertainty result.
 
-No result is silently dropped. Invalid/infra rows remain in exclusions and may
-invalidate the study if the declared population is no longer comparable. The
-report owns interpretation, not native scoring or registration.
+No result is silently dropped. Invalid/infra rows remain in exclusions and may invalidate the study if the declared population is no longer comparable. The report owns interpretation, not native scoring or registration.
 
 ### 22.5 Data, identity, and retention
 
-- **Study YAML:** version-controlled intent under `config/studies/`; closed schema,
-  safe ids, no executable code, no secrets. Canonical digest is retained with
-  each report/proof.
-- **Catalog identities:** `bfcl-v4-live` binds the ten exact upstream/wheel files.
-  `bfcl-v4-tool-order-v1` binds the source BFCL identity, transform version,
-  study digest, and derived-file digest. Neither is `executable: true`.
-- **Variant manifest:** immutable JSON under the run's `artifacts/study/`; includes
-  source/derived row mapping, order mapping, digests, and producer/scorer hashes.
-- **Effective access artifact:** retained official task/compose/config digest or
-  explicit known-uncontrolled declaration. Secret-bearing proxy/env bytes are
-  never copied; only non-secret effective identity is stored.
-- **Evidence:** additive access fields; canonical and candidate rows retain their
-  own benchmark versions/native scores. The study does not create synthetic
-  attempt rows.
-- **Report:** deterministic JSON is the machine-readable authority; Markdown/UI
-  are projections. Exclusive output and no-partial-file rules match current
-  compare/report operations.
-- **Private proof:** study, variant, source/derived, and safe access artifacts are
-  evidence-referenced beneath `artifacts/study/`, so the existing generic
-  `artifact` role retains them without changing `private_proof_v1`. Permanent
-  local retention and no-delete policy remain unchanged.
+- **Study YAML:** version-controlled intent under `config/studies/`; closed schema, safe ids, no executable code, no secrets. Canonical digest is retained with each report/proof.
+- **Catalog identities:** `bfcl-v4-live` binds the ten exact upstream/wheel files. `bfcl-v4-tool-order-v1` binds the source BFCL identity, transform version, study digest, and derived-file digest. Neither is `executable: true`.
+- **Variant manifest:** immutable JSON under the run's `artifacts/study/`; includes source/derived row mapping, order mapping, digests, and producer/scorer hashes.
+- **Effective access artifact:** retained official task/compose/config digest or explicit known-uncontrolled declaration. Secret-bearing proxy/env bytes are never copied; only non-secret effective identity is stored.
+- **Evidence:** additive access fields; canonical and candidate rows retain their own benchmark versions/native scores. The study does not create synthetic attempt rows.
+- **Report:** deterministic JSON is the machine-readable authority; Markdown/UI are projections. Exclusive output and no-partial-file rules match current compare/report operations.
+- **Run proofs:** study, variant, source/derived, and safe access artifacts are evidence-referenced beneath `artifacts/study/`, so the existing generic `artifact` role retains them without changing `private_proof_v1`.
+- **Study lock:** proof-backed report mode writes a separate `exposure-study-lock-v1` manifest beside the deterministic report. It records the canonical proof ID, candidate proof ID, study digest, exact evidence input selectors and digests, report contract version, and report JSON digest. The manifest digest is computed over its canonical bytes. Verification loads both immutable run proofs by id, checks every bound input, and reproduces the report digest. Keeping the lock outside both proof inventories avoids circular proof ids; it does not change `private_proof_v1`, add a study bundle, or add a new store/index. The portable unit is the lock plus the two named proof objects. Permanent local retention and no-delete policy remain unchanged.
 
-Study/config evolution is additive while schema `0.1` is current. Changing
-transform logic, balancing, source identity, or population creates a new study or
-transform version; it never rewrites a finalized manifest or proof. Corrupt or
-missing study artifacts invalidate only the exposure interpretation, while the
-underlying native evidence remains readable under its existing rules.
+Study/config evolution is additive while schema `0.1` is current. Changing transform logic, balancing, source identity, or population creates a new study or transform version; it never rewrites a finalized manifest or proof. Corrupt or missing study artifacts invalidate only the exposure interpretation, while the underlying native evidence remains readable under its existing rules.
 
 ### 22.6 Interfaces and compatibility
 
@@ -1043,6 +904,19 @@ bencheval study report <study-yaml> \
   [--output <exclusive-path>]
 ```
 
+For copied-proof reproduction, the same report command accepts a mutually exclusive proof-backed input pair:
+
+```text
+bencheval study report <study-yaml> \
+  --canonical-proof <private-proof-root> \
+  --candidate-proof <private-proof-root> \
+  --format json|markdown \
+  --output <exclusive-path> \
+  --lock-output <exclusive-path>
+```
+
+Both proof objects are verified before their owned evidence is loaded. The lock output is required in proof-backed mode and is rejected if either proof id, selected evidence digest, study digest, report contract version, or report JSON digest does not match. Raw evidence-path mode remains useful for pre-proof local diagnostics but cannot make a portable-study claim.
+
 Actual execution deliberately reuses the existing entry point:
 
 ```text
@@ -1050,118 +924,60 @@ bencheval run bfcl-v4-live/<slice> --model <id> --provider <id> --diagnostic
 bencheval run bfcl-v4-tool-order-v1/<slice> --model <id> --provider <id> --diagnostic
 ```
 
-There is no `study run`, automatic paired launcher, background scheduler, or
-reference-model panel in the first release. Operators choose and confirm each
-charged run normally. The report command is read-only unless writing an exclusive
-output file; all validation errors are `BenchEvalError`, produce no partial
-output, and return nonzero through the CLI.
+There is no `study run`, automatic paired launcher, background scheduler, or reference-model panel in the first release. Operators choose and confirm each charged run normally. The report command is read-only unless writing an exclusive output file; all validation errors are `BenchEvalError`, produce no partial output, and return nonzero through the CLI.
 
-The existing `run`, `compare`, `report`, proof, and evidence schemas remain
-compatible. `EvidenceRecord` additions are optional. Existing compare continues
-to require identical benchmark/slice identities and is not reused for cross-
-population exposure semantics. The console later adds an Exposure section to the
-existing Compare page through `application.operations`; it does not parse CLI
-output or gain page-local rules.
+The existing `run`, `compare`, `report`, proof, and evidence schemas remain compatible. `EvidenceRecord` additions are optional. Existing compare continues to require identical benchmark/slice identities and is not reused for cross-population exposure semantics. The console later adds an Exposure section to the existing Compare page through `application.operations`; it does not parse CLI output or gain page-local rules.
 
 ### 22.7 Operations and fitness gates
 
-The exposure extension uses the existing `bfcl` dependency group, provider
-credentials, run roots, wall/cost budgets, private proofs, and dev-box runbook.
-No new daemon, port, external store, dependency group, or secret is introduced.
-The first operations sequence is:
+The exposure extension uses the existing `bfcl` dependency group, provider credentials, run roots, wall/cost budgets, private proofs, and dev-box runbook. No new daemon, port, external store, dependency group, or secret is introduced. The first operations sequence is:
 
 1. exact wheel/upstream data and CLI compatibility probe without provider charge;
-2. exact run-owned overlay/import and installed-tree immutability probe without a
-   model call;
+2. exact run-owned overlay/import and installed-tree immutability probe without a model call;
 3. tiny Live and tool-order runs marked `plumbing_only`;
 4. reviewed population/precision/cost decision;
 5. charged research populations and private proofs;
 6. deterministic report verification on a copied proof/root;
-7. only then decide whether the capability is useful enough for broader UI or a
-   second transform family.
+7. only then decide whether the capability is useful enough for broader UI or a second transform family.
 
 Fitness gates are AR-24–AR-32 and QS-20–QS-27. In addition:
 
 - `make check-production-v1` must stay green for software changes;
-- exact upstream/wheel/overlay hashes and official CLI results are real acceptance
-  evidence; injected runners or synthetic benchmark rows are diagnostic only;
+- exact upstream/wheel/overlay hashes and official CLI results are real acceptance evidence; injected runners or synthetic benchmark rows are diagnostic only;
 - the Live report cannot claim pairing or contamination;
-- the tool-order report cannot claim contamination, novelty, or statistical
-  significance until its declared population/analysis gate passes;
-- a copied private proof must reproduce report validation without the source
-  checkout or mutable installed overlay;
+- the tool-order report cannot claim contamination, novelty, or statistical significance until its declared population/analysis gate passes;
+- a copied `exposure-study-lock-v1` manifest plus both named private proofs must reproduce report validation without the source checkout or mutable installed overlay;
 - a retrieval audit is not a release dependency for model-only BFCL studies.
 
 ### 22.8 Architecture decisions
 
-- **ADR-EX-01 — ACCEPTED:** measure benchmark-specific dependence/exposure
-  sensitivity, not model cleanliness, provider intent, or a decontaminated score.
-- **ADR-EX-02 — ACCEPTED:** do not patch/fork official runtime, harness, or scorer
-  and do not build a BenchEval egress allow-list. Official knobs may be selected
-  and evidenced.
-- **ADR-EX-03 — PROPOSED:** retain `network_policy` as intent and add orthogonal
-  effective-access/retrieval fields to evidence. Consequence: historical rows are
-  unknown rather than reconstructed.
-- **ADR-EX-04 — PROPOSED:** use a manifest-driven read-only study layer over
-  ordinary runs instead of orchestration or a replacement score.
-- **ADR-EX-05 — SPIKE_REQUIRED:** add `bfcl-v4-live` only after exact wheel/CLI
-  verification; add tool order only after the run-owned overlay proves official
-  code/scorer identity and installed-tree immutability.
-- **ADR-EX-06 — ACCEPTED:** relation class and behavioral fidelity are separate;
-  choice/tool order is representation-equivalent even when model behavior changes.
-- **ADR-EX-07 — ACCEPTED:** BFCL Live precedes a balanced tool-order pair;
-  MATH()/DyVal and controlled training remain deferred for the frontier-first
-  product.
-- **ADR-EX-08 — ACCEPTED:** no generic transform abstraction before a second
-  family and an informative first study create demonstrated reuse pressure.
+- **ADR-EX-01 — ACCEPTED:** measure benchmark-specific dependence/exposure sensitivity, not model cleanliness, provider intent, or a decontaminated score.
+- **ADR-EX-02 — ACCEPTED:** do not patch/fork official runtime, harness, or scorer and do not build a BenchEval egress allow-list. Official knobs may be selected and evidenced.
+- **ADR-EX-03 — PROPOSED:** retain `network_policy` as intent and add orthogonal effective-access/retrieval fields to evidence. Consequence: historical rows are unknown rather than reconstructed.
+- **ADR-EX-04 — PROPOSED:** use a manifest-driven read-only study layer over ordinary runs instead of orchestration or a replacement score.
+- **ADR-EX-05 — SPIKE_REQUIRED:** add `bfcl-v4-live` only after exact wheel/CLI verification; add tool order only after the run-owned overlay proves official code/scorer identity and installed-tree immutability.
+- **ADR-EX-06 — ACCEPTED:** relation class and behavioral fidelity are separate; choice/tool order is representation-equivalent even when model behavior changes.
+- **ADR-EX-07 — ACCEPTED:** BFCL Live precedes a balanced tool-order pair; MATH()/DyVal and controlled training remain deferred for the frontier-first product.
+- **ADR-EX-08 — ACCEPTED:** no generic transform abstraction before a second family and an informative first study create demonstrated reuse pressure.
 
 ### 22.9 Risks, intentional debt, and revisit triggers
 
-- **Live distribution confounding:** a large BFCL Live gap may reflect freshness,
-  difficulty, language, or category mix. Mitigation: stratify and retain native
-  population facts; never estimate contamination from the raw gap. Revisit if a
-  matched Live/non-live subset becomes officially available.
-- **Order transform confounding:** a gap may be general position bias rather than
-  item memorization. Mitigation: balanced positions, paired flips, and explicit
-  dependence wording. Revisit with a second representation transform only after
-  the first result is informative.
-- **Provider variance:** one canonical and one variant pass can differ randomly.
-  Mitigation: run-variance/precision spike before inferential claims; do not begin
-  with several arbitrary seeds.
-- **Overlay complexity:** copying a heavy package may cost disk/time or interact
-  with imports. Mitigation: E0 measures it; reject the transform rather than patch
-  upstream if a byte-identical isolated overlay is not reliable.
-- **Access evidence overclaim:** official configuration may not prove every
-  network path. Mitigation: closed proof requirements and conservative unknown/
-  uncontrolled values. Revisit when an official runner exposes stronger
-  introspection.
-- **Retrieval audit unreliability:** LLM judges can miss or hallucinate evidence.
-  It remains deferred/diagnostic. Revisit only with real transcripts and a
-  reviewed protocol.
-- **Intentional BFCL specificity:** two small modules/manifests may duplicate
-  future work. This is cheaper than premature plugins; refactor only when a
-  second family passes equivalent identity/fidelity/official-scorer gates.
+- **Live distribution confounding:** a large BFCL Live gap may reflect freshness, difficulty, language, or category mix. Mitigation: stratify and retain native population facts; never estimate contamination from the raw gap. Revisit if a matched Live/non-live subset becomes officially available.
+- **Order transform confounding:** a gap may be general position bias rather than item memorization. Mitigation: balanced positions, paired flips, and explicit dependence wording. Revisit with a second representation transform only after the first result is informative.
+- **Provider variance:** one canonical and one variant pass can differ randomly. Mitigation: run-variance/precision spike before inferential claims; do not begin with several arbitrary seeds.
+- **Overlay complexity:** copying a heavy package may cost disk/time or interact with imports. Mitigation: E0 measures it; reject the transform rather than patch upstream if a byte-identical isolated overlay is not reliable.
+- **Access evidence overclaim:** official configuration may not prove every network path. Mitigation: closed proof requirements and conservative unknown/uncontrolled values. Revisit when an official runner exposes stronger introspection.
+- **Retrieval audit unreliability:** LLM judges can miss or hallucinate evidence. It remains deferred/diagnostic. Revisit only with real transcripts and a reviewed protocol.
+- **Intentional BFCL specificity:** two small modules/manifests may duplicate future work. This is cheaper than premature plugins; refactor only when a second family passes equivalent identity/fidelity/official-scorer gates.
 
 ### 22.10 Implementation guardrails
 
-- Never change a runtime, official BFCL Python/config/scorer byte, provider
-  prompt/tool behavior, or installed package in place for an exposure study.
-- Never derive effective access from `network_policy`, `requires_sandbox`, a
-  benchmark name, or lack of observed retrieval.
-- Keep transform materialization in `bfcl_study.py`; keep native scoring in
-  `bfcl_native_adapter.py`; keep analysis in `exposure_report.py`.
-- Keep study YAML declarative and closed. No Python entry points, templates that
-  execute code, generic transform names, or arbitrary file paths from config.
-- A new transform algorithm, source population, or balancing rule gets a new
-  immutable identity/version; finalized proof bytes are never rewritten.
-- Tests must discriminate missing/asymmetric populations, axis/access drift,
-  package mutation, symlink/hardlink/path swaps, scorer-byte drift, smoke
-  overclaim, and positive retrieval-audit interpretation.
-- Test substitutes may verify deterministic local failure handling only and carry
-  the repository-required justification; they cannot prove BFCL, access controls,
-  provider behavior, exposure results, or readiness.
-- Do not expose the new report in the UI until CLI/domain contracts and copied-
-  proof verification pass. UI remains a projection and cannot loosen claims.
-- Do not add a third-party statistics, transformation, sandbox, or training
-  dependency without a new architecture review and evidence that the standard
-  library/current stack is insufficient.
+- Never change a runtime, official BFCL Python/config/scorer byte, provider prompt/tool behavior, or installed package in place for an exposure study.
+- Never derive effective access from `network_policy`, `requires_sandbox`, a benchmark name, or lack of observed retrieval.
+- Keep transform materialization in `bfcl_study.py`; keep native scoring in `bfcl_native_adapter.py`; keep analysis in `exposure_report.py`.
+- Keep study YAML declarative and closed. No Python entry points, templates that execute code, generic transform names, or arbitrary file paths from config.
+- A new transform algorithm, source population, or balancing rule gets a new immutable identity/version; finalized proof bytes are never rewritten.
+- Tests must discriminate missing/asymmetric populations, axis/access drift, package mutation, symlink/hardlink/path swaps, scorer-byte drift, smoke overclaim, and positive retrieval-audit interpretation.
+- Test substitutes may verify deterministic local failure handling only and carry the repository-required justification; they cannot prove BFCL, access controls, provider behavior, exposure results, or readiness.
+- Do not expose the new report in the UI until CLI/domain contracts and copied-proof verification pass. UI remains a projection and cannot loosen claims.
+- Do not add a third-party statistics, transformation, sandbox, or training dependency without a new architecture review and evidence that the standard library/current stack is insufficient.

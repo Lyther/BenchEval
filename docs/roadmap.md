@@ -46,13 +46,7 @@ Runtime XOR admitted agent. Omit both for model-only (GPQA, HLE, BFCL). Unknown 
 
 ### Current product priority
 
-The current control plane, private proof, and local console are sufficient to
-start the product's differentiating exposure work. Execute the new `X0–X5`
-program after the completed `R` tracks. `U3`/`U4` console hardening remains valid
-but is not a dependency for CLI-first exposure studies and is not the current
-priority. BFCL Live and tool-order identities remain diagnostic and do not change
-the **8 catalog / 4 executable** current-state claim until their own roadmap step
-explicitly adds demoted catalog rows.
+The current control plane, private proof, and local console are sufficient to start the product's differentiating exposure work. Execute the new `X0–X5` program after the completed `R` tracks. `U3`/`U4` console hardening remains valid but is not a dependency for CLI-first exposure studies and is not the current priority. BFCL Live and tool-order identities remain diagnostic and do not change the **8 catalog / 4 executable** current-state claim until their own roadmap step explicitly adds demoted catalog rows.
 
 ## Executable roadmap
 
@@ -161,416 +155,220 @@ Merge order: Peer A and Peer B are independent; Peer C may transfer existing pro
 
 ## Benchmark exposure roadmap (PROPOSED; current priority)
 
-**Objective:** add the smallest evidence-bound capability that can show whether a
-canonical BFCL score transfers to fresher or representation-equivalent data,
-without changing official runtime/scorer behavior or claiming to prove training
-contamination.
+**Objective:** add the smallest evidence-bound capability that can show whether a canonical BFCL score transfers to fresher or representation-equivalent data, without changing official runtime/scorer behavior or claiming to prove training contamination.
 
-**Program exit gate:** exact pinned BFCL Live and one balanced tool-order study
-have real official-score/private-proof evidence; reports validate their declared
-populations and access/verifier axes; smoke is labelled plumbing-only; no clean,
-cheating, novelty, direct-contamination, or universal adjusted-score claim is
-emitted. Completion of this program does not admit either diagnostic benchmark,
-advance Tier-2, or complete U3/U4.
+**Program exit gate:** exact pinned BFCL Live and one balanced tool-order study have real official-score/private-proof evidence; reports validate their declared populations and access/verifier axes; smoke is labelled plumbing-only; no clean, cheating, novelty, direct-contamination, or universal adjusted-score claim is emitted. Completion of this program does not admit either diagnostic benchmark, advance Tier-2, or complete U3/U4.
 
 ### X0 — Decision closure and executable spikes
 
-**Objective:** falsify the two BFCL integration assumptions and close the access/
-statistics contract before production modules or charged populations are built.
+**Objective:** falsify the two BFCL integration assumptions and close the access/statistics contract before production modules or charged populations are built.
 
-**Exit gate:** exact wheel/Live identity, official category loading, run-owned
-overlay viability, effective-access mapping, and the initial frontier population
-decision are proven or the dependent work is explicitly removed. No HITL is
-expected; pause only under the existing literal login/admin boundary.
+**Exit gate:** exact wheel/Live identity, official category loading, run-owned overlay viability, effective-access mapping, and the initial frontier population decision are proven or the dependent work is explicitly removed. No HITL is expected; pause only under the existing literal login/admin boundary.
 
 - [ ] `X0.1` Verify BFCL Live wheel identity and official category loading
-  - Why now: the upstream commit has ten Live files, but BenchEval runs the PyPI
-    `bfcl-eval==2026.3.23` wheel and must bind the bytes it actually executes.
-  - Files: no production edits; retain the probe under the gitignored research/
-    run artifacts and record final pins in `config/benchmarks.yaml` only in X2.1.
-  - Scope: on dev-box, install/sync the existing `bfcl` group; compare the six
-    question and four answer files with `gorilla@6ea57973…`; use the real package
-    category parser/loader for every `live_*` category; verify supported-model
-    resolution and official generate/evaluate command shapes without a provider
-    call. Do not mutate site-packages or invent missing files.
+  - Why now: the upstream commit has ten Live files, but BenchEval runs the PyPI `bfcl-eval==2026.3.23` wheel and must bind the bytes it actually executes.
+  - Files: no production edits; retain the probe under the gitignored research/run artifacts and record final pins in `config/benchmarks.yaml` only in X2.1.
+  - Scope: on dev-box, install/sync the existing `bfcl` group; compare the six question and four answer files with `gorilla@6ea57973…`; use the real package category parser/loader for every `live_*` category; verify supported-model resolution and official generate/evaluate command shapes without a provider call. Do not mutate site-packages or invent missing files.
   - Dependencies: none.
-  - Acceptance evidence: exact path/size/SHA-256 ledger for ten files; captured
-    package/upstream versions; real loader accepts six categories; any mismatch
-    fails before identity or launch.
-  - If it fails: keep BFCL Live research-only outside the product and stop X2;
-    do not patch or fork BFCL.
+  - Acceptance evidence: exact path/size/SHA-256 ledger for ten files; captured package/upstream versions; real loader accepts six categories; any mismatch fails before identity or launch.
+  - If it fails: keep BFCL Live research-only outside the product and stop X2; do not patch or fork BFCL.
 
 - [ ] `X0.2` Prove the run-scoped BFCL overlay route
-  - Why now: pinned BFCL has no arbitrary dataset-path option, so tool order is
-    viable only if an isolated data overlay can load without changing code/scorer.
+  - Why now: pinned BFCL has no arbitrary dataset-path option, so tool order is viable only if an isolated data overlay can load without changing code/scorer.
   - Files: no production edits; disposable directory outside the checkout.
-  - Scope: copy the exact installed package to an exclusive temporary root,
-    change one declared `multiple` row's `function` order, invoke the real
-    package loader from that root, and prove all Python/config/scorer bytes plus
-    the installed package tree remain identical. Verify unchanged ground truth
-    resolves through the official evaluator. No model/provider call.
+  - Scope: copy the exact installed package to an exclusive temporary root, change one declared `multiple` row's `function` order, invoke the real package loader from that root, and prove all Python/config/scorer bytes plus the installed package tree remain identical. Verify unchanged ground truth resolves through the official evaluator. No model/provider call.
   - Dependencies: X0.1.
-  - Acceptance evidence: before/after producer/scorer digest sets match; only the
-    declared data digest changes; loader observes the new order; installed tree
-    digest is unchanged; symlink/hardlink/path replacement probes fail closed.
-  - If it fails: stop X3 and retain only the official Live study; do not monkeypatch
-    `PROMPT_PATH`, modify site-packages, or add a BFCL fork.
+  - Acceptance evidence: before/after producer/scorer digest sets match; only the declared data digest changes; loader observes the new order; installed tree digest is unchanged; symlink/hardlink/path replacement probes fail closed.
+  - If it fails: stop X3 and retain only the official Live study; do not monkeypatch `PROMPT_PATH`, modify site-packages, or add a BFCL fork.
 
 - [ ] `X0.3` Prove the effective-access evidence matrix
-  - Why now: `network_policy` currently means plan intent and demonstrably differs
-    from model-visible access across adapters.
+  - Why now: `network_policy` currently means plan intent and demonstrably differs from model-visible access across adapters.
   - Files: research output only; architecture §22 remains the decision source.
-  - Scope: inspect a real model-only plan, pinned Inspect SWE generated Docker
-    config with default `allow_internet=False`, and Harbor/TB command/preflight.
-    Establish exactly what artifact/config can support `not_applicable`,
-    `blocked`, and `uncontrolled` without running a custom network service.
+  - Scope: inspect a real model-only plan, pinned Inspect SWE generated Docker config with default `allow_internet=False`, and Harbor/TB command/preflight. Establish exactly what artifact/config can support `not_applicable`, `blocked`, and `uncontrolled` without running a custom network service.
   - Dependencies: none; may run with X0.1.
-  - Acceptance evidence: retained non-secret effective configs and a three-row
-    mapping that cannot be derived from `network_policy`; Harbor is never stamped
-    restricted; no runtime/harness bytes or behavior are changed.
-  - If it fails: use `unknown` for the affected path; do not add probes that alter
-    the model's tools or traffic.
+  - Acceptance evidence: retained non-secret effective configs and a three-row mapping that cannot be derived from `network_policy`; Harbor is never stamped restricted; no runtime/harness bytes or behavior are changed.
+  - If it fails: use `unknown` for the affected path; do not add probes that alter the model's tools or traffic.
 
 - [ ] `X0.4` Select the frontier study population and inference boundary
-  - Why now: smoke cannot support statistics and old math-style benchmarks may be
-    saturated for the actual target model pool.
-  - Files: `config/studies/` drafts and a concise measurement record; no report
-    implementation before the decision is reviewed.
-  - Scope: name the initial admitted provider/model, BFCL categories, canonical/
-    Live task counts, expected provider budget, deterministic order-permutation
-    coverage, repeated-run variance check, and the raw/interval/test output that
-    is allowed at smoke versus study scale. Reuse `stats.py` where sufficient;
-    add no dependency during the spike.
+  - Why now: smoke cannot support statistics and old math-style benchmarks may be saturated for the actual target model pool.
+  - Files: `config/studies/` drafts and a concise measurement record; no report implementation before the decision is reviewed.
+  - Scope: name the initial admitted provider/model, BFCL categories, canonical/Live task counts, expected provider budget, deterministic order-permutation coverage, repeated-run variance check, and the raw/interval/test output that is allowed at smoke versus study scale. Reuse `stats.py` where sufficient; add no dependency during the spike.
   - Dependencies: X0.1; the final tool-order portion depends on X0.2.
-  - Acceptance evidence: a reviewed population/precision/cost record with
-    `plumbing_only` thresholds, inferential minimums, and explicit forbidden
-    claims. If no affordable population has useful headroom, stop after the
-    compatibility evidence rather than shipping a low-information feature.
+  - Acceptance evidence: a reviewed population/precision/cost record with `plumbing_only` thresholds, inferential minimums, and explicit forbidden claims. If no affordable population has useful headroom, stop after the compatibility evidence rather than shipping a low-information feature.
 
 ### X1 — Additive evidence and study contracts
 
-**Objective:** introduce the reusable minimum—effective-access evidence, closed
-study manifests, deterministic identities, and fail-closed report validation—
-without launching a derived benchmark.
+**Objective:** introduce the reusable minimum—effective-access evidence, closed study manifests, deterministic identities, and fail-closed report validation—without launching a derived benchmark.
 
-**Exit gate:** old evidence/proofs remain valid; the new manifests and report
-boundary reject every unsupported interpretation and population drift; no new
-benchmark row can register `passed`.
+**Exit gate:** old evidence/proofs remain valid; the new manifests and report boundary reject every unsupported interpretation and population drift; no new benchmark row can register `passed`.
 
 - [ ] `X1.1` Write discriminating RED contracts for access evidence
-  - Files: `tests/specs/test_effective_access_contracts.py`, adjacent evidence/
-    adapter tests.
-  - Scope: require independent requested/effective values; model-only
-    `not_applicable`; retained official Inspect blocked state; Harbor
-    uncontrolled; historical null compatibility; no stamp from
-    `network_policy`; retrieval-audit values do not change native scoring.
+  - Files: `tests/specs/test_effective_access_contracts.py`, adjacent evidence/adapter tests.
+  - Scope: require independent requested/effective values; model-only `not_applicable`; retained official Inspect blocked state; Harbor uncontrolled; historical null compatibility; no stamp from `network_policy`; retrieval-audit values do not change native scoring.
   - Dependencies: X0.3.
-  - Acceptance evidence: tests fail on the current code for each intended reason
-    before implementation. Any required substitute carries the repository's full
-    justification and remains diagnostic.
+  - Acceptance evidence: tests fail on the current code for each intended reason before implementation. Any required substitute carries the repository's full justification and remains diagnostic.
 
 - [ ] `X1.2` Implement effective-access capture
-  - Files: `src/bencheval/domain.py`, `evidence.py`, new
-    `access_evidence.py`, concrete capture sites in model-only/SWE/Harbor paths,
-    report/export projections, and tests from X1.1.
-  - Scope: add the four optional closed fields in architecture §7.5; constructors
-    accept concrete retained launch facts only; preserve all legacy parsing and
-    `network_policy` behavior. Never add enforcement, probes, proxy policy, or
-    secret config bytes.
+  - Files: `src/bencheval/domain.py`, `evidence.py`, new `access_evidence.py`, concrete capture sites in model-only/SWE/Harbor paths, report/export projections, and tests from X1.1.
+  - Scope: add the four optional closed fields in architecture §7.5; constructors accept concrete retained launch facts only; preserve all legacy parsing and `network_policy` behavior. Never add enforcement, probes, proxy policy, or secret config bytes.
   - Dependencies: X1.1.
-  - Acceptance evidence: RED→GREEN; real effective configs from X0.3 serialize
-    correctly; v0.2/v0.3 fixtures and historical proofs still verify; public
-    exports reveal no private access/transcript data.
+  - Acceptance evidence: RED→GREEN; real effective configs from X0.3 serialize correctly; v0.2/v0.3 fixtures and historical proofs still verify; public exports reveal no private access/transcript data.
 
 - [ ] `X1.3` Write RED study-manifest and identity contracts
   - Files: `tests/specs/test_exposure_study_contracts.py`.
-  - Scope: closed `freshness_contrast`/`representation_pair`, stable relation
-    classes, paired/unpaired mode compatibility, safe ids, canonical digest,
-    required constant axes, forbidden claims, exact source mapping, derived BFCL
-    identity, and rejection of arbitrary transform/plugin/path fields.
+  - Scope: closed `freshness_contrast`/`representation_pair`, stable relation classes, paired/unpaired mode compatibility, safe ids, canonical digest, required constant axes, forbidden claims, exact source mapping, derived BFCL identity, and rejection of arbitrary transform/plugin/path fields.
   - Dependencies: X0.1/X0.2 decisions.
-  - Acceptance evidence: malformed/ambiguous manifests, same identity on both
-    roles, Live-as-paired, tool-order-as-unpaired, unsafe paths, and transform
-    drift all fail for the intended reason.
+  - Acceptance evidence: malformed/ambiguous manifests, same identity on both roles, Live-as-paired, tool-order-as-unpaired, unsafe paths, and transform drift all fail for the intended reason.
 
 - [ ] `X1.4` Implement the closed study registry and identity spine
-  - Files: new `src/bencheval/exposure_study.py`,
-    `benchmark_registry.py`, `identity_strings.py`, `paths.py`, package-data
-    entries in `pyproject.toml`, initial `config/studies/*.yaml`, and X1.3 tests.
-  - Scope: load/canonicalize/hash declarative study YAML and add the single BFCL
-    derived-data identity type. Do not add launch orchestration, generic transform
-    entry points, Python callbacks, or candidate benchmark rows yet.
+  - Files: new `src/bencheval/exposure_study.py`, `benchmark_registry.py`, `identity_strings.py`, `paths.py`, package-data entries in `pyproject.toml`, initial `config/studies/*.yaml`, and X1.3 tests.
+  - Scope: load/canonicalize/hash declarative study YAML and add the single BFCL derived-data identity type. Do not add launch orchestration, generic transform entry points, Python callbacks, or candidate benchmark rows yet.
   - Dependencies: X1.3.
-  - Acceptance evidence: RED→GREEN; source/build wheel contains and validates the
-    manifests; clean core import remains dependency-light; identity changes on
-    any source/transform/population change.
+  - Acceptance evidence: RED→GREEN; source/build wheel contains and validates the manifests; clean core import remains dependency-light; identity changes on any source/transform/population change.
 
 - [ ] `X1.5` Establish read-only report validity and CLI shell
-  - Files: new `src/bencheval/exposure_report.py`, `cli.py`, `stats.py` only if
-    X0.4 earns a helper, and `tests/specs/test_exposure_study_contracts.py`.
-  - Scope: add `bencheval study validate|report`; validate evidence, eligibility,
-    identities, constant axes, access, verifier, and population before output.
-    Implement deterministic JSON plus Markdown projection and raw-only smoke
-    mode. Do not add `study run`, reference correction, UI, or automatic seeds.
+  - Files: new `src/bencheval/exposure_report.py`, `cli.py`, `stats.py` only if X0.4 earns a helper, and `tests/specs/test_exposure_study_contracts.py`.
+  - Scope: add `bencheval study validate|report`; validate evidence, eligibility, identities, constant axes, access, verifier, and population before output. Implement deterministic JSON plus Markdown projection and raw-only smoke mode. Proof-backed report mode also writes an `exposure-study-lock-v1` manifest beside the report, binding both input proof ids, the study digest, selected evidence inputs, report contract version, and report JSON digest. Do not add `study run`, reference correction, UI, or automatic seeds.
   - Dependencies: X1.2, X1.4, X0.4.
-  - Acceptance evidence: current valid evidence can be loaded; incomplete,
-    asymmetric, drifted, infra-contaminated, or overclaiming studies exit nonzero
-    and leave no partial output; smoke output contains no inferential language.
+  - Acceptance evidence: current valid evidence can be loaded; incomplete, asymmetric, drifted, infra-contaminated, or overclaiming studies exit nonzero and leave no partial output; smoke output contains no inferential language; proof-backed mode rejects either mismatched proof or any changed lock/report input and reproduces the locked report digest from copied proof objects.
 
-- [ ] `X1.6` Retain study artifacts without changing proof format
+- [ ] `X1.6` Retain study artifacts without changing the run-proof format
   - Files: `proof_bundle.py`, run-bundle/public-redaction paths, proof tests.
-  - Scope: make study/variant/source/derived/safe access files ordinary
-    evidence-referenced artifacts beneath `artifacts/study/`; retain the existing
-    `private_proof_v1` `artifact` role and required-role set. Private retrieval
-    transcripts stay private; public outputs sanitize or omit them.
+  - Scope: make study/variant/source/derived/safe access files ordinary evidence-referenced artifacts beneath `artifacts/study/`; retain the existing `private_proof_v1` `artifact` role and required-role set. Do not embed the separate two-proof lock in either run proof or add a proof store/index. Private retrieval transcripts stay private; public outputs sanitize or omit them.
   - Dependencies: X1.2, X1.4.
-  - Acceptance evidence: source-checkout-removed verify/import succeeds; missing,
-    extra, symlink, hardlink, outside-root, or digest-changed study artifacts fail;
-    historical private proofs still verify with no migration.
+  - Acceptance evidence: source-checkout-removed verify/import succeeds; missing, extra, symlink, hardlink, outside-root, or digest-changed study artifacts fail; historical private proofs still verify with no migration.
 
 ### X2 — BFCL Live freshness/generalization vertical slice
 
-**Objective:** produce the first real exposure-adjacent evidence entirely through
-official BFCL data, code, scorer, and current provider path.
+**Objective:** produce the first real exposure-adjacent evidence entirely through official BFCL data, code, scorer, and current provider path.
 
-**Exit gate:** a distinct BFCL Live diagnostic identity produces official scores
-and private proof; the validated report is explicitly stratified/unpaired and
-contains no contamination estimate or admission claim.
+**Exit gate:** a distinct BFCL Live diagnostic identity produces official scores and private proof; the validated report is explicitly stratified/unpaired and contains no contamination estimate or admission claim.
 
 - [ ] `X2.1` Add the BFCL Live diagnostic identity and slices
-  - Files: `config/benchmarks.yaml`, `config/slices/bfcl-v4-live-*.yaml`,
-    `config/studies/bfcl-v4-live-vs-non-live.yaml`, packaging config, catalog/
-    identity tests, docs/ops BFCL page.
-  - Scope: add `bfcl-v4-live` as `executable: false`, adapter-bound and diagnostic-
-    capable; pin exactly the six Live question and four answer files verified in
-    X0.1; define a tiny plumbing slice and the X0.4 study population separately.
-    Do not modify or replace the admitted `bfcl-v4` identity/status.
+  - Files: `config/benchmarks.yaml`, `config/slices/bfcl-v4-live-*.yaml`, `config/studies/bfcl-v4-live-vs-non-live.yaml`, packaging config, catalog/identity tests, docs/ops BFCL page.
+  - Scope: add `bfcl-v4-live` as `executable: false`, adapter-bound and diagnostic-capable; pin exactly the six Live question and four answer files verified in X0.1; define a tiny plumbing slice and the X0.4 study population separately. Do not modify or replace the admitted `bfcl-v4` identity/status.
   - Dependencies: X0.1, X1.4.
-  - Acceptance evidence: catalog/packaged-config parity; identity fails on any
-    missing/drifted Live byte; current executable count remains four; ordinary run
-    rejects while explicit diagnostic planning succeeds.
+  - Acceptance evidence: catalog/packaged-config parity; identity fails on any missing/drifted Live byte; current executable count remains four; ordinary run rejects while explicit diagnostic planning succeeds.
 
 - [ ] `X2.2` Wire official Live generation/evaluation without a second scorer
-  - Files: `bfcl_native_adapter.py`, `control_plane_executor.py`,
-    `doctor.py`, `access_evidence.py`, BFCL tests.
-  - Scope: parameterize the current BFCL lifecycle by the catalog identity/
-    category; preserve supported-model gate, cumulative deadline, run-owned
-    results/scores, official JSONL parser, producer identity, model-only access
-    state, and diagnostic registration veto. Do not copy or reinterpret score
-    values in a study module.
+  - Files: `bfcl_native_adapter.py`, `control_plane_executor.py`, `doctor.py`, `access_evidence.py`, BFCL tests.
+  - Scope: parameterize the current BFCL lifecycle by the catalog identity/category; preserve supported-model gate, cumulative deadline, run-owned results/scores, official JSONL parser, producer identity, model-only access state, and diagnostic registration veto. Do not copy or reinterpret score values in a study module.
   - Dependencies: X2.1, X1.2.
-  - Acceptance evidence: official CLI command contains only verified Live
-    categories; wrong solution remains eligible native evidence; local verdict/
-    stdout cannot pass; injected-runner tests are diagnostic only.
+  - Acceptance evidence: official CLI command contains only verified Live categories; wrong solution remains eligible native evidence; local verdict/stdout cannot pass; injected-runner tests are diagnostic only.
 
 - [ ] `X2.3` Run and preserve the real Live plumbing slice
-  - Files: no source edits except factual runbook/ledger updates after evidence;
-    results/proofs remain gitignored/local.
-  - Scope: on dev-box, re-probe BFCL group/provider/model support, execute the tiny
-    explicit diagnostic, retain official score bytes and ten-file identity, export
-    and verify/import private proof, and run the study report in raw-only mode.
-  - Dependencies: X2.2 and green production gate.
-  - Acceptance evidence: real provider + official generate→evaluate; diagnostic
-    row cannot register `passed`; proof verifies after copy; report says
-    `plumbing_only`, unpaired, and no contamination/significance claim.
-  - Human boundary: pause only if provider/runtime presents literal device/
-    subscription/CAPTCHA/hardware/admin interaction. Missing packages or ordinary
-    credentials are operational work, not automatic HITL.
+  - Files: no source edits except factual runbook/ledger updates after evidence; results/proofs remain gitignored/local.
+  - Scope: on dev-box, re-probe BFCL group/provider/model support, execute the tiny explicit diagnostic, retain official score bytes and ten-file identity, export and verify/import private proof, and run the study report in raw-only mode.
+  - Dependencies: X2.2, X1.5, X1.6, and green production gate.
+  - Acceptance evidence: real provider + official generate→evaluate; diagnostic row cannot register `passed`; proof verifies after copy; report says `plumbing_only`, unpaired, and no contamination/significance claim.
+  - Human boundary: pause only if provider/runtime presents literal device/ subscription/CAPTCHA/hardware/admin interaction. Missing packages or ordinary credentials are operational work, not automatic HITL.
 
 - [ ] `X2.4` Run the reviewed BFCL non-live/Live study population
-  - Files: study config/ops docs only if X0.4's reviewed population changes;
-    immutable run/proof artifacts stay local.
-  - Scope: run canonical and Live categories with the same model/provider/
-    sampling/harness version and declared budgets; preserve every native row and
-    exclusion; produce deterministic JSON/Markdown and copied-proof verification.
+  - Files: study config/ops docs only if X0.4's reviewed population changes; immutable run/proof artifacts stay local.
+  - Scope: run canonical and Live categories with the same model/provider/sampling/harness version and declared budgets; preserve every native row and exclusion; produce deterministic JSON/Markdown and copied-proof verification.
   - Dependencies: X2.3, X0.4.
-  - Acceptance evidence: declared task counts/strata and constant axes validate;
-    report gives native rates/intervals and a freshness/generalization caveat;
-    independent review confirms it does not present a paired or contamination
-    estimate. If the result has no useful headroom or costs exceed the plan, stop
-    before X3 rather than forcing a variant feature.
+  - Acceptance evidence: declared task counts/strata and constant axes validate; report gives native rates/intervals and a freshness/generalization caveat; independent review confirms it does not present a paired or contamination estimate. If the result has no useful headroom or costs exceed the plan, stop before X3 rather than forcing a variant feature.
 
 ### X3 — BFCL balanced tool-order paired study
 
-**Objective:** add one representation-equivalent transform with exact source
-mapping and unchanged official scoring, then test whether it yields information
-beyond canonical/provider variance.
+**Objective:** add one representation-equivalent transform with exact source mapping and unchanged official scoring, then test whether it yields information beyond canonical/provider variance.
 
-**Exit gate:** installed BFCL remains byte-identical; a run-owned derived identity
-produces official-score evidence and a population-valid paired report; no generic
-transform abstraction or canonical admission is introduced.
+**Exit gate:** installed BFCL remains byte-identical; a run-owned derived identity produces official-score evidence and a population-valid paired report; no generic transform abstraction or canonical admission is introduced.
 
 - [ ] `X3.1` Write RED materialization and overlay contracts
   - Files: `tests/specs/test_bfcl_study_contracts.py`, hostile filesystem tests.
-  - Scope: deterministic non-identity balanced permutations for declared
-    `multiple`/`parallel_multiple` rows; exact source-to-derived mapping; all
-    non-`function` data and ground truth unchanged; canonical serialization;
-    source/derived/producer/scorer digests; exclusive run-owned overlay; installed
-    tree immutability; pre/post-launch drift and symlink/hardlink/path-swap rejects.
+  - Scope: deterministic non-identity balanced permutations for declared `multiple`/`parallel_multiple` rows; exact source-to-derived mapping; all non-`function` data and ground truth unchanged; canonical serialization; source/derived/producer/scorer digests; exclusive run-owned overlay; installed tree immutability; pre/post-launch drift and symlink/hardlink/path-swap rejects.
   - Dependencies: X0.2, X2.4 useful-result gate.
-  - Acceptance evidence: each behavioral contract is RED on current code for the
-    intended reason; no substitute claims official BFCL execution.
+  - Acceptance evidence: each behavioral contract is RED on current code for the intended reason; no substitute claims official BFCL execution.
 
 - [ ] `X3.2` Implement the BFCL-specific materializer
-  - Files: new `src/bencheval/bfcl_study.py`, `run_isolation.py` only for an earned
-    shared primitive, and X3.1 tests.
-  - Scope: read pinned canonical JSONL, validate ids/tool names, calculate the
-    versioned balanced permutation, write source/derived/variant manifests through
-    anchored exclusive I/O, and verify replay. No scorer, process runner, provider,
-    generic transform callbacks, or installed-package writes.
+  - Files: new `src/bencheval/bfcl_study.py`, `run_isolation.py` only for an earned shared primitive, and X3.1 tests.
+  - Scope: read pinned canonical JSONL, validate ids/tool names, calculate the versioned balanced permutation, write source/derived/variant manifests through anchored exclusive I/O, and verify replay. No scorer, process runner, provider, generic transform callbacks, or installed-package writes.
   - Dependencies: X3.1.
-  - Acceptance evidence: RED→GREEN; two independent materializations produce
-    byte-identical output/digest; changed source/version changes identity; every
-    outside-write/mutation probe fails closed.
+  - Acceptance evidence: RED→GREEN; two independent materializations produce byte-identical output/digest; changed source/version changes identity; every outside-write/mutation probe fails closed.
 
 - [ ] `X3.3` Implement and bind the run-owned package overlay
-  - Files: `bfcl_study.py`, `bfcl_native_adapter.py`,
-    `control_plane_executor.py`, `doctor.py`, proof/artifact retention tests.
-  - Scope: copy the pinned package into the claimed run root, verify byte-identical
-    code/config/scorer, replace only declared data files, launch the unchanged
-    official CLI from the overlay, then reverify overlay/source/installed trees
-    before accepting scores. Share the current BFCL score parser; do not add a
-    study scorer.
+  - Files: `bfcl_study.py`, `bfcl_native_adapter.py`, `control_plane_executor.py`, `doctor.py`, proof/artifact retention tests.
+  - Scope: copy the pinned package into the claimed run root, verify byte-identical code/config/scorer, replace only declared data files, launch the unchanged official CLI from the overlay, then reverify overlay/source/installed trees before accepting scores. Share the current BFCL score parser; do not add a study scorer.
   - Dependencies: X3.2.
-  - Acceptance evidence: real uncharged overlay loader/evaluator probe from X0.2
-    passes through the production path; producer/scorer drift or concurrent swap
-    yields typed invalid evidence; installed distribution remains unchanged.
+  - Acceptance evidence: real uncharged overlay loader/evaluator probe from X0.2 passes through the production path; producer/scorer drift or concurrent swap yields typed invalid evidence; installed distribution remains unchanged.
 
 - [ ] `X3.4` Add the diagnostic identity, slices, and paired report mode
-  - Files: `config/benchmarks.yaml`, `config/slices/bfcl-v4-tool-order-*.yaml`,
-    `config/studies/bfcl-v4-tool-order-v1.yaml`, registry/identity/report/CLI tests,
-    BFCL ops docs.
-  - Scope: add `bfcl-v4-tool-order-v1` as non-executable diagnostic; bind canonical
-    source identity, transform/study version, derived digest, and source ids.
-    Extend report with exact paired population, concordant/discordant counts,
-    directional flips, paired delta, X0.4 uncertainty rule, and raw-only smoke.
+  - Files: `config/benchmarks.yaml`, `config/slices/bfcl-v4-tool-order-*.yaml`, `config/studies/bfcl-v4-tool-order-v1.yaml`, registry/identity/report/CLI tests, BFCL ops docs.
+  - Scope: add `bfcl-v4-tool-order-v1` as non-executable diagnostic; bind canonical source identity, transform/study version, derived digest, and source ids. Extend report with exact paired population, concordant/discordant counts, directional flips, paired delta, X0.4 uncertainty rule, and raw-only smoke.
   - Dependencies: X3.3, X1.5.
-  - Acceptance evidence: ordinary execution and `passed` registration reject;
-    diagnostic planning works; asymmetric/duplicate/missing/drifted pairs fail
-    nonzero; relation remains `representation_equivalent` regardless of measured
-    fidelity.
+  - Acceptance evidence: ordinary execution and `passed` registration reject; diagnostic planning works; asymmetric/duplicate/missing/drifted pairs fail nonzero; relation remains `representation_equivalent` regardless of measured fidelity.
 
 - [ ] `X3.5` Run the real tool-order smoke and reviewed paired population
-  - Files: immutable local evidence/proofs plus factual docs/ledger update after
-    verification; no source change driven only by score preference.
-  - Scope: use the same frontier model/provider/settings as canonical, first run
-    the plumbing slice, then only the X0.4 reviewed population; export/verify
-    private proofs and reproduce the paired report from copied proof bytes.
+  - Files: immutable local evidence/proofs plus factual docs/ledger update after verification; no source change driven only by score preference.
+  - Scope: use the same frontier model/provider/settings as canonical, first run the plumbing slice, then only the X0.4 reviewed population; export/verify private proofs and reproduce the paired report from copied proof bytes.
   - Dependencies: X3.4 and green software/security gates.
-  - Acceptance evidence: official score JSONL is sole verdict; package code/scorer
-    and installed-tree digests hold; smoke emits raw-only output; study population
-    validates and reports directional flips/uncertainty with competing explanations
-    and no contamination/clean/cheating claim.
+  - Acceptance evidence: official score JSONL is sole verdict; package code/scorer and installed-tree digests hold; smoke emits raw-only output; study population validates and reports directional flips/uncertainty with competing explanations and no contamination/clean/cheating claim.
 
 ### X4 — Operator integration, hardening, and scoped readiness
 
-**Objective:** expose the proven study/report capability through existing
-application/UI/proof paths without expanding its claim or runtime surface.
+**Objective:** expose the proven study/report capability through existing application/UI/proof paths without expanding its claim or runtime surface.
 
-**Exit gate:** CLI, optional console, copied private proof, docs, and security/
-readiness review agree on the exact diagnostic claim. This remains independent of
-the deferred general console U3/U4 program except for shared regressions.
+**Exit gate:** CLI, optional console, copied private proof, docs, and security/readiness review agree on the exact diagnostic claim. This remains independent of the deferred general console U3/U4 program except for shared regressions.
 
 - [ ] `X4.1` Add application and console projections
-  - Files: `src/bencheval/application/{dto,operations}.py`, `ui/pages.py`, console
-    tests, `docs/api/operator-console-contract.md`.
-  - Scope: add study validation/report selection and result display to the
-    existing Compare surface; show relation, native scores, access/verifier/
-    freshness, population validity, flips, uncertainty, and explicit non-claims.
-    Do not add automatic charged launch, model panels, transform editing, or
-    page-local interpretation.
+  - Files: `src/bencheval/application/{dto,operations}.py`, `ui/pages.py`, console tests, `docs/api/operator-console-contract.md`.
+  - Scope: add study validation/report selection and result display to the existing Compare surface; show relation, native scores, access/verifier/freshness, population validity, flips, uncertainty, and explicit non-claims. Do not add automatic charged launch, model panels, transform editing, or page-local interpretation.
   - Dependencies: X2.4 and X3.5; may be skipped if X3 stops for low information.
-  - Acceptance evidence: DTO exactly matches domain JSON; crafted UI state cannot
-    bypass invalid/smoke claims; keyboard/table fallback works on the added view.
+  - Acceptance evidence: DTO exactly matches domain JSON; crafted UI state cannot bypass invalid/smoke claims; keyboard/table fallback works on the added view.
 
 - [ ] `X4.2` Close artifact, privacy, and compatibility edges
-  - Files: `proof_bundle.py`, `run_bundle.py`, `redaction.py`, exports, CLI/report
-    error handling, regression tests, ops docs.
-  - Scope: hostile study manifests/derived files, symlink/hardlink/FIFO/oversize,
-    proof copy/import, public transcript omission/redaction, exclusive outputs,
-    legacy evidence/proof reads, and no partial report on failure.
+  - Files: `proof_bundle.py`, `run_bundle.py`, `redaction.py`, exports, CLI/report error handling, regression tests, ops docs.
+  - Scope: hostile study manifests/derived files, symlink/hardlink/FIFO/oversize, proof copy/import, public transcript omission/redaction, exclusive outputs, legacy evidence/proof reads, and no partial report on failure.
   - Dependencies: X1.6, X3.5.
-  - Acceptance evidence: hostile real-filesystem battery passes; no secret/private
-    transcript in public output; old proofs and CLI commands remain compatible;
-    dependency and secret scans stay green.
+  - Acceptance evidence: hostile real-filesystem battery passes; no secret/private transcript in public output; old proofs and CLI commands remain compatible; dependency and secret scans stay green.
 
 - [ ] `X4.3` Independent review and readiness decision
-  - Files: no product edits during review; durable readiness artifacts in the
-    established local review location.
-  - Scope: max-effort `qa-review` plus scoped `verify-readiness` over the exact
-    final tree and real BFCL proofs. Review must challenge identity, access truth,
-    official scoring, population validity, statistics, wording, proof portability,
-    and runtime/harness non-modification.
+  - Files: no product edits during review; durable readiness artifacts in the established local review location.
+  - Scope: max-effort `qa-review` plus scoped `verify-readiness` over the exact final tree and real BFCL proofs. Review must challenge identity, access truth, official scoring, population validity, statistics, wording, proof portability, and runtime/harness non-modification.
   - Dependencies: X4.1/X4.2 as applicable.
-  - Acceptance evidence: zero open red/yellow findings for the scoped exposure
-    claim; `make check-production-v1`, focused hostile contracts, exact proof
-    verify/import, and real report reproduction pass. A green unit suite alone is
-    not readiness.
+  - Acceptance evidence: zero open red/yellow findings for the scoped exposure claim; `make check-production-v1`, focused hostile contracts, exact proof verify/import, and real report reproduction pass. A green unit suite alone is not readiness.
 
 ### X5 — Evidence-led continuation decision
 
-**Objective:** decide whether the first study created enough user value to justify
-another transform family or any shared abstraction.
+**Objective:** decide whether the first study created enough user value to justify another transform family or any shared abstraction.
 
-**Exit gate:** one explicit continue/stop decision is recorded from real evidence;
-no speculative framework remains on the active roadmap.
+**Exit gate:** one explicit continue/stop decision is recorded from real evidence; no speculative framework remains on the active roadmap.
 
 - [ ] `X5.1` Evaluate information value and operating cost
   - Files: concept/architecture/roadmap decision update only.
-  - Scope: compare the Live and tool-order findings with provider/run variance,
-    transform fidelity, operator effort, proof size, and whether a real model or
-    benchmark decision changed. Do not choose a favorable score as the criterion.
+  - Scope: compare the Live and tool-order findings with provider/run variance, transform fidelity, operator effort, proof size, and whether a real model or benchmark decision changed. Do not choose a favorable score as the criterion.
   - Dependencies: X2.4 and, if not stopped, X3.5/X4.3.
-  - Acceptance evidence: concise evidence-backed decision with observed costs,
-    limits, and the next falsifiable question.
+  - Acceptance evidence: concise evidence-backed decision with observed costs, limits, and the next falsifiable question.
 
 - [ ] `X5.2` Reopen architecture only on earned second-family demand
-  - Files: `docs/context/concept-zero.md`, `docs/architecture.md`, `docs/roadmap.md`;
-    no production implementation in the decision step.
-  - Scope: if a second frontier-relevant benchmark needs the same source/relation/
-    fidelity/materialization/report invariants, research it and decide whether to
-    extract a narrow shared contract. Otherwise close the exposure program at the
-    BFCL-specific implementation and keep MATH()/DyVal/training labs deferred.
+  - Files: `docs/context/concept-zero.md`, `docs/architecture.md`, `docs/roadmap.md`; no production implementation in the decision step.
+  - Scope: if a second frontier-relevant benchmark needs the same source/relation/fidelity/materialization/report invariants, research it and decide whether to extract a narrow shared contract. Otherwise close the exposure program at the BFCL-specific implementation and keep MATH()/DyVal/training labs deferred.
   - Dependencies: X5.1.
-  - Acceptance evidence: either a newly accepted concept/architecture with a real
-    second family, or an explicit stop decision that leaves no generic transform
-    task scheduled.
+  - Acceptance evidence: either a newly accepted concept/architecture with a real second family, or an explicit stop decision that leaves no generic transform task scheduled.
 
 ### Exposure execution packets and merge order
 
 1. **Packet A — X0 spikes:** read-only/dev-box research; no production writer.
-2. **Packet B — X1 access/study contracts:** one writer for shared domain/evidence/
-   CLI/proof files; do not parallelize writers across these hot modules.
-3. **Packet C — X2 Live:** begins after X1 identity/access foundations; owns BFCL
-   catalog/slices/adapter delta and real Live proof.
-4. **Packet D — X3 tool order:** starts only after the X2 usefulness gate; owns
-   `bfcl_study.py`, overlay, derived identity, and paired report delta.
-5. **Packet E — X4 review/integration:** UI projection follows the proven CLI;
-   independent review remains read-only and uses the exact candidate tree.
+2. **Packet B — X1 access/study contracts:** one writer for shared domain/evidence/CLI/proof files; do not parallelize writers across these hot modules.
+3. **Packet C — X2 Live:** begins after X1 identity/access foundations; owns BFCL catalog/slices/adapter delta and real Live proof.
+4. **Packet D — X3 tool order:** starts only after the X2 usefulness gate; owns `bfcl_study.py`, overlay, derived identity, and paired report delta.
+5. **Packet E — X4 review/integration:** UI projection follows the proven CLI; independent review remains read-only and uses the exact candidate tree.
 
-Every implementation packet begins with `dev-spec` RED contracts, proceeds
-through implementation/self-critique, and receives an independent `qa-review`.
-Incomplete packet acceptance is a rejection: unrun real BFCL/proof/readiness exit
-criteria remain `BLOCKED` or `IMPLEMENTED BUT UNVERIFIED`, never silently complete.
+Every implementation packet begins with `dev-spec` RED contracts, proceeds through implementation/self-critique, and receives an independent `qa-review`. Incomplete packet acceptance is a rejection: unrun real BFCL/proof/readiness exit criteria remain `BLOCKED` or `IMPLEMENTED BUT UNVERIFIED`, never silently complete.
 
 ### Exposure cross-phase gates
 
 - [ ] `XG-01` Official-runner immutability
-  - Evidence: exact BFCL code/config/scorer digests before and after every derived
-    run; installed package unchanged; no custom network/runtime layer.
+  - Evidence: exact BFCL code/config/scorer digests before and after every derived run; installed package unchanged; no custom network/runtime layer.
 - [ ] `XG-02` Identity and proof completeness
-  - Evidence: study/source/candidate/variant/access artifacts are content-bound,
-    evidence-referenced, copied under `artifacts/study/`, and verify offline.
+  - Evidence: study/source/candidate/variant/access artifacts are content-bound, evidence-referenced, copied under `artifacts/study/`, and verify offline; an `exposure-study-lock-v1` manifest binds both run proof ids, exact report inputs, and the deterministic report JSON digest.
 - [ ] `XG-03` Population and interpretation validity
-  - Evidence: paired/unpaired rules, constant axes, eligibility, verifier quality,
-    smoke limits, uncertainty method, and forbidden claims are machine-checked.
+  - Evidence: paired/unpaired rules, constant axes, eligibility, verifier quality, smoke limits, uncertainty method, and forbidden claims are machine-checked.
 - [ ] `XG-04` Backward compatibility
-  - Evidence: v0.2/v0.3 evidence, existing CLI/report/compare, current private
-    proofs, catalog executable count, and core import/package gates remain green.
+  - Evidence: v0.2/v0.3 evidence, existing CLI/report/compare, current private proofs, catalog executable count, and core import/package gates remain green.
 - [ ] `XG-05` Real evidence boundary
-  - Evidence: official BFCL Live/variant runs and copied-proof report reproduction
-    are the acceptance oracle; substitutes are diagnostic only and cannot close a
-    live or readiness checkbox.
+  - Evidence: official BFCL Live/variant runs and copied-proof report reproduction are the acceptance oracle; substitutes are diagnostic only and cannot close a live or readiness checkbox.
 
 ## Operator console roadmap (IMPLEMENTED; hardening remains)
 
@@ -627,13 +425,13 @@ The following phases cover the complete existing product surface. They do not ad
   - Files: `pyproject.toml`, `uv.lock`, `cli.py`, `ui/{__init__,app,pages,security,session}.py`, `ui/assets/console.css`.
   - Scope: add `bencheval ui --port --no-open`, loopback only, lazy NiceGUI import, navigation, skip link, global status, display preferences, and graceful missing-extra error. Do not add host/auth/config editing.
   - Dependencies: U0.1, U0.2, U0.5.
-  - Acceptance evidence: core and UI clean installs; start/stop smoke; missing- extra CLI error; real-browser shell and keyboard checks; `make check-production-v1`.
+  - Acceptance evidence: core and UI clean installs; start/stop smoke; missing-extra CLI error; real-browser shell and keyboard checks; `make check-production-v1`.
 
 - [x] `U1.2` Catalog and Overview vertical path
   - Files: `application/{dto,operations}.py`, `ui/pages.py`.
   - Scope: actual 8/4 catalog, models, runtimes, agents, providers, action availability, Tier-0/Tier-1/Tier-2 truth, recent validated runs, proof health. No benchmark/run action may be enabled from page-local inference.
   - Dependencies: U0.3, U1.1.
-  - Acceptance evidence: DTO-versus-registry parity; actual pending/diagnostic/ scaffold rows disabled; real browser filter/paging/deep-link tests.
+  - Acceptance evidence: DTO-versus-registry parity; actual pending/diagnostic/scaffold rows disabled; real browser filter/paging/deep-link tests.
 
 - [x] `U1.3` Environment/Doctor and read-only Runs & Evidence
   - Files: `application/{dto,operations}.py`, `ui/pages.py`.
@@ -655,7 +453,7 @@ The following phases cover the complete existing product surface. They do not ad
 
 - [x] `U2.2` Live start, monitor, cancel, and run detail
   - Files: `application/{dto,operations}.py`, `ui/{session,pages}.py`.
-  - Scope: explicit cost/charge confirmation, one active launch, live lifecycle and bounded redacted log tail, explicit cancel, browser reconnect, evidence/ artifact refresh, preallocated run identity, explicit evidence truncation metadata, and task outcome separate from registration. Orphan process-group descendants are terminated even when their worker leader exits first.
+  - Scope: explicit cost/charge confirmation, one active launch, live lifecycle and bounded redacted log tail, explicit cancel, browser reconnect, evidence/artifact refresh, preallocated run identity, explicit evidence truncation metadata, and task outcome separate from registration. Orphan process-group descendants are terminated even when their worker leader exits first.
   - Dependencies: U0.2, U0.4, U2.1.
   - Acceptance evidence: real bounded local subprocess browser journey plus one previously admitted uncharged/dry lifecycle; charged/native run is `not run` unless credentials/harness are deliberately supplied.
 
@@ -667,7 +465,7 @@ The following phases cover the complete existing product surface. They do not ad
 
 - [x] `U2.4` Compare and reports
   - Files: `application/{dto,operations}.py`, `ui/pages.py`.
-  - Scope: baseline/current selection, shared eligible validity, deltas/ intervals, exclusions, caveats, Markdown/JSON result generation. Charts are projections with full table fallback and no universal score.
+  - Scope: baseline/current selection, shared eligible validity, deltas/intervals, exclusions, caveats, Markdown/JSON result generation. Charts are projections with full table fallback and no universal score.
   - Dependencies: U1.3.
   - Acceptance evidence: compare DTO exactly matches canonical compare JSON; invalid comparison never shows headline; one-instance/smoke caveats visible.
 
