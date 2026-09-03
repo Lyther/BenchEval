@@ -20,8 +20,7 @@ uv run bencheval ui                # loopback only; opens a capability URL
 uv run bencheval ui --no-open      # print the one-process launch URL instead
 ```
 
-The generated images remain design references rather than screenshots. The CLI
-remains the stable automation surface; NiceGUI routes and events are private.
+The generated images remain design references rather than screenshots. The CLI remains the stable automation surface; NiceGUI routes and events are private.
 
 ## 5-minute path
 

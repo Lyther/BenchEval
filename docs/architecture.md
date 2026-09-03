@@ -1,12 +1,9 @@
 # Architecture & Decisions
 
-> **Status:** ACCEPTED current system and implemented local operator console;
-> remaining hardening/extensions are tracked separately (reconciled 2026-09-01).
-> Source concept: [`docs/context/concept-zero.md`](context/concept-zero.md);
-> implementation tracked in [`docs/roadmap.md`](roadmap.md)
-> **Supersedes:** vNext v0.2 (ACCEPTED 2026-05-29, Core-first) — preserved as `legacy_static` context only
+> **Status:** ACCEPTED current system and implemented local operator console; PROPOSED benchmark-exposure extension (reconciled 2026-09-03). Source concept: [`docs/context/concept-zero.md`](context/concept-zero.md); implementation tracked in [`docs/roadmap.md`](roadmap.md).
+> **Supersedes:** vNext v0.2 (ACCEPTED 2026-05-29, Core-first) — preserved as `legacy_static` context only.
 > **Operator contract / product SoT:** root [`README.md`](../README.md), this file, and [`docs/api/internal-contracts.md`](api/internal-contracts.md). [`docs/context/concept-zero.md`](context/concept-zero.md) owns product intent and constraints. [`docs/context/concept-hld.md`](context/concept-hld.md) is a **historical design ledger**, not live CLI instructions.
-> **Scope:** Defined benchmarks → (runtime XOR agent)? → model via provider → evidence.
+> **Scope:** Defined canonical/fresh/derived benchmark populations → (runtime XOR agent)? → model via provider → native evidence, private proof, and bounded exposure studies.
 
 ## 0. Product Principles
 
@@ -16,7 +13,10 @@
 4. **Config-first expansion.** New slices/runtimes/models/agents/providers on an existing adapter family are YAML/manifest work.
 5. **Runtime-owned environments.** Benchmarks and selected runtimes own sandboxes/containers. BenchEval does not ship a separate Docker plane.
 6. **Evidence over claims.** Reports preserve native artifacts and caveats; smoke ≠ full benchmark claim; green tests are not live proof.
-7. **One truth, two entry points.** The CLI remains stable automation; the proposed local browser console calls the same typed application operations and never parses CLI stdout or owns scoring/storage semantics.
+7. **One truth, two entry points.** The CLI remains stable automation; the implemented local browser console calls the same typed application operations and never parses CLI stdout or owns scoring/storage semantics.
+8. **Dependence, not accusation.** Exposure studies preserve canonical and candidate native scores and measure benchmark-specific dependence. They never certify a model clean, infer provider intent, or emit a universal decontaminated score.
+9. **No hidden harness.** `network_policy` remains requested plan intent. Effective access is captured from the concrete official launch; BenchEval does not patch runtimes/scorers or maintain an egress allow-list.
+10. **One variant before a framework.** BFCL Live is the first freshness contrast and one balanced BFCL tool-order permutation is the first paired representation study. A generic transform platform is forbidden until a second admitted family proves the abstraction.
 
 ### 0.1 Concept traceability
 
@@ -28,6 +28,10 @@
 - `C-01` / `C-02` keep one Python CLI and the runtime-XOR-agent spine. `C-03` keeps credentials environment-only. `C-04` keeps substitute proof diagnostic. `C-05` defines the narrow human-intervention boundary.
 - `N-01`–`N-05` exclude hard-dollar control, MOMO admission, dual-use execution, service/storage expansion, and smoke-derived superiority claims from v1.
 - `G-07` / `G-08` add complete local-console coverage and CLI/UI parity. `C-07` keeps the console loopback-only; `C-08` keeps UI state and DTOs non-authoritative.
+- `G-09` / `G-12` and `C-11` add exposure studies without changing native scores: source/candidate relation, fidelity, verifier, access, freshness, and interpretation remain separate evidence.
+- `G-10` and `C-09` separate effective access from plan-time `network_policy`; model-only, official Inspect-restricted, and Harbor-uncontrolled paths must not collapse to one label.
+- `G-11`, `C-10`, `C-12`, and `C-13` select BFCL Live then a diagnostic balanced tool-order study for the current frontier API pool, with official code/scorer bytes unchanged and no statistical claim from smoke.
+- `N-07`–`N-10` exclude clean/cheating verdicts, generic transformation infrastructure, custom runtime/network controls, controlled training labs, and direct contamination estimates from unpaired populations.
 
 ## 1. Product Shape (v1)
 
@@ -45,7 +49,9 @@ benchmark/slice  →  (runtime | agent)?  →  model via provider  →  Evidence
 
 **Admitted execution profiles:** runtimes `claude-code`, `codex-cli`; providers `bytellm`, `ollama-cloud`. `momo` remains a discoverable **scaffold only**: planning or direct execution with it must fail before output reservation or provider/agent launch until a later admission decision.
 
-**Proposed operator surface:** `bencheval ui` starts one loopback-only Python process and opens an optional browser console. It covers catalog, Run Builder, doctor/preflight, one active run session, validated run/evidence history, report/compare/export, private proofs, and readiness. It does not expose a public HTTP API, remote bind, credential editor, database, durable queue, or UI-only product behavior.
+**Implemented operator surface:** `bencheval ui` starts one loopback-only Python process and opens an optional browser console. It covers catalog, Run Builder, doctor/preflight, one active run session, validated run/evidence history, report/compare/export, private proofs, and readiness. It does not expose a public HTTP API, remote bind, credential editor, database, durable queue, or UI-only product behavior.
+
+**Proposed exposure surface:** canonical, BFCL Live, and derived BFCL runs remain ordinary evidence-producing executions. Two non-executable diagnostic benchmark identities and a small study manifest declare the expected relation/population; a read-only `study report` operation validates retained evidence before showing native score contrasts. Effective access evidence is additive per attempt. The first release adds no multi-run scheduler, automatic model panel, reference correction, general transform registry, or new scoring authority.
 
 ## 2. Identity axes
 
@@ -93,6 +99,11 @@ flowchart LR
     A6 --> EN
     EN --> ES[Evidence store]
     ES --> CP[Compare / Report / Export]
+    STM[Exposure study manifests<br/>PROPOSED] --> XS[Study validator / report<br/>PROPOSED]
+    ES --> XS
+    BFM[BFCL Live / tool-order materializer<br/>PROPOSED] --> A4
+    STM --> BFM
+    XS --> CP
 ```
 
 ## 4. Stack Selection
@@ -107,6 +118,8 @@ flowchart LR
 | CLI | **argparse** (`bencheval` entrypoint) | Already set; extend `cli.py`, don't replace. |
 | Local browser UI | **NiceGUI 3.x** (`ui` optional extra, IMPLEMENTED) | Python/backend-first, single local process, browser display and real-browser test support. Loopback only; CLI remains stable automation. |
 | Evidence store | **JSONL** (primary) + **Parquet/DuckDB** (analytics) | JSONL now; DuckDB/Parquet via existing `analytics` extra (`duckdb`, `pyarrow`) and `export.py`. **No database** — this is a CLI tool. |
+| Exposure study definition | **Typed YAML + retained JSON manifests** (PROPOSED) | Reuses current config/Pydantic patterns. YAML declares the study; canonical JSON bytes and SHA-256 bind the exact run population/transform. No registry service or DSL. |
+| Exposure analysis | **Existing Python/statistics spine** (PROPOSED) | Raw counts, native rates, directional flips, and bounded confidence output can extend `stats.py`; no SciPy or new analytics dependency is earned before the statistics spike. |
 | Harness adapters | **External binaries, not vendored** | Harbor = external CLI (`uv tool install harbor`) and may use Docker internally; Inspect = optional `eval` extra; native/external-command = subprocess. Core library stays dependency-light (no `eval` requirement for core). |
 | Orchestration (heavy) | **Inspect AI** (optional `eval` extra) + **Harbor** (external) | Provider abstraction + sandbox; never reimplement benchmark semantics. |
 | Sandbox ownership | **Runtime-owned** | BenchEval does not ship a Docker plane. Official benchmark runtimes own containers/images when they require them. |
@@ -133,6 +146,10 @@ flowchart LR
 | Evidence Normalizer | Convert native output → `EvidenceRecord`. | `evidence.py`. | `evidence.py` |
 | Evidence Store | Evidence JSONL + optional Parquet/DuckDB export. | `evidence.py`, `export.py`. | as listed |
 | Compare/Report/Export | Markdown/JSON reports + cross-run comparisons + run bundles. | `report.py`, `evidence_compare.py`, `export.py`, `run_bundle.py`. | as listed |
+| Effective Access Evidence | Validate and project the concrete official launch's control source, egress, repository history, and optional retrieval audit; never infer them from `network_policy`. | **PROPOSED exposure phase X1.** | `access_evidence.py`, additive `domain.py` / `evidence.py` fields, adapter capture sites |
+| Exposure Study Registry | Load closed study YAML, bind canonical/candidate identities and population rules, and reject unsupported relation/analysis combinations. | **PROPOSED exposure phase X1.** | `exposure_study.py`, `config/studies/*.yaml` |
+| BFCL Study Materializer | Verify BFCL Live bytes and create a run-scoped, code-identical package-data overlay for one balanced tool-order transform; it never scores or mutates the installed package. | **PROPOSED exposure phases X0–X3.** | `bfcl_study.py`, existing `bfcl_native_adapter.py` lifecycle |
+| Exposure Report | Read-only validation and rendering of unpaired freshness contrasts or paired representation studies; preserve native metrics and explicit non-claims. | **PROPOSED exposure phases X2–X4.** | `exposure_report.py`, `stats.py`, application/UI projections |
 | Operator Console | Feature-complete local UI over typed application operations and canonical stores. | **IMPLEMENTED:** all operator pages/actions; browser/scale/accessibility hardening continues. | `application/` and `ui/` packages in §20 |
 
 ## 6. Execution Profiles
@@ -148,6 +165,8 @@ Live product paths use upstream-owned harnesses: Harbor/Docker for Terminal-Benc
 | E4 | Stretch sandbox | Expensive official-harness runs | Explicit review; research unless admitted |
 
 Dry-run planning reports `requires_harbor` / `requires_sandbox` when needed. Those flags are operator preflight signals, not a BenchEval-owned Docker plane. `recommended_profile` is catalog planning vocabulary: E3 does not itself imply a sandbox, while E4 does. New evidence normalizes the concrete launch to E0 (model-only), E1 (non-Harbor sandbox), or E2 (Harbor); E3/E4 remain valid when reading historical evidence.
+
+`RunPlan.network_policy` remains a requested runtime/benchmark condition and a runtime-config hash input. It is not evidence that model-visible egress was blocked or allowed. Exposure-capable attempts separately capture the effective official access-control source, egress result, and repository-history state. Historical rows keep these fields absent; absence means unknown/legacy, never unrestricted or safe by inference.
 
 ## 7. Data Contracts
 
@@ -230,6 +249,35 @@ class EvidenceRecord(BaseModel):
 
 Nested `run`/`model`/`runtime`/`attempt`/`artifacts`/`integrity` blocks from HLD §9.3 are **not** adopted as the on-disk shape (would break v0.2 readers); they remain a *report projection* only.
 
+### 7.5 Exposure evidence and study manifests (PROPOSED)
+
+The existing flat `EvidenceRecord` remains additive. Exposure phase E1 adds optional closed values; v0.2/v0.3 rows with all four absent continue to parse:
+
+```python
+access_control_source: "not_applicable" | "official_default" | "official_profile" | "none" | "unknown" | None
+egress_control: "not_applicable" | "blocked" | "restricted" | "uncontrolled" | "unknown" | None
+repository_history: "not_applicable" | "future_history_removed" | "full_history_present" | "unknown" | None
+retrieval_audit: "not_run" | "no_retrieval_observed" | "retrieval_observed" | None
+```
+
+These fields describe the concrete attempt, not the benchmark in general. An adapter may stamp a non-unknown state only from the official launch contract or a retained effective configuration. It may never translate `network_policy` directly. Model-only calls stamp all three access-control fields `not_applicable`; the provider route remains ordinary provenance. Pinned Inspect SWE may stamp official blocked egress only when the generated/effective sandbox configuration is retained. Harbor stamps `none` plus `uncontrolled` until its official runner can prove otherwise. `retrieval_audit` is independent and never changes `primary_pass`, `attempt_validity`, or native score.
+
+`config/studies/*.yaml` introduces one small closed `ExposureStudyManifest`:
+
+- stable study id and schema version;
+- `freshness_contrast` or `representation_pair` kind;
+- canonical and candidate benchmark/slice ids;
+- relation class (`fresh_parallel` for BFCL Live, `representation_equivalent` for tool order);
+- comparison mode (`stratified_unpaired` or `paired_by_source_instance`);
+- required constant axes and eligible-population rules;
+- declared strata or source-instance mapping requirements;
+- permitted interpretation and explicit forbidden claims; and
+- expected variant/materialization contract when applicable.
+
+The YAML is configuration, not evidence. At execution/report time it is canonicalized and hashed; the exact bytes plus resolved identities are retained in proof. The generated BFCL `variant-manifest.json` additionally records source identity/digest, transform id/version, deterministic balance algorithm, source instance id, canonical tool-name order, derived order, derived data digest, and unchanged producer/scorer digest. It contains no model output or score.
+
+BFCL Live uses a separate `bfcl-v4-live` catalog identity built from the ten pinned Live files. `bfcl-v4-tool-order-v1` uses a new derived-data identity that binds the canonical BFCL identity, transform version, study-manifest digest, and derived-file digest. Both rows stay `executable: false` and run only through the existing diagnostic gate until a future admission decision; neither can inherit the registered `bfcl-v4` Tier-1 status.
+
 ## 8. Adapter Rule
 
 Adapters **prefer native harnesses**. Product v1 allowed shapes:
@@ -237,10 +285,11 @@ Adapters **prefer native harnesses**. Product v1 allowed shapes:
 1. **Native wrapper** — call the official runner/scorer, parse its result files, and preserve raw artifacts (GPQA/HLE/BFCL today; future adapters must meet the same bar).
 2. **Harbor wrapper** — Harbor-native terminal tasks (Terminal-Bench 2.1).
 3. **External agent wrapper** — retained scaffold mechanics via `external_agent_adapter.py`; no agent profile is admitted in v1.
+4. **Diagnostic derived-data wrapper** — stage declared source-bound data for an unchanged official runner/scorer under a distinct benchmark identity. The first and only selected case is BFCL tool-declaration order; it cannot register as the canonical benchmark.
 
 Deferred / not product: Inspect-as-runtime wrappers. Compatibility shims must be explicitly labeled `adapter_smoke`.
 
-**Forbidden:** copying public benchmark instances into custom Core tasks and treating them as BenchEval-native.
+**Forbidden:** copying public benchmark instances into custom Core tasks and treating them as BenchEval-native; mutating an installed benchmark distribution in place; patching an official runner/scorer while retaining its identity; or using a general transform/plugin engine before a second family earns it.
 
 ### 8.1 Official lifecycle contract
 
@@ -249,6 +298,7 @@ Every adapter family has an explicit, code-owned lifecycle. Configuration select
 ```text
 resolve typed slice and immutable identities
   → preflight and fail-before-charge checks
+  → resolve and retain the effective official access configuration
   → reserve run/evidence/artifact ownership
   → invoke the pinned official generator or harness
   → invoke the pinned official evaluator/judge when generation alone is not authoritative
@@ -257,15 +307,11 @@ resolve typed slice and immutable identities
   → verify retained artifact identity, clean transient state, register only qualified evidence
 ```
 
-The console preflight route follows the derived official harness: generic
-Inspect for GPQA, Harbor plus Docker for Terminal-Bench, pinned package data for
-BFCL, the official checkout/dependencies/gated-token boundary for HLE, and
-Inspect-generation plus Docker and the pinned evaluator group for the SWE
-diagnostic. Charged confirmation fingerprints bind both the canonical plan and
-the normalized evidence/artifact output selections; launch rechecks those
-bytes and rejects any symlink component before the executor is called.
+The console preflight route follows the derived official harness: generic Inspect for GPQA, Harbor plus Docker for Terminal-Bench, pinned package data for BFCL, the official checkout/dependencies/gated-token boundary for HLE, and Inspect-generation plus Docker and the pinned evaluator group for the SWE diagnostic. Charged confirmation fingerprints bind both the canonical plan and the normalized evidence/artifact output selections; launch rechecks those bytes and rejects any symlink component before the executor is called.
 
 Exit status, stdout, model self-report, and adapter-invented verdict files never become scoring authority when the upstream benchmark defines an official report. Multi-phase adapters share one cumulative run envelope. A demoted adapter may run only as explicitly labeled diagnostic evidence; diagnostic evidence cannot register `passed`.
+
+For a derived BFCL run, the adapter additionally verifies an exclusive run-owned package overlay before launch and after scoring. All official Python/config/scorer bytes must match the pinned distribution; only the files named by the derived identity may differ. The installed distribution is read-only input and is never restored after mutation because it is never mutated.
 
 Current official authority boundaries:
 
@@ -314,12 +360,16 @@ External runtime launch and tool failures are separate: `runtime_launch_failure`
 - **Preserve native metrics.** Keep the official metrics emitted by each admitted harness (for example Terminal-Bench verifier results, Inspect GPQA accuracy, and HLE judged answers). BenchEval adds an operational layer: cost, latency, token usage, runtime/harness/adapter/model/provider versions and hashes, judge identity, failure class, cleanup status, artifact paths, and caveats.
 - **No universal weighted score by default.** Side-by-side only. A user-defined weighted portfolio may exist later as a labeled local-decision policy object, never as a benchmark-native score.
 - **Interpretation labels** on every report: `adapter_smoke` · `rough_regression` · `benchmark_native_claim` · `runtime_comparison` · `model_comparison` · `contaminated_or_legacy` · `defensive_security_only`.
+- **Exposure reports are read-only derived views.** They never replace the two native result sets. A freshness contrast reports per-stratum counts/rates/intervals and distribution caveats. A representation pair additionally reports canonical→candidate and candidate→canonical directional flips, paired score delta, and population validity. The statistics spike selects the exact interval/test before inferential language is enabled; smoke reports raw counts only.
+- **No clean verdict or corrected score.** Reference-panel normalization, when later added, is secondary and explicitly relative. `retrieval_observed` is strong positive runtime-leakage evidence; `no_retrieval_observed` is not absence proof. No report attributes intent, cheating, or training contamination from a performance gap alone.
 
 ## 12. Security Boundary
 
 - **Allowed normal lanes:** local toy patching, authorization repair, alert-triage data, regression tests, and local prompt-injection resistance without exfiltration or live-target access.
 - **Catalog-only v1 boundary:** the official CyberGym and ExploitGym tasks require PoC/exploit behavior against benchmark-owned vulnerable targets. The product decision for v1 is to keep both catalog-only and non-executable; no official PoC/exploit lifecycle is planned for this release. Any post-v1 reconsideration requires a new explicit product decision, a separately labelled sandboxed lane, authoritative success semantics, and operator-host authorization and isolation prerequisites. Relabelling the official PoC lifecycle as merely “defensive” is not sufficient.
 - **Forbidden:** exploit generation against live or third-party targets, real-target attack chains, credential theft, persistence, and mixing any dual-use Stretch result into Core/public weighted totals.
+- **Exposure-study boundary:** public benchmark data and transcripts remain untrusted input. A run-owned variant overlay must use the same anchored/no-follow ownership rules as scored artifacts, may contain only declared public source/derived data plus byte-identical pinned BFCL code, and must never alter the active environment. Retrieval-audit artifacts may contain private prompts or local paths and therefore belong only in private proof unless explicitly sanitized.
+- **Network boundary:** BenchEval records official effective access; it does not claim to secure arbitrary container egress, intercept provider traffic, or maintain a custom destination allow-list. An uncontrolled or unknown state is an honest evidence value, not a launch bypass or a reason to silently change the runtime.
 
 ## 13. Verification Gates
 
@@ -327,13 +377,17 @@ External runtime launch and tool failures are separate: `runtime_launch_failure`
 
 A benchmark adapter cannot claim Tier-1 live proof or Tier-2 readiness unless: native harness invocation ≥1 instance; version capture (benchmark/harness/adapter/runtime/model/provider and any judge); evidence completeness (raw result, stdout/stderr, verifier logs, artifacts, run config); failure separation; cleanup replay without deleting evidence; ≥1 typed slice with instance ids; dry-run accuracy; caveat labels attached. Tier-0 `executable: true` remains a software capability claim only.
 
+BFCL Live and tool-order study rows are deliberately demoted diagnostic identities. A successful study does not inherit canonical BFCL admission and cannot set `executable: true` without a separate product/admission review. The report capability may be complete while both candidate benchmark rows remain non-executable by default.
+
 ### 13.2 Runtime Admission
 
-A runtime cannot be marked production-ready unless: noninteractive launch; version capture; workspace isolation; config isolation (no global mutation unless allowed); known/controllable network; artifact extraction; budget enforcement; failure mapping to standard classes.
+A runtime cannot be marked production-ready unless: noninteractive launch; version capture; workspace isolation; config isolation (no global mutation unless allowed); effective network/history state is known or honestly recorded as uncontrolled/unknown; any stronger retrieval-control claim is actually enforceable; artifact extraction; budget enforcement; failure mapping to standard classes.
 
 ### 13.3 Report Validity
 
 A report cannot claim model/runtime superiority unless: benchmark id identical; slice id identical; adapter version identical; harness version identical or explicitly waived; runtime-config difference = intended variable; model-config difference = intended variable; failed/invalid attempts reported not dropped; caveat labels shown.
+
+An exposure report has a separate gate: the study manifest digest is retained; canonical/candidate roles and relation are declared; all required model/provider/runtime/harness/access axes are equal or explicitly varied; the eligible population matches the declared paired or stratified mode; verifier integrity passes before interpretation; native scores remain visible; and the report emits only the claim vocabulary allowed by the manifest. An invalid study exits nonzero and has no headline gap.
 
 ### 13.4 Stable requirements
 
@@ -362,6 +416,15 @@ A report cannot claim model/runtime superiority unless: benchmark id identical; 
 | AR-21 | Browser DTOs are closed, bounded, and secret-free; action availability is revalidated by domain operations rather than trusted from UI state. |
 | AR-22 | Complete console journeys meet applicable WCAG 2.2 AA behavior with keyboard, visible focus, labels/errors, announcements, reduced motion, and non-color status. |
 | AR-23 | Every current CLI product operation has an explicit console surface or is named as deliberately unsupported; UI release cannot silently omit proof/export/qualification truth. |
+| AR-24 | `network_policy` remains requested plan intent; effective model-visible egress/history state is separate additive evidence and is never inferred from that request. |
+| AR-25 | A non-unknown effective access value requires the retained official launch/profile configuration or a benchmark-specific proof; unsupported control is recorded as `uncontrolled` or `unknown`, not safe. |
+| AR-26 | Relation class is stable task metadata; behavioral fidelity, freshness, verifier integrity, access, and retrieval audit remain independent measured axes. |
+| AR-27 | Canonical, Live, and derived populations have distinct content-bound identities. Derived input never mutates the installed benchmark package or inherits canonical admission. |
+| AR-28 | Official benchmark code/scorer bytes remain pinned and unchanged for a derived study; only declared run-owned data files may differ, and pre/post-run verification is mandatory. |
+| AR-29 | Exposure reports preserve both native result sets, validate exact paired/stratified populations, and emit no clean/cheating verdict, direct contamination estimate, or universal adjusted score. |
+| AR-30 | Smoke exposure studies prove plumbing only. Inferential output requires a declared effective population and a preselected uncertainty/test method appropriate to paired or unpaired data. |
+| AR-31 | The first freshness study is BFCL non-live versus Live; the first paired variant is one deterministic balanced BFCL tool-order permutation. No generic transform framework exists before a second proven family. |
+| AR-32 | Portable study evidence consists of two verified `private_proof_v1` run objects plus an `exposure-study-lock-v1` manifest that content-binds both proof ids, the exact report inputs, and deterministic report output; public exports redact private transcript/audit material. |
 
 ### 13.5 Quality scenarios
 
@@ -386,16 +449,27 @@ A report cannot claim model/runtime superiority unless: benchmark id identical; 
 | QS-17 | The console restarts after a completed/failed run: validated history/evidence/proofs reconstruct the same durable view, while any lost in-memory session is explicitly non-resumable. |
 | QS-18 | A keyboard-only operator plans a dry run, resolves an error, inspects evidence, and exports a proof: focus and status remain perceivable and no pointer-only action exists. |
 | QS-19 | Local history/evidence grows to the measured U3 scale: cursor paging and preview caps bound memory/DOM/file reads without adding a database before evidence requires one. |
+| QS-20 | A plan requests `benchmark_required` while official Inspect disables sandbox internet: retain both values and report blocked effective egress without rewriting the plan. |
+| QS-21 | Harbor launches a public historical task without enforceable egress isolation: retain the official result, record uncontrolled access, and suppress any retrieval-hardened interpretation. |
+| QS-22 | A retrieval auditor finds a known answer/patch: preserve native scoring, retain the positive audit and its provenance, and prevent a stronger exposure/novelty headline. |
+| QS-23 | Pinned BFCL Live wheel data differs from upstream or lacks one of ten files: fail before provider charge and emit no Live identity. |
+| QS-24 | A tool-order materializer encounters a source/package symlink, hardlink, concurrent mutation, or code/scorer mismatch: leave the installed package and outside paths untouched and fail the diagnostic as integrity/config drift. |
+| QS-25 | Canonical and variant evidence have asymmetric instances or drift in model/provider/runtime/harness/access settings: invalidate the paired study rather than compare different populations. |
+| QS-26 | A successful five-case exposure smoke is reported: show raw counts and `plumbing_only`; do not emit confidence, significance, contamination, or superiority language. |
+| QS-27 | A valid full paired study is copied without its originating checkout: verification requires both named run proofs plus the study lock, recovers study/variant manifests and exact source/derived bytes, and reproduces the locked report JSON digest before the interpretation is trusted. |
 
 ## 14. VETOs (unchanged where still relevant)
 
 - Mixing Calibration/Stretch tasks into weighted public-benchmark totals without caveats.
 - BenchEval-authored or ad hoc LLM-as-judge for authoritative `primary_pass`. An upstream benchmark's official judge (HLE) is allowed only when its exact model identity and native judged artifact are bound into evidence.
-- Live internet in MVP tasks.
+- Undeclared or inferred agent-visible network/history access. Internet may be part of an official task, but the effective regime must be retained and cannot be called restricted without proof.
 - Statistical significance claims from smoke/lite slices alone.
 - Breaking the v0.2 `EvidenceRecord` flat contract (additive only).
 - Reintroducing fake runtimes (e.g. `native-api`) for model-only paths — use null `runtime_id` / `agent_id`.
 - Vendoring Harbor as a Python dependency (external CLI only).
+- Calling a gap a clean/contaminated verdict, cheating finding, novel-problem proof, or decontaminated score without the independent evidence that exact claim requires.
+- Mutating an installed benchmark package, patching an official runtime/scorer, or hiding a custom harness behind an official benchmark identity.
+- Building a generic transform DSL, automatic multi-seed scheduler, or reference-panel correction before the BFCL studies prove value and a second transform family exists.
 
 ## 15. Risk Assessment
 
@@ -404,8 +478,13 @@ A report cannot claim model/runtime superiority unless: benchmark id identical; 
 | Runtime/model conflation | High | Four-axis identity §2; CLI enforces `--runtime` distinct from `--backend`. |
 | EvidenceRecord break | High | Additive-only v0.3; v0.2 rows stay valid. |
 | Harbor unavailable / Docker absent | High | Doctor gates; local injected-runner tests remain diagnostic only; Terminal-Bench live acceptance stays blocked until the operator host passes preflight. |
-| Public benchmark contamination | High | Caveat labels; prefer fresh benchmarks for promotion; contaminated = smoke/trend only. |
+| Public benchmark exposure | High | Preserve canonical score, capture verifier/access/freshness evidence, compare only declared populations, and report dependence rather than a clean verdict. |
 | Reward-hackable verifiers | High | Preserve native result + label verifier-integrity risk; no promotion on one score. |
+| Requested-versus-effective access drift | High | Keep `network_policy` as intent and capture official effective egress/history separately; unknown/uncontrolled never upgrades a claim. |
+| Transform-induced difficulty | High | Separate relation proof from behavioral fidelity; use balanced permutations and directional flips; smoke is plumbing only. |
+| Derived package mutation/cross-run contamination | High | Run-owned package-data overlay, anchored writes, byte-identical code/scorer verification, no installed-package mutation, distinct identity. |
+| Provider nondeterminism mistaken for variant effect | Medium | Hold model/provider/runtime/settings constant, retain repeated canonical variance when needed, and invalidate asymmetric/drifting studies. |
+| Exposure-study cost without information | Medium | Frontier-headroom spike, one balanced variant before seeds, explicit budget, and no framework until the result changes a decision. |
 | Cost overrun | High | Enforced wall limits, default smoke slices, dry-run cost estimates, and explicit `unmeasured` evidence. v1 deliberately makes no provider-enforced hard-dollar termination claim. |
 | Cyber scope creep | High | CyberGym/ExploitGym remain catalog-only and non-executable for v1; never target live systems or mix their results into Core. |
 | CLI runtimes mutate global config | Medium | Ephemeral home/workspace; config hash capture. |
@@ -420,6 +499,9 @@ A report cannot claim model/runtime superiority unless: benchmark id identical; 
 - No DB: JSONL is the store of record; DuckDB/Parquet is a derived analytics export, not transactional.
 - No pyright in repo; type discipline via ruff + Pydantic runtime validation.
 - Historical sections under `docs/context/` deliberately preserve pre-prune design decisions and are labeled non-operational; the live product contract is README + this architecture + `docs/api/internal-contracts.md` + `docs/diagrams/`.
+- Historical evidence lacks effective-access fields; null remains unknown/legacy and will not be reconstructed from current configs.
+- The first exposure release supports only BFCL Live and one BFCL tool-order transform. This duplication is intentional until a second family demonstrates a safe reusable abstraction.
+- Retrieval audit is deferred until real transcripts and a versioned evaluation protocol exist; its absence does not block native scores or the first BFCL model-only studies.
 
 ## 17. Module map and source-tree ownership (current)
 
@@ -440,10 +522,32 @@ Every production module under `src/bencheval/` has one architectural home below.
 | Reports and exports | `report.py`, `export.py`, `run_bundle.py`, `proof_bundle.py` | Markdown/JSON reporting, Parquet/DuckDB analytics, publication bundles, and immutable `private_proof_v1`. |
 | CLI | `cli.py` | `list`, `catalog`, `run`, `doctor`, report/compare/export, evidence registration. |
 
-The proposed console does not belong in `cli.py`. Implementation adds the
-source tree in §20 and gradually moves handler-independent orchestration into
-`application/`; existing domain, adapter, evidence, and proof modules remain the
-owners of invariants and side effects.
+The implemented console does not belong in `cli.py`. Its source tree is defined in §20 and handler-independent orchestration lives in `application/`; existing domain, adapter, evidence, and proof modules remain the owners of invariants and side effects.
+
+Exposure phases add only the following production/config files; all other
+changes extend the current owners above:
+
+```text
+src/bencheval/
+  access_evidence.py   - Typed constructors/validation for effective official access evidence; must not enforce network or infer from RunPlan.network_policy.
+  exposure_study.py    - Closed study-manifest loader, canonical digest, relation/population validation; must not launch adapters or calculate scores.
+  bfcl_study.py        - BFCL Live verification and run-owned tool-order overlay materialization; must not score, mutate site-packages, or generalize into plugins.
+  exposure_report.py   - Read-only freshness/paired analysis and JSON/Markdown rendering; must preserve native scores and fail closed on population/axis drift.
+config/studies/
+  bfcl-v4-live-vs-non-live.yaml - Stratified unpaired freshness contract and forbidden contamination claims.
+  bfcl-v4-tool-order-v1.yaml    - Paired representation-equivalent contract and balanced-transform requirement.
+config/slices/
+  bfcl-v4-live-*.yaml            - Diagnostic Live populations created only after the E0 wheel/CLI spike.
+  bfcl-v4-tool-order-*.yaml      - Diagnostic paired populations mapping exactly to canonical source ids.
+tests/specs/
+  test_effective_access_contracts.py - Requested policy versus retained effective-state RED contracts.
+  test_exposure_study_contracts.py   - Manifest, population, identity, forbidden-claim, and legacy compatibility RED contracts.
+  test_bfcl_study_contracts.py       - Exact Live pins and hostile run-owned overlay/materializer RED contracts.
+tests/regressions/
+  test_exposure_report_integrity.py  - Asymmetric population, drift, smoke overclaim, and proof-retention regressions.
+```
+
+`domain.py` owns the four closed access enums; `evidence.py` owns their additive record fields; `benchmark_registry.py` owns the derived BFCL identity type; `identity_strings.py` owns its stable label; `bfcl_native_adapter.py` remains the only official BFCL generate/evaluate/scoring boundary; `control_plane_executor.py` dispatches diagnostic catalog rows; `proof_bundle.py` retains evidence-referenced study files beneath `artifacts/study/` using the existing `artifact` role (no proof-schema expansion); `cli.py` exposes read-only study validate/report commands; and `application/{dto,operations}.py` plus `ui/pages.py` may project reports only in the final UI-integration phase. None of those files may absorb transform logic.
 
 ## 18. Remaining adapter architecture
 
@@ -543,52 +647,29 @@ The following decisions are closed for v1:
 5. **Dual-use benchmarks:** CyberGym and ExploitGym remain catalog-only and non-executable. Their official PoC/exploit lifecycles and ExploitGym metric selection are outside v1.
 6. **HITL:** probe and automate ordinary host, dependency, credential-presence, and service prerequisites. Pause only when a runtime literally requires device/subscription login, CAPTCHA, hardware touch, unavailable administrator action, or a new product decision.
 7. **Operator console:** add an optional loopback-only NiceGUI surface with full current-feature coverage. CLI and UI share typed application operations; no public API, remote bind, database, durable queue, or UI-owned truth is introduced.
+8. **Exposure objective:** measure benchmark-specific dependence/exposure sensitivity; do not classify a model or provider as clean, contaminated, or cheating and do not publish a decontaminated score.
+9. **Access evidence:** preserve `network_policy` as requested plan intent. Add effective official access/history evidence and optional one-way retrieval audit; do not build a BenchEval egress allow-list or modify runtimes.
+10. **First studies:** run BFCL non-live versus Live as a stratified freshness/generalization contrast, then one balanced tool-declaration order pair if the Live and overlay spikes pass. Both candidate identities remain diagnostic and distinct from admitted `bfcl-v4`.
+11. **Abstraction limit:** no generic transform DSL/plugin/scheduler, reference-panel correction, or controlled training laboratory in the first release. Reopen only after the first study is informative and a second transform family exists.
 
-After the current executable set, the next product implementation candidate is the local operator console. No later benchmark family is selected by this UI work; SWE promotion and every catalog/admission decision remain separate evidence-gated decisions.
+The local operator console is now implemented. The next product implementation candidate is the exposure-study program in §22. It does not select a new admitted benchmark family: BFCL Live and tool-order remain diagnostic, SWE promotion stays separate, and every catalog/admission change remains evidence-gated.
 
 ## 20. Local operator console (IMPLEMENTED)
 
 ### 20.0 Evidence and source reconciliation
 
-- `VERIFIED_EXISTING`: the core remains a dependency-light Python CLI with 8 catalog
-  rows, 4 executable benchmarks, 2 admitted runtimes, 2 admitted providers, no
-  admitted agent, canonical YAML/JSONL/files, and report/compare/export/proof
-  operations; the optional `ui` extra adds the local console without entering
-  core imports.
-- `USER_DECISION`: the 2026-09-01 request adds a feature-complete front-end
-  prototype and design. It supersedes only the old dashboard exclusion; hosted,
-  multi-user, database, remote proof, deletion, dual-use execution, and
-  hard-dollar-control exclusions remain.
-- `DEPRECATED`: the Dashboard/Post-MVP statement in historical
-  `docs/context/concept-hld.md` is retained as history, not current intent. The
-  live sources are concept-zero, this architecture, roadmap, and contracts.
-- `ADOPTED`: NiceGUI 3.x based on its official Python/backend-first
-  browser model, local/native modes, async-task guidance, tables/downloads, real
-  browser testing, MIT license, and active release/repository state verified on
-  2026-09-01.
-- `REJECTED`: Reflex self-hosting adds separate frontend/backend/API URL; split
-  React/FastAPI adds Node and a public-like API; Textual does not satisfy the
-  requested browser-grade prototype. Revisit only if the local/single-process
-  architecture changes.
-- `IMPLEMENTED`: the command, typed operation/DTO layer, capability middleware,
-  single run session, complete page surface, and optional package dependency.
-  Generated images remain design evidence only. Cross-browser, accessibility,
-  scale, and charged-UI-run evidence remain quality gates.
+- `VERIFIED_EXISTING`: the core remains a dependency-light Python CLI with 8 catalog rows, 4 executable benchmarks, 2 admitted runtimes, 2 admitted providers, no admitted agent, canonical YAML/JSONL/files, and report/compare/export/proof operations; the optional `ui` extra adds the local console without entering core imports.
+- `USER_DECISION`: the 2026-09-01 request adds a feature-complete front-end prototype and design. It supersedes only the old dashboard exclusion; hosted, multi-user, database, remote proof, deletion, dual-use execution, and hard-dollar-control exclusions remain.
+- `DEPRECATED`: the Dashboard/Post-MVP statement in historical `docs/context/concept-hld.md` is retained as history, not current intent. The live sources are concept-zero, this architecture, roadmap, and contracts.
+- `ADOPTED`: NiceGUI 3.x based on its official Python/backend-first browser model, local/native modes, async-task guidance, tables/downloads, real browser testing, MIT license, and active release/repository state verified on 2026-09-01.
+- `REJECTED`: Reflex self-hosting adds separate frontend/backend/API URL; split React/FastAPI adds Node and a public-like API; Textual does not satisfy the requested browser-grade prototype. Revisit only if the local/single-process architecture changes.
+- `IMPLEMENTED`: the command, typed operation/DTO layer, capability middleware, single run session, complete page surface, and optional package dependency. Generated images remain design evidence only. Cross-browser, accessibility, scale, and charged-UI-run evidence remain quality gates.
 
 ### 20.1 Executive decision
 
-Adopt a **single-process, loopback-only NiceGUI console** as an optional extra.
-The console is a presentation and interaction adapter over shared typed
-application operations. The CLI remains the stable automation interface; the
-browser transport is private implementation detail. No page calls adapters,
-parses CLI output, reads storage files directly, derives scoring/readiness, or
-persists authoritative state.
+Adopt a **single-process, loopback-only NiceGUI console** as an optional extra. The console is a presentation and interaction adapter over shared typed application operations. The CLI remains the stable automation interface; the browser transport is private implementation detail. No page calls adapters, parses CLI output, reads storage files directly, derives scoring/readiness, or persists authoritative state.
 
-This is the smallest architecture that covers every existing operator feature
-without introducing a hosted service, database, durable queue, public API, or
-Node-owned product contract. The design references are
-[`docs/prototypes/frontend-v1.md`](prototypes/frontend-v1.md) and its two PNG
-boards.
+This is the smallest architecture that covers every existing operator feature without introducing a hosted service, database, durable queue, public API, or Node-owned product contract. The design references are [`docs/prototypes/frontend-v1.md`](prototypes/frontend-v1.md) and its two PNG boards.
 
 ### 20.2 Runtime view
 
@@ -610,42 +691,23 @@ one `bencheval ui` Python process
 
 - Startup command: `bencheval ui [--port <loopback-port>] [--no-open]`.
 - Bind address is fixed to `127.0.0.1`; there is no `--host` or remote mode.
-- The process may serve multiple tabs for the same local operator, but owns at
-  most one active mutating run session. Read-only queries may overlap.
-- Closing or refreshing a page does not cancel or retry a run. Explicit Cancel
-  is the only UI cancellation action.
-- A console restart reconstructs completed/failed/current registry state from
-  canonical files. It does not claim to resume an orphaned in-memory process;
-  reconciliation exposes the durable state and an actionable warning.
-- Long-running work uses NiceGUI background tasks around the existing synchronous
-  application operation. No durable scheduler, worker service, or queue exists.
+- The process may serve multiple tabs for the same local operator, but owns at most one active mutating run session. Read-only queries may overlap.
+- Closing or refreshing a page does not cancel or retry a run. Explicit Cancel is the only UI cancellation action.
+- A console restart reconstructs completed/failed/current registry state from canonical files. It does not claim to resume an orphaned in-memory process; reconciliation exposes the durable state and an actionable warning.
+- Long-running work uses NiceGUI background tasks around the existing synchronous application operation. No durable scheduler, worker service, or queue exists.
 
 ### 20.3 Component view
 
-- **Application operations:** transport-neutral functions that compose existing
-  registries, planner, doctor, executor, readers, qualification, report,
-  comparison, export, and proof modules. They own no benchmark semantics.
-- **View DTOs:** frozen, closed Pydantic projections with deliberate redaction,
-  pagination, action availability, and status vocabulary. Storage entities are
-  never serialized as a shortcut.
-- **UI shell:** navigation, global search, environment/readiness summary, theme,
-  keyboard shortcuts, status announcements, and the sole active-run strip.
-- **Run session controller:** owns the one background task/process reference,
-  cancellation signal, bounded live event/log buffer, and tab reattachment. It
-  never replaces manifest/evidence state.
-- **Pages:** Overview, Catalog, Run Builder, Runs & Evidence, Compare, Reports &
-  Exports, Proofs, Readiness, and Environment. The complete feature mapping is
-  canonical in `docs/prototypes/frontend-v1.md`.
-- **Existing domain modules:** remain sole owners of plan validity, official
-  authority, qualification, comparison eligibility, filesystem ownership,
-  redaction, proof integrity, and lifecycle transitions.
+- **Application operations:** transport-neutral functions that compose existing registries, planner, doctor, executor, readers, qualification, report, comparison, export, and proof modules. They own no benchmark semantics.
+- **View DTOs:** frozen, closed Pydantic projections with deliberate redaction, pagination, action availability, and status vocabulary. Storage entities are never serialized as a shortcut.
+- **UI shell:** navigation, global search, environment/readiness summary, theme, keyboard shortcuts, status announcements, and the sole active-run strip.
+- **Run session controller:** owns the one background task/process reference, cancellation signal, bounded live event/log buffer, and tab reattachment. It never replaces manifest/evidence state.
+- **Pages:** Overview, Catalog, Run Builder, Runs & Evidence, Compare, Reports & Exports, Proofs, Readiness, and Environment. The complete feature mapping is canonical in `docs/prototypes/frontend-v1.md`.
+- **Existing domain modules:** remain sole owners of plan validity, official authority, qualification, comparison eligibility, filesystem ownership, redaction, proof integrity, and lifecycle transitions.
 
 ### 20.4 Source tree and file responsibilities
 
-The responsibility map below is authoritative. The first implementation
-combines related operation functions in `application/operations.py` and page
-functions in `ui/pages.py`; split them only when measured change pressure earns
-the additional modules.
+The responsibility map below is authoritative. The first implementation combines related operation functions in `application/operations.py` and page functions in `ui/pages.py`; split them only when measured change pressure earns the additional modules.
 
 ```text
 src/bencheval/
@@ -666,146 +728,256 @@ tests/
 docs/prototypes/        - Design boards and feature-coverage specification; never runtime authority.
 ```
 
-Dependency direction is `ui → application → existing domain modules`. Existing
-domain modules must not import `application` or `ui`; application modules must
-not import NiceGUI. `cli.py` is migrated to application operations incrementally
-so no large rewrite is required before the first read-only console slice.
+Dependency direction is `ui → application → existing domain modules`. Existing domain modules must not import `application` or `ui`; application modules must not import NiceGUI. `cli.py` is migrated to application operations incrementally so no large rewrite is required before the first read-only console slice.
 
 ### 20.5 Security, privacy, and local abuse cases
 
-The console can launch charged subprocesses and reveal private local evidence,
-so “localhost” alone is not a complete boundary.
+The console can launch charged subprocesses and reveal private local evidence, so “localhost” alone is not a complete boundary.
 
-- Bind IPv4 loopback only. Reject proxy headers, non-loopback Host, unexpected
-  Origin, CORS, iframe embedding, and remote/static exposure.
-- A random per-process capability nonce is exchanged by the initially opened
-  local URL for a `HttpOnly`, `SameSite=Strict` session cookie and removed from
-  visible history. Middleware also rejects non-loopback clients, Host, and
-  Origin; applies a strict same-site HttpOnly cookie and no-store responses; and
-  rejects framing. The exchange has deterministic hostile-request coverage and
-  a real Chromium proof.
-- Credentials remain environment-owned. DTOs expose name/presence/doctor result,
-  never values. Default log/artifact previews apply existing redaction; explicit
-  raw-private reveal is local, transient, labelled, and never browser-persisted.
-- Every path input is normalized and revalidated by the existing operation.
-  Browser-provided paths, filenames, MIME types, and rendered Markdown/HTML are
-  untrusted. Active content is never rendered from artifacts.
-- Diagnostic, catalog-only, scaffold, invalid comparison, illegal transition,
-  and proof-delete restrictions are enforced by application/domain operations,
-  not disabled buttons alone.
+- Bind IPv4 loopback only. Reject proxy headers, non-loopback Host, unexpected Origin, CORS, iframe embedding, and remote/static exposure.
+- A random per-process capability nonce is exchanged by the initially opened local URL for a `HttpOnly`, `SameSite=Strict` session cookie and removed from visible history. Middleware also rejects non-loopback clients, Host, and Origin; applies a strict same-site HttpOnly cookie and no-store responses; and rejects framing. The exchange has deterministic hostile-request coverage and a real Chromium proof.
+- Credentials remain environment-owned. DTOs expose name/presence/doctor result, never values. Default log/artifact previews apply existing redaction; explicit raw-private reveal is local, transient, labelled, and never browser-persisted.
+- Every path input is normalized and revalidated by the existing operation. Browser-provided paths, filenames, MIME types, and rendered Markdown/HTML are untrusted. Active content is never rendered from artifacts.
+- Diagnostic, catalog-only, scaffold, invalid comparison, illegal transition, and proof-delete restrictions are enforced by application/domain operations, not disabled buttons alone.
 
 ### 20.6 Operations and accessibility
 
-- Package as a bounded `ui` optional extra after dependency/license/lock review;
-  core `uv sync` and `import bencheval` remain NiceGUI-free.
-- Startup prints the loopback URL, config/results/proof roots, and whether the
-  browser was opened. It never prints the capability nonce or secrets after
-  exchange.
-- Logs are local structured application logs with secret redaction. No telemetry
-  or external analytics is added.
-- Browser targets are current Chromium, Firefox, and WebKit on the supported
-  macOS/Linux operator hosts. Desktop is the run-launch target; tablet is
-  read/inspect capable; mobile launch is deferred.
-- Applicable WCAG 2.2 AA behavior is required: keyboard access, no trap, visible
-  and unobscured focus, labels/errors, minimum contrast, non-color status,
-  status-message announcements, reduced motion, and tabular equivalents for
-  charts.
+- Package as a bounded `ui` optional extra after dependency/license/lock review; core `uv sync` and `import bencheval` remain NiceGUI-free.
+- Startup prints the loopback URL, config/results/proof roots, and whether the browser was opened. It never prints the capability nonce or secrets after exchange.
+- Logs are local structured application logs with secret redaction. No telemetry or external analytics is added.
+- Browser targets are current Chromium, Firefox, and WebKit on the supported macOS/Linux operator hosts. Desktop is the run-launch target; tablet is read/inspect capable; mobile launch is deferred.
+- Applicable WCAG 2.2 AA behavior is required: keyboard access, no trap, visible and unobscured focus, labels/errors, minimum contrast, non-color status, status-message announcements, reduced motion, and tabular equivalents for charts.
 
 ### 20.7 Architecture decisions
 
-- **ADR-UI-01 — ACCEPTED:** NiceGUI rather than Reflex, split
-  React/FastAPI, or Textual. Consequence: one Python deployment and private
-  transport, at the cost of framework coupling contained under `ui/`.
-- **ADR-UI-02 — ACCEPTED:** CLI and UI share application operations. Shelling out
-  is forbidden except where the existing domain operation itself invokes an
-  official external harness.
-- **ADR-UI-03 — ACCEPTED:** canonical stores stay YAML/JSONL/files; UI state is
-  disposable. No DB, queue, cache, or browser-owned lifecycle state.
-- **ADR-UI-04 — ACCEPTED:** loopback/single-user only. Remote or multi-user mode
-  requires a new auth/authorization/deployment architecture decision.
-- **ADR-UI-05 — ACCEPTED:** one active mutating run. Revisit only when operators
-  demonstrate a need for concurrent scheduling and the executor has safe
-  cancellation/recovery contracts.
+- **ADR-UI-01 — ACCEPTED:** NiceGUI rather than Reflex, split React/FastAPI, or Textual. Consequence: one Python deployment and private transport, at the cost of framework coupling contained under `ui/`.
+- **ADR-UI-02 — ACCEPTED:** CLI and UI share application operations. Shelling out is forbidden except where the existing domain operation itself invokes an official external harness.
+- **ADR-UI-03 — ACCEPTED:** canonical stores stay YAML/JSONL/files; UI state is disposable. No DB, queue, cache, or browser-owned lifecycle state.
+- **ADR-UI-04 — ACCEPTED:** loopback/single-user only. Remote or multi-user mode requires a new auth/authorization/deployment architecture decision.
+- **ADR-UI-05 — ACCEPTED:** one active mutating run. Revisit only when operators demonstrate a need for concurrent scheduling and the executor has safe cancellation/recovery contracts.
 
 ## Data and State
 
-Applicability: **REQUIRED**. BenchEval already owns configuration, plans,
-evidence, history, reports/exports, artifacts, and proof-index state. The console
-adds no authoritative store.
+Applicability: **REQUIRED**. BenchEval already owns configuration, plans, evidence, history, reports/exports, artifacts, and proof-index state. The console adds no authoritative store.
 
-- **Canonical configuration:** packaged or checkout YAML under `config/`, read
-  through existing registries and Pydantic models. UI never writes config.
-- **Run plan:** frozen `RunPlan` and anchored `run-plan.json`, created before
-  launch. A PlanPreviewDTO is derived, not persisted separately.
-- **Run lifecycle:** append-only `runs.jsonl`; full-history validation precedes
-  the derived current view. UI sorting/filtering never rewrites history.
-- **Evidence:** `EvidenceRecord` JSONL plus owned artifacts; official authority,
-  validity, failure, cost basis, and interpretation remain domain fields.
-- **Reports/analytics/public bundles:** derived files at exclusive operator-
-  selected destinations; never systems of record.
-- **Private proofs:** immutable `private_proof_v1` directories and append-only
-  proof index; permanent local retention and no delete lifecycle.
-- **RunSession:** process-memory state only — session ID/run ID, phase, task or
-  process handle, cancellation signal, bounded events/log tail, attached tab
-  count. It must be reconstructible as “no resumable session” after restart.
-- **UI preferences:** theme/density/reduced-motion may use browser storage but
-  are non-sensitive and non-authoritative. No path, credential, run, evidence,
-  proof, registration, or readiness state is stored there.
+- **Canonical configuration:** packaged or checkout YAML under `config/`, read through existing registries and Pydantic models. UI never writes config.
+- **Run plan:** frozen `RunPlan` and anchored `run-plan.json`, created before launch. A PlanPreviewDTO is derived, not persisted separately.
+- **Run lifecycle:** append-only `runs.jsonl`; full-history validation precedes the derived current view. UI sorting/filtering never rewrites history.
+- **Evidence:** `EvidenceRecord` JSONL plus owned artifacts; official authority, validity, failure, cost basis, and interpretation remain domain fields.
+- **Reports/analytics/public bundles:** derived files at exclusive operator- selected destinations; never systems of record.
+- **Private proofs:** immutable `private_proof_v1` directories and append-only proof index; permanent local retention and no delete lifecycle.
+- **RunSession:** process-memory state only — session ID/run ID, phase, task or process handle, cancellation signal, bounded events/log tail, attached tab count. It must be reconstructible as “no resumable session” after restart.
+- **UI preferences:** theme/density/reduced-motion may use browser storage but are non-sensitive and non-authoritative. No path, credential, run, evidence, proof, registration, or readiness state is stored there.
 
-Existing exclusive-write, append-lock, content-digest, path-containment, and
-corruption rules remain the transaction model. The console cannot repair or
-skip corrupted shared canonical state. A corrupt proof object is isolated as
-an unverified inventory row so healthy siblings and readiness remain visible;
-a corrupt proof index or run history still presents a page-level typed
-integrity error and the operator-owned recovery path. Backup remains
-filesystem/operator-owned.
+Existing exclusive-write, append-lock, content-digest, path-containment, and corruption rules remain the transaction model. The console cannot repair or skip corrupted shared canonical state. A corrupt proof object is isolated as an unverified inventory row so healthy siblings and readiness remain visible; a corrupt proof index or run history still presents a page-level typed integrity error and the operator-owned recovery path. Backup remains filesystem/operator-owned.
 
 ## Interfaces and Contracts
 
-Applicability: **REQUIRED**. Canonical implemented contract:
-[`docs/api/operator-console-contract.md`](api/operator-console-contract.md).
+Applicability: **REQUIRED**. Canonical implemented contract: [`docs/api/operator-console-contract.md`](api/operator-console-contract.md).
 
-The public compatibility boundary remains the CLI and exported Pydantic/domain
-types. The browser transport generated by NiceGUI is private and unversioned;
-there is no supported HTTP/REST/GraphQL/WebSocket API. The UI calls typed
-in-process operations returning frozen view DTOs.
+The public compatibility boundary remains the CLI and exported Pydantic/domain types. The browser transport generated by NiceGUI is private and unversioned; there is no supported HTTP/REST/GraphQL/WebSocket API. The UI calls typed in-process operations returning frozen view DTOs.
 
 Contract rules:
 
-- Request DTOs validate syntax and UI-safe limits; existing domain operations
-  validate benchmark semantics, identities, paths, transitions, eligibility,
-  and integrity.
-- Operations return frozen view DTOs and raise `BenchEvalError` in-process. UI
-  handlers map failures to concise redacted messages; tracebacks and secret
-  values stay out of the browser. There is no serialized transport error schema.
-- Read operations are safe to repeat. Dry-run is pure. Start/cancel/register and
-  exclusive exports are never automatically retried. Proof import is idempotent
-  only for the same verified digest, matching the current domain contract.
-- Lists use opaque source-bound cursors and bounded limits; a source fingerprint
-  mismatch returns a refresh-required result instead of silently skipping rows.
-- Action availability is a domain projection (`allowed`, `disabled_reason`), not
-  authorization by UI state. Crafted event payloads are revalidated.
-- Compatibility changes to CLI, persisted schemas, proof format, or exported
-  domain DTOs follow their existing policies. UI DTOs may evolve before first
-  release; after release they use additive fields within a declared UI contract
-  version. Private transport details remain unsupported.
+- Request DTOs validate syntax and UI-safe limits; existing domain operations validate benchmark semantics, identities, paths, transitions, eligibility, and integrity.
+- Operations return frozen view DTOs and raise `BenchEvalError` in-process. UI handlers map failures to concise redacted messages; tracebacks and secret values stay out of the browser. There is no serialized transport error schema.
+- Read operations are safe to repeat. Dry-run is pure. Start/cancel/register and exclusive exports are never automatically retried. Proof import is idempotent only for the same verified digest, matching the current domain contract.
+- Lists use opaque source-bound cursors and bounded limits; a source fingerprint mismatch returns a refresh-required result instead of silently skipping rows.
+- Action availability is a domain projection (`allowed`, `disabled_reason`), not authorization by UI state. Crafted event payloads are revalidated.
+- Compatibility changes to CLI, persisted schemas, proof format, or exported domain DTOs follow their existing policies. UI DTOs may evolve before first release; after release they use additive fields within a declared UI contract version. Private transport details remain unsupported.
 
 ## 21. Console risks, debt, and revisit triggers
 
-- **Framework/package weight:** NiceGUI may enlarge the optional dependency and
-  wheel/runtime surface. Phase U0 measures lock footprint, startup, build, and
-  clean-install behavior; reject it if core import or one-process packaging
-  cannot remain clean.
-- **Background cancellation:** existing adapters are synchronous and differ in
-  subprocess ownership. Live mutation waits until a real cancellation/timeout/
-  browser-reconnect spike proves no duplicate or orphaned launch.
-- **Local web attack surface:** state-changing controls remain disabled until
-  loopback Host/Origin/capability behavior passes a hostile browser test.
-- **Large JSONL/artifacts:** views use bounded readers, cursors, lazy artifact
-  metadata, and capped text previews. Revisit indexing only when measured local
-  data exceeds response/startup targets; do not preemptively add a database.
-- **Framework escape hatch:** application operations and DTOs remain NiceGUI-
-  free. If NiceGUI becomes unmaintained, inaccessible, or prevents packaging,
-  replace only `ui/`, not domain/application contracts.
-- **Remote/multi-user request:** triggers a new concept and auth/data/deployment
-  design; never expose this console by changing its bind address alone.
+- **Framework/package weight:** NiceGUI may enlarge the optional dependency and wheel/runtime surface. Phase U0 measures lock footprint, startup, build, and clean-install behavior; reject it if core import or one-process packaging cannot remain clean.
+- **Background cancellation:** existing adapters are synchronous and differ in subprocess ownership. Live mutation waits until a real cancellation/timeout/ browser-reconnect spike proves no duplicate or orphaned launch.
+- **Local web attack surface:** state-changing controls remain disabled until loopback Host/Origin/capability behavior passes a hostile browser test.
+- **Large JSONL/artifacts:** views use bounded readers, cursors, lazy artifact metadata, and capped text previews. Revisit indexing only when measured local data exceeds response/startup targets; do not preemptively add a database.
+- **Framework escape hatch:** application operations and DTOs remain NiceGUI- free. If NiceGUI becomes unmaintained, inaccessible, or prevents packaging, replace only `ui/`, not domain/application contracts.
+- **Remote/multi-user request:** triggers a new concept and auth/data/deployment design; never expose this console by changing its bind address alone.
+
+## 22. Benchmark exposure studies (PROPOSED)
+
+### 22.0 Evidence and source reconciliation
+
+- `VERIFIED_EXISTING`: BenchEval already preserves official native results, immutable benchmark/harness/runtime/provider identities, eligible shared populations, append-only evidence, and portable private proof. Those are the substrate for a study; no second execution store is needed.
+- `VERIFIED_EXISTING`: `RunPlan.network_policy` is planner/runtime intent. Pinned Inspect SWE defaults to a network-disabled task sandbox, Harbor explicitly cannot enforce `deny`, and model-only harnesses use host provider egress without exposing arbitrary tools to the model. Effective access therefore cannot be reconstructed from the plan field.
+- `VERIFIED_EXISTING`: BFCL upstream commit `6ea57973…` contains the six Live question files and four Live ground-truth files. The admitted catalog identity covers only the nine non-live files used by `smoke-5`.
+- `VERIFIED_EXISTING`: the pinned BFCL CLI loads category data from its package `data/` directory and has no arbitrary question-file option. Result/score paths are configurable; source question data is not.
+- `ADOPTED`: official BFCL generate/evaluate and AST score artifacts remain the only scorer path. Official access-control options may be selected and retained.
+- `REJECTED`: a BenchEval network proxy/allow-list, runtime or scorer patch, installed-package mutation, generic transformation DSL, automatic multi-seed scheduler, default reference-model correction, or in-project model training.
+- `SPIKE_REQUIRED`: exact PyPI wheel Live bytes/CLI behavior, run-owned BFCL overlay import behavior, useful frontier population size, and the inferential method beyond raw paired counts.
+
+Primary external evidence is the concept ledger E-12–E-22. Cursor's result establishes runtime retrieval as a material confound, not a universal requirement to remove network. The ICML mitigation study and option-position work establish that scorer equivalence does not remove behavioral-fidelity calibration. BFCL Live supplies the lowest-cost official freshness route, while its documented difficulty/composition shift forbids a direct contamination estimate.
+
+### 22.1 Architecture-significant requirements
+
+- `G-09` Goal: compare canonical evidence with a source-bound fresh or representation-equivalent population while preserving both native result sets. Architecture impact: a study manifest and read-only report layer; no replacement score. Verification: BFCL Live contrast and a paired tool-order report.
+- `G-10` Goal: capture effective model-visible access separately from requested policy. Architecture impact: additive attempt fields plus adapter-specific capture. Verification: model-only, Inspect, and Harbor real-path probes.
+- `G-11` Goal: begin with BFCL Live, then one BFCL tool-order study only if the spikes pass. Architecture impact: two diagnostic identities and a BFCL-specific materializer, not a generic plugin system. Verification: exact wheel pins, official scores, and source/derived manifest replay.
+- `G-12` Goal: constrain interpretation. Architecture impact: closed report validity/non-claim rules and nonzero failure. Verification: golden reports plus hostile population/access/verifier cases.
+- `C-09` Constraint: `network_policy` semantics are backward compatible. Architecture impact: no rename, migration, or inference from historical plans.
+- `C-10` Constraint: official code/scorer bytes do not change. Architecture impact: overlay verification surrounds every derived run. Verification: pre/post-run producer/scorer hashes and installed-tree immutability.
+- `C-11` Constraint: relation, fidelity, freshness, verifier, access, and retrieval are orthogonal. Architecture impact: separate fields and validation stages.
+- `C-12` / `C-13` Constraint: current frontier API models are primary and smoke is plumbing only. Architecture impact: headroom/cost spike before population selection; report has a raw-only smoke mode.
+- `Q-12`–`Q-18` Quality scenarios: plan/effective access disagreement, uncontrolled Harbor, positive retrieval audit, BFCL pin failure, overlay integrity, asymmetric paired evidence, and smoke overclaim all fail or downgrade exactly as specified in the concept.
+
+### 22.2 Candidate architectures and selection
+
+**Metadata-only caveats** add no execution units or code, but cannot bind or replay populations and cannot distinguish a valid paired study from two arbitrary runs. Rejected as insufficient.
+
+**Selected: narrow study layer over existing runs.** Four small Python modules, typed YAML, two demoted BFCL catalog identities after spikes, and existing JSONL/proof storage cover the need. Operators run canonical and candidate lanes through the ordinary control plane; a separate read-only report validates them. This adds zero deploy units, zero services, zero stateful stores, zero queues, zero caches, and no required third-party dependency. It deliberately duplicates the first BFCL-specific transform rather than speculating about reuse.
+
+**Generic morphism/orchestration platform** would add plugins, inverse-output mappings, seed scheduling, benchmark-specific scripting, and new state. It is rejected until two independent admitted transform families demonstrate common invariants and the first study changes a product decision.
+
+**Custom strict harness or controlled-training lab** could support different research questions but would modify the measured runtime or create a new model-training operation. It is outside the selected user/product boundary.
+
+### 22.3 System context and runtime boundaries
+
+```text
+operator
+  ├─ existing `bencheval run ... [--diagnostic]`
+  └─ proposed `bencheval study validate|report ...`
+          │
+          ▼
+one BenchEval process
+  ├─ current planner / doctor / executor
+  ├─ effective-access capture (evidence only; no network enforcement)
+  ├─ study manifest validator
+  ├─ BFCL study materializer (Live pins or run-owned data overlay)
+  └─ read-only exposure report
+          │
+          ├─ official pinned BFCL code + scorer
+          ├─ admitted provider + frontier model
+          └─ current evidence / raw artifacts / private proof
+```
+
+No process stays resident after a CLI run. The optional console remains the same single NiceGUI process and consumes only application DTO projections. Official BFCL and provider subprocesses retain current lifecycle, credential, deadline, and failure ownership. The variant overlay is created inside the claimed run root before launch and is treated as untrusted/ephemeral input plus retained evidence; it is not installed globally.
+
+The access boundary is observational:
+
+- **model-only:** arbitrary agent egress and repository history are `not_applicable`; provider API connectivity remains ordinary launch provenance;
+- **Inspect SWE:** a blocked/restricted value is allowed only when the exact generated/effective official sandbox configuration is retained;
+- **Harbor/TB:** until an official enforceable control exists, source=`none` and egress=`uncontrolled` (or `unknown` if the launch cannot establish it);
+- **historical evidence:** absent fields remain unknown/legacy;
+- **retrieval audit:** optional post-run analysis; it never supplies access proof or scorer authority.
+
+### 22.4 Component and flow view
+
+**Effective access capture.** `access_evidence.py` exposes closed constructors for model-only, retained official profile, and known-uncontrolled paths. Adapters pass the concrete retained launch facts; the helper rejects attempts to stamp blocked or restricted access from `RunPlan.network_policy` alone. It owns no process or firewall behavior.
+
+**Study registry.** `exposure_study.py` loads repository-owned manifests, validates the two supported kinds/modes, canonicalizes them, and calculates the study digest. It knows benchmark/slice ids and comparison invariants but not adapter launch or scoring semantics.
+
+**BFCL Live path.** `bfcl_study.py` verifies the exact ten Live files against the new catalog identity, then delegates generation/evaluation to `bfcl_native_adapter.py`. There is no materialized variant or output mapping. The new `bfcl-v4-live` row stays diagnostic; its official native scores are real, but the study report treats them as an unpaired distribution.
+
+**BFCL tool-order path.** The materializer reads the pinned canonical JSONL, rejects unsafe/noncanonical source files, and emits a run-owned replacement with only `function` list order changed for declared `multiple` and `parallel_multiple` rows. The algorithm uses source identity, transform version, and instance id to produce a balanced deterministic target position; it records the before/after tool-name order for every row. It copies the pinned BFCL package into an exclusive overlay, verifies all official code/config/scorer files are byte-identical, replaces only the declared data file, and launches the same official CLI from that overlay. It never rewrites output because function names and ground truth are unchanged.
+
+**Exposure report.** `exposure_report.py` parses evidence through the existing model, applies normal attempt eligibility, verifies manifest and immutable axes, then selects exactly one mode:
+
+- `stratified_unpaired`: BFCL non-live versus Live; report native category counts, rates/intervals, raw delta, and distribution/freshness caveats;
+- `paired_by_source_instance`: canonical versus tool order; require one eligible row per source id on both sides, then report both native rates, paired delta, canonical-only passes, candidate-only passes, concordant outcomes, and the preselected uncertainty result.
+
+No result is silently dropped. Invalid/infra rows remain in exclusions and may invalidate the study if the declared population is no longer comparable. The report owns interpretation, not native scoring or registration.
+
+### 22.5 Data, identity, and retention
+
+- **Study YAML:** version-controlled intent under `config/studies/`; closed schema, safe ids, no executable code, no secrets. Canonical digest is retained with each report/proof.
+- **Catalog identities:** `bfcl-v4-live` binds the ten exact upstream/wheel files. `bfcl-v4-tool-order-v1` binds the source BFCL identity, transform version, study digest, and derived-file digest. Neither is `executable: true`.
+- **Variant manifest:** immutable JSON under the run's `artifacts/study/`; includes source/derived row mapping, order mapping, digests, and producer/scorer hashes.
+- **Effective access artifact:** retained official task/compose/config digest or explicit known-uncontrolled declaration. Secret-bearing proxy/env bytes are never copied; only non-secret effective identity is stored.
+- **Evidence:** additive access fields; canonical and candidate rows retain their own benchmark versions/native scores. The study does not create synthetic attempt rows.
+- **Report:** deterministic JSON is the machine-readable authority; Markdown/UI are projections. Exclusive output and no-partial-file rules match current compare/report operations.
+- **Run proofs:** study, variant, source/derived, and safe access artifacts are evidence-referenced beneath `artifacts/study/`, so the existing generic `artifact` role retains them without changing `private_proof_v1`.
+- **Study lock:** proof-backed report mode writes a separate `exposure-study-lock-v1` manifest beside the deterministic report. It records the canonical proof ID, candidate proof ID, study digest, exact evidence input selectors and digests, report contract version, and report JSON digest. The manifest digest is computed over its canonical bytes. Verification loads both immutable run proofs by id, checks every bound input, and reproduces the report digest. Keeping the lock outside both proof inventories avoids circular proof ids; it does not change `private_proof_v1`, add a study bundle, or add a new store/index. The portable unit is the lock plus the two named proof objects. Permanent local retention and no-delete policy remain unchanged.
+
+Study/config evolution is additive while schema `0.1` is current. Changing transform logic, balancing, source identity, or population creates a new study or transform version; it never rewrites a finalized manifest or proof. Corrupt or missing study artifacts invalidate only the exposure interpretation, while the underlying native evidence remains readable under its existing rules.
+
+### 22.6 Interfaces and compatibility
+
+Proposed public CLI additions:
+
+```text
+bencheval study validate <study-yaml>
+bencheval study report <study-yaml> \
+  --canonical-evidence <jsonl> \
+  --candidate-evidence <jsonl> \
+  --format json|markdown \
+  [--output <exclusive-path>]
+```
+
+For copied-proof reproduction, the same report command accepts a mutually exclusive proof-backed input pair:
+
+```text
+bencheval study report <study-yaml> \
+  --canonical-proof <private-proof-root> \
+  --candidate-proof <private-proof-root> \
+  --format json|markdown \
+  --output <exclusive-path> \
+  --lock-output <exclusive-path>
+```
+
+Both proof objects are verified before their owned evidence is loaded. The lock output is required in proof-backed mode and is rejected if either proof id, selected evidence digest, study digest, report contract version, or report JSON digest does not match. Raw evidence-path mode remains useful for pre-proof local diagnostics but cannot make a portable-study claim.
+
+Actual execution deliberately reuses the existing entry point:
+
+```text
+bencheval run bfcl-v4-live/<slice> --model <id> --provider <id> --diagnostic
+bencheval run bfcl-v4-tool-order-v1/<slice> --model <id> --provider <id> --diagnostic
+```
+
+There is no `study run`, automatic paired launcher, background scheduler, or reference-model panel in the first release. Operators choose and confirm each charged run normally. The report command is read-only unless writing an exclusive output file; all validation errors are `BenchEvalError`, produce no partial output, and return nonzero through the CLI.
+
+The existing `run`, `compare`, `report`, proof, and evidence schemas remain compatible. `EvidenceRecord` additions are optional. Existing compare continues to require identical benchmark/slice identities and is not reused for cross-population exposure semantics. The console later adds an Exposure section to the existing Compare page through `application.operations`; it does not parse CLI output or gain page-local rules.
+
+### 22.7 Operations and fitness gates
+
+The exposure extension uses the existing `bfcl` dependency group, provider credentials, run roots, wall/cost budgets, private proofs, and dev-box runbook. No new daemon, port, external store, dependency group, or secret is introduced. The first operations sequence is:
+
+1. exact wheel/upstream data and CLI compatibility probe without provider charge;
+2. exact run-owned overlay/import and installed-tree immutability probe without a model call;
+3. tiny Live and tool-order runs marked `plumbing_only`;
+4. reviewed population/precision/cost decision;
+5. charged research populations and private proofs;
+6. deterministic report verification on a copied proof/root;
+7. only then decide whether the capability is useful enough for broader UI or a second transform family.
+
+Fitness gates are AR-24–AR-32 and QS-20–QS-27. In addition:
+
+- `make check-production-v1` must stay green for software changes;
+- exact upstream/wheel/overlay hashes and official CLI results are real acceptance evidence; injected runners or synthetic benchmark rows are diagnostic only;
+- the Live report cannot claim pairing or contamination;
+- the tool-order report cannot claim contamination, novelty, or statistical significance until its declared population/analysis gate passes;
+- a copied `exposure-study-lock-v1` manifest plus both named private proofs must reproduce report validation without the source checkout or mutable installed overlay;
+- a retrieval audit is not a release dependency for model-only BFCL studies.
+
+### 22.8 Architecture decisions
+
+- **ADR-EX-01 — ACCEPTED:** measure benchmark-specific dependence/exposure sensitivity, not model cleanliness, provider intent, or a decontaminated score.
+- **ADR-EX-02 — ACCEPTED:** do not patch/fork official runtime, harness, or scorer and do not build a BenchEval egress allow-list. Official knobs may be selected and evidenced.
+- **ADR-EX-03 — PROPOSED:** retain `network_policy` as intent and add orthogonal effective-access/retrieval fields to evidence. Consequence: historical rows are unknown rather than reconstructed.
+- **ADR-EX-04 — PROPOSED:** use a manifest-driven read-only study layer over ordinary runs instead of orchestration or a replacement score.
+- **ADR-EX-05 — SPIKE_REQUIRED:** add `bfcl-v4-live` only after exact wheel/CLI verification; add tool order only after the run-owned overlay proves official code/scorer identity and installed-tree immutability.
+- **ADR-EX-06 — ACCEPTED:** relation class and behavioral fidelity are separate; choice/tool order is representation-equivalent even when model behavior changes.
+- **ADR-EX-07 — ACCEPTED:** BFCL Live precedes a balanced tool-order pair; MATH()/DyVal and controlled training remain deferred for the frontier-first product.
+- **ADR-EX-08 — ACCEPTED:** no generic transform abstraction before a second family and an informative first study create demonstrated reuse pressure.
+
+### 22.9 Risks, intentional debt, and revisit triggers
+
+- **Live distribution confounding:** a large BFCL Live gap may reflect freshness, difficulty, language, or category mix. Mitigation: stratify and retain native population facts; never estimate contamination from the raw gap. Revisit if a matched Live/non-live subset becomes officially available.
+- **Order transform confounding:** a gap may be general position bias rather than item memorization. Mitigation: balanced positions, paired flips, and explicit dependence wording. Revisit with a second representation transform only after the first result is informative.
+- **Provider variance:** one canonical and one variant pass can differ randomly. Mitigation: run-variance/precision spike before inferential claims; do not begin with several arbitrary seeds.
+- **Overlay complexity:** copying a heavy package may cost disk/time or interact with imports. Mitigation: E0 measures it; reject the transform rather than patch upstream if a byte-identical isolated overlay is not reliable.
+- **Access evidence overclaim:** official configuration may not prove every network path. Mitigation: closed proof requirements and conservative unknown/uncontrolled values. Revisit when an official runner exposes stronger introspection.
+- **Retrieval audit unreliability:** LLM judges can miss or hallucinate evidence. It remains deferred/diagnostic. Revisit only with real transcripts and a reviewed protocol.
+- **Intentional BFCL specificity:** two small modules/manifests may duplicate future work. This is cheaper than premature plugins; refactor only when a second family passes equivalent identity/fidelity/official-scorer gates.
+
+### 22.10 Implementation guardrails
+
+- Never change a runtime, official BFCL Python/config/scorer byte, provider prompt/tool behavior, or installed package in place for an exposure study.
+- Never derive effective access from `network_policy`, `requires_sandbox`, a benchmark name, or lack of observed retrieval.
+- Keep transform materialization in `bfcl_study.py`; keep native scoring in `bfcl_native_adapter.py`; keep analysis in `exposure_report.py`.
+- Keep study YAML declarative and closed. No Python entry points, templates that execute code, generic transform names, or arbitrary file paths from config.
+- A new transform algorithm, source population, or balancing rule gets a new immutable identity/version; finalized proof bytes are never rewritten.
+- Tests must discriminate missing/asymmetric populations, axis/access drift, package mutation, symlink/hardlink/path swaps, scorer-byte drift, smoke overclaim, and positive retrieval-audit interpretation.
+- Test substitutes may verify deterministic local failure handling only and carry the repository-required justification; they cannot prove BFCL, access controls, provider behavior, exposure results, or readiness.
+- Do not expose the new report in the UI until CLI/domain contracts and copied-proof verification pass. UI remains a projection and cannot loosen claims.
+- Do not add a third-party statistics, transformation, sandbox, or training dependency without a new architecture review and evidence that the standard library/current stack is insufficient.
