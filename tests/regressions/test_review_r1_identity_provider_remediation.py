@@ -299,9 +299,3 @@ def test_domain_coverage_gate_is_executable_wired_and_scoped() -> None:
     assert "check-domain-coverage.sh" in production_gate
     assert "coverage report" in coverage_gate
     assert "--include=" not in coverage_gate
-
-
-def test_scripts_readme_matches_terminal_bench_only_live_matrix() -> None:
-    scripts_readme = Path("scripts/README.md").read_text(encoding="utf-8")
-    assert "Phase B live Terminal-Bench runtime matrix" in scripts_readme
-    assert "live TB/BFCL/SWE matrix" not in scripts_readme

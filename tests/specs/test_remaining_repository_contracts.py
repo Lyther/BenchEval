@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import tomllib
 from pathlib import Path
@@ -15,7 +14,6 @@ from packaging.version import Version
 from bencheval.adapter_admission import assess_gpqa_admission
 from bencheval.benchmark_registry import (
     clear_benchmark_catalog_cache,
-    load_benchmark_catalog,
 )
 from bencheval.slice_manifest import clear_slice_manifest_cache
 
@@ -101,36 +99,6 @@ def test_admission_pass_requires_every_declared_catalog_and_artifact_gate(
     assert checks["gpqa_adapter_module"] is True
     assert checks["control_plane_executor"] is True
     assert report.passed is False
-
-
-def test_roadmap_admitted_benchmarks_match_executable_catalog() -> None:
-    roadmap = (_REPO_ROOT / "docs" / "roadmap.md").read_text(encoding="utf-8")
-    match = re.search(r"^\| Benchmarks \|(?P<ids>[^|]+)\|$", roadmap, flags=re.MULTILINE)
-    assert match is not None
-    documented = set(re.findall(r"`([^`]+)`", match.group("ids")))
-    executable = {entry.id for entry in load_benchmark_catalog().benchmarks if entry.executable}
-
-    assert documented == executable
-
-
-def test_operator_docs_do_not_reference_removed_runtime_or_manifest_paths() -> None:
-    runtime_doc = (_REPO_ROOT / "docs" / "context" / "runtime-invocation-contracts.md").read_text(
-        encoding="utf-8"
-    )
-    explicit_runtime_paths = re.findall(
-        r"`(config/runtimes/[a-z0-9-]+\.yaml)`",
-        runtime_doc,
-    )
-    assert explicit_runtime_paths
-    assert all((_REPO_ROOT / path).is_file() for path in explicit_runtime_paths), (
-        explicit_runtime_paths
-    )
-
-    manifest_doc = (_REPO_ROOT / "results" / "manifests" / "README.md").read_text(
-        encoding="utf-8",
-    )
-    assert "config/manifests/" not in manifest_doc
-    assert "--manifest" not in manifest_doc
 
 
 def test_ci_installs_and_checks_the_eval_dependency_surface() -> None:

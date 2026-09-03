@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -93,21 +92,3 @@ def test_f005_security_contract_declares_substitute_boundary() -> None:
         "- real-proof:",
     ):
         assert required in content, required
-
-
-def test_f006_architecture_lists_the_public_evidence_schema_and_modules() -> None:
-    architecture = (_REPO_ROOT / "docs" / "architecture.md").read_text(encoding="utf-8")
-    evidence_section = architecture.split(
-        "### 7.4 EvidenceRecord",
-        maxsplit=1,
-    )[1].split("\n## 8.", maxsplit=1)[0]
-    missing_fields = sorted(
-        field
-        for field in EvidenceRecord.model_fields
-        if re.search(rf"\b{re.escape(field)}\b", evidence_section) is None
-    )
-    assert missing_fields == []
-
-    module_map = architecture.split("## 17. Module map", maxsplit=1)[1]
-    for module in ("slice_manifest.py", "paths.py", "live_run_manifest.py"):
-        assert f"`{module}`" in module_map

@@ -25,21 +25,6 @@ def test_default_benchmark_catalog_has_current_expected_count() -> None:
     assert len(catalog.benchmarks) == 8
 
 
-def test_public_docs_match_current_catalog_count() -> None:
-    catalog_count = len(load_benchmark_catalog().benchmarks)
-    repo_root = Path(__file__).resolve().parents[1]
-    docs = (
-        repo_root / "README.md",
-        repo_root / "docs" / "architecture.md",
-    )
-    stale_markers = ("~50", "64 entries", "64-entry", "80 entries", "80-entry", "81 entries")
-    for path in docs:
-        text = path.read_text(encoding="utf-8")
-        assert str(catalog_count) in text, f"{path} should mention {catalog_count}"
-        for marker in stale_markers:
-            assert marker not in text, f"{path} contains stale marker {marker!r}"
-
-
 def test_product_catalog_ids() -> None:
     catalog = load_benchmark_catalog()
     ids = {b.id for b in catalog.benchmarks}

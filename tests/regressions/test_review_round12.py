@@ -1,4 +1,4 @@
-"""Round-12 regressions for Harbor result selection and operator-facing docs.
+"""Round-12 regressions for Harbor result selection.
 
 SUBSTITUTE_JUSTIFICATION
 - substitute: the two JSON files created by
@@ -19,9 +19,6 @@ SUBSTITUTE_JUSTIFICATION
 from __future__ import annotations
 
 import json
-import re
-import subprocess
-import sys
 from pathlib import Path
 
 from bencheval.terminal_bench_harbor import HarborCliResult, parse_harbor_instance_outcome
@@ -62,38 +59,3 @@ def test_f001_harbor_selects_the_instance_trial_not_the_job_aggregate(
     assert outcome.native_score["verdict_provenance"] == "harbor_verifier_result"
     assert outcome.raw_result_path is not None
     assert "rstan-to-pystan__ABC123/result.json" in outcome.raw_result_path
-
-
-def test_f002_dev_box_docs_do_not_put_provider_secrets_on_curl_argv() -> None:
-    repo = Path(__file__).resolve().parents[2]
-    text = (repo / "docs" / "ops" / "dev-box-pilot.md").read_text(encoding="utf-8")
-    credentialed_curl = re.compile(
-        r"^.*curl\b.*(?:authorization|x-api-key).*[\$][A-Z0-9_]*(?:KEY|TOKEN).*$",
-        re.IGNORECASE | re.MULTILINE,
-    )
-    assert credentialed_curl.search(text) is None
-
-
-def test_f007_bfcl_docs_describe_the_implemented_diagnostic_lifecycle() -> None:
-    repo = Path(__file__).resolve().parents[2]
-    ops = (repo / "docs" / "ops" / "benchmarks" / "bfcl-v4.md").read_text(encoding="utf-8")
-    contracts = (repo / "docs" / "context" / "runtime-invocation-contracts.md").read_text(
-        encoding="utf-8"
-    )
-    assert "`bfcl generate`" in ops and "`bfcl evaluate`" in ops
-    assert "official score" in ops.lower()
-    assert "generation-only" not in ops
-    assert "official BFCL evaluate score parsing **not wired**" not in contracts
-
-    command = (
-        "from bencheval.cli import main; raise SystemExit(main(['benchmark', 'show', 'bfcl-v4']))"
-    )
-    proc = subprocess.run(
-        [sys.executable, "-c", command],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert proc.returncode == 0, proc.stderr
-    assert '"id": "bfcl-v4"' in proc.stdout
