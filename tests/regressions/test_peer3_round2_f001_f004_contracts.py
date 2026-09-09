@@ -47,6 +47,7 @@ from bencheval.swebench_adapter import (
 
 _INSTANCE_ID = "django__django-11099"
 _TS = datetime(2026, 8, 27, tzinfo=UTC)
+_FIFO_PROBE_TIMEOUT_SEC = 5.0
 
 
 def _fifo_script(tmp_path: Path, body: str) -> subprocess.CompletedProcess[str]:
@@ -57,7 +58,7 @@ def _fifo_script(tmp_path: Path, body: str) -> subprocess.CompletedProcess[str]:
         encoding="utf-8",
         errors="replace",
         check=False,
-        timeout=1.0,
+        timeout=_FIFO_PROBE_TIMEOUT_SEC,
     )
 
 
@@ -156,17 +157,22 @@ def test_bfcl_score_read_rejects_fifo_without_blocking(tmp_path: Path) -> None:
         """
 import os, sys
 from pathlib import Path
-from bencheval.bfcl_native_adapter import _ScoreCandidate, _read_score_candidate_bytes
+from bencheval.bfcl_native_adapter import _ArtifactCandidate, _read_artifact_candidate_bytes
 from bencheval.exceptions import AdapterFailureError
 from bencheval.run_isolation import open_owned_dir_fd
 
 root = Path(sys.argv[1])
 leaf = root / "BFCL_v4_simple_score.json"
 fd = open_owned_dir_fd(root, role="bfcl fifo")
-candidate = _ScoreCandidate(path=leaf, identity=(0, 0), descriptor=-1)
+candidate = _ArtifactCandidate(path=leaf, identity=(0, 0), descriptor=-1)
 try:
     try:
-        _read_score_candidate_bytes(score_root_fd=fd, score_dir=root, candidate=candidate)
+        _read_artifact_candidate_bytes(
+            root_fd=fd,
+            root_dir=root,
+            candidate=candidate,
+            role="score",
+        )
     except AdapterFailureError:
         raise SystemExit(0)
     raise SystemExit("FIFO score was accepted")

@@ -15,14 +15,14 @@ import unicodedata
 from collections import Counter
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
 from pydantic import ValidationError
 
 from bencheval.domain import RunPlan
-from bencheval.evidence import EvidenceRecord, read_evidence_jsonl
+from bencheval.evidence import EvidenceRecord, parse_evidence_jsonl, read_evidence_jsonl
 from bencheval.exceptions import BenchEvalError
 from bencheval.live_run_manifest import (
     LiveRunProjection,
@@ -33,7 +33,11 @@ from bencheval.live_run_manifest import (
 from bencheval.paths import repo_root as _repo_root
 from bencheval.report import generate_evidence_report_with_runtime_panel
 from bencheval.run_bundle import _portable_private_artifact, _resolve_private_artifact, _sha256_file
-from bencheval.run_isolation import dir_identity_error, open_owned_dir_fd
+from bencheval.run_isolation import (
+    dir_identity_error,
+    open_owned_dir_fd,
+    open_untrusted_regular_leaf,
+)
 
 PROOF_SCHEMA = "private_proof_v1"
 INVENTORY_SCHEMA = "private_proof_inventory_v1"
@@ -697,6 +701,180 @@ def verify_private_proof(root: Path, *, expected_proof_id: str | None = None) ->
     return proof_id
 
 
+@dataclass(frozen=True, slots=True)
+class VerifiedProofInputs:
+    """Bytes of one verified proof, read once through a held root descriptor.
+
+    ``evidence_sha256`` is the digest of exactly the bytes ``records`` were
+    parsed from, and every byte read matched the verified inventory, so a
+    downstream lock can bind what was analysed rather than a pathname.
+    """
+
+    proof_id: str
+    run_id: str
+    classification: str
+    evidence_sha256: str
+    records: tuple[EvidenceRecord, ...]
+    run_plan: RunPlan | None
+    # Inventory-bound bytes of ``artifacts/raw/study/variant-manifest.json`` when
+    # the run retained one (derived BFCL runs); None otherwise.
+    variant_manifest: bytes | None = None
+    # Inventory-bound bytes of every derived data file the manifest declares and
+    # the proof retains, keyed by proof-relative path. A declared file the proof
+    # does not retain is simply absent; the report decides what that means.
+    variant_derived_files: Mapping[str, bytes] = field(default_factory=dict)
+    # Inventory-bound bytes of ``artifacts/raw/execution/bfcl-registration.json``
+    # when the run staged a configured BFCL registration; None otherwise.
+    registration_manifest: bytes | None = None
+
+
+VARIANT_MANIFEST_PROOF_PATH = "artifacts/raw/study/variant-manifest.json"
+REGISTRATION_MANIFEST_PROOF_PATH = "artifacts/raw/execution/bfcl-registration.json"
+_RAW_ARTIFACT_PREFIX = "artifacts/raw/"
+
+
+def variant_derived_proof_path(package_dir: str, rel: str) -> str:
+    """Proof-relative path of an overlay data file the variant manifest declares."""
+    return f"{_RAW_ARTIFACT_PREFIX}{package_dir.strip('/')}/{rel}"
+
+
+def _variant_derived_paths(manifest: bytes) -> list[str]:
+    """Proof-relative paths the manifest declares; a malformed manifest declares nothing.
+
+    Only well-formed single-directory components are returned, so nothing here
+    can name a path outside the held proof root; the caller additionally reads
+    only paths the verified inventory lists.
+    """
+    try:
+        raw = json.loads(manifest.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return []
+    overlay = raw.get("overlay") if isinstance(raw, dict) else None
+    if not isinstance(overlay, dict):
+        return []
+    package_dir = overlay.get("package_dir")
+    files = overlay.get("derived_files")
+    if not isinstance(package_dir, str) or not isinstance(files, dict):
+        return []
+    paths: list[str] = []
+    for rel in files:
+        candidate = variant_derived_proof_path(package_dir, str(rel))
+        if any(part in {"", ".", ".."} for part in candidate.split("/")):
+            continue
+        paths.append(candidate)
+    return sorted(set(paths))
+
+
+def _read_verified_nested(root_fd: int, relpath: str, entry: InventoryEntry) -> bytes:
+    """Read an inventoried nested file, descending without following any link."""
+    parts = relpath.split("/")
+    fds: list[int] = []
+    try:
+        current = root_fd
+        for part in parts[:-1]:
+            try:
+                current = os.open(
+                    part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=current
+                )
+            except OSError as e:
+                raise BenchEvalError(f"proof path component {part!r} unreadable: {e}") from e
+            fds.append(current)
+        return _read_verified_leaf(current, parts[-1], entry)
+    finally:
+        for fd in fds:
+            os.close(fd)
+
+
+def _read_verified_leaf(dir_fd: int, name: str, entry: InventoryEntry | None) -> bytes:
+    """Read ``name`` beneath the held proof root and prove it is the inventoried file."""
+    try:
+        fd = open_untrusted_regular_leaf(name, dir_fd=dir_fd)
+    except OSError as e:
+        raise BenchEvalError(f"proof file {name} is not a readable regular file: {e}") from e
+    try:
+        with os.fdopen(fd, "rb") as handle:
+            data = handle.read()
+    except OSError as e:
+        raise BenchEvalError(f"cannot read proof file {name}: {e}") from e
+    if entry is not None and (len(data) != entry.size or _sha256_bytes(data) != entry.sha256):
+        raise BenchEvalError(f"proof file {name} changed after verification")
+    return data
+
+
+def _sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def load_verified_proof_inputs(root: Path, *, require_complete: bool) -> VerifiedProofInputs:
+    """Verify ``root`` then load its evidence and plan from inventory-bound bytes."""
+    proof_root = root.resolve()
+    proof_id = verify_private_proof(proof_root)
+    try:
+        dir_fd = os.open(proof_root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError as e:
+        raise BenchEvalError(f"cannot hold proof root {proof_root}: {e}") from e
+    try:
+        inventory_raw = _read_verified_leaf(dir_fd, "inventory.json", None)
+        if f"{PROOF_ID_PREFIX}{_sha256_bytes(inventory_raw)}" != proof_id:
+            raise BenchEvalError("proof inventory changed after verification")
+        entries = {entry.path: entry for entry in _parse_inventory(inventory_raw)}
+        meta_raw = _read_verified_leaf(dir_fd, "proof.json", entries["proof.json"])
+        meta = json.loads(meta_raw.decode("utf-8"))
+        classification = str(meta.get("classification"))
+        run_id = meta.get("run_id")
+        if not isinstance(run_id, str):
+            raise BenchEvalError("proof.json is missing run_id")
+        if require_complete and classification != "complete":
+            raise BenchEvalError(
+                f"proof {proof_id} is {classification}; a complete proof with a captured "
+                "run plan is required",
+            )
+        evidence_raw = _read_verified_leaf(dir_fd, "evidence.jsonl", entries["evidence.jsonl"])
+        try:
+            evidence_text = evidence_raw.decode("utf-8")
+        except UnicodeDecodeError as e:
+            raise BenchEvalError(f"proof evidence.jsonl is not UTF-8: {e}") from e
+        records = parse_evidence_jsonl(evidence_text, source="evidence.jsonl")
+        plan: RunPlan | None = None
+        if "run-plan.json" in entries:
+            plan_raw = _read_verified_leaf(dir_fd, "run-plan.json", entries["run-plan.json"])
+            try:
+                plan = RunPlan.model_validate_json(plan_raw)
+            except ValidationError as e:
+                raise BenchEvalError(f"proof run-plan.json is invalid: {e}") from e
+        variant_raw: bytes | None = None
+        derived_files: dict[str, bytes] = {}
+        if VARIANT_MANIFEST_PROOF_PATH in entries:
+            variant_raw = _read_verified_nested(
+                dir_fd, VARIANT_MANIFEST_PROOF_PATH, entries[VARIANT_MANIFEST_PROOF_PATH]
+            )
+            for relpath in _variant_derived_paths(variant_raw):
+                if relpath in entries:
+                    derived_files[relpath] = _read_verified_nested(
+                        dir_fd, relpath, entries[relpath]
+                    )
+        registration_raw: bytes | None = None
+        if REGISTRATION_MANIFEST_PROOF_PATH in entries:
+            registration_raw = _read_verified_nested(
+                dir_fd,
+                REGISTRATION_MANIFEST_PROOF_PATH,
+                entries[REGISTRATION_MANIFEST_PROOF_PATH],
+            )
+    finally:
+        os.close(dir_fd)
+    return VerifiedProofInputs(
+        proof_id=proof_id,
+        run_id=run_id,
+        classification=classification,
+        evidence_sha256=f"{PROOF_ID_PREFIX}{_sha256_bytes(evidence_raw)}",
+        records=tuple(records),
+        run_plan=plan,
+        variant_manifest=variant_raw,
+        variant_derived_files=derived_files,
+        registration_manifest=registration_raw,
+    )
+
+
 def _safe_extract(archive: tarfile.TarFile, dest: Path) -> None:
     for member in archive.getmembers():
         name = member.name.replace("\\", "/")
@@ -1143,11 +1321,14 @@ __all__ = [
     "PrivateProofExport",
     "PrivateProofScan",
     "PrivateProofSummary",
+    "VerifiedProofInputs",
     "default_proofs_dir",
     "export_private_proof",
     "import_private_proof",
     "inspect_private_proof",
     "list_private_proofs",
+    "load_verified_proof_inputs",
     "scan_private_proofs",
+    "variant_derived_proof_path",
     "verify_private_proof",
 ]

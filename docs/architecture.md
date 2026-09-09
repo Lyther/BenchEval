@@ -1,6 +1,6 @@
 # Architecture & Decisions
 
-> **Status:** ACCEPTED current system and implemented local operator console; PROPOSED benchmark-exposure extension (reconciled 2026-09-03). Source concept: [`docs/context/concept-zero.md`](context/concept-zero.md); implementation tracked in [`docs/roadmap.md`](roadmap.md).
+> **Status:** ACCEPTED product architecture and 2026-09-08 config-first correction; capability recovery in §23 is implemented through CF3.1 and accepted by the CF3.2 review (2026-09-09). Existing supported lanes and the first BFCL studies are not universal onboarding or contamination-removal claims. Source concept: [`docs/context/concept-zero.md`](context/concept-zero.md); implementation tracked in [`docs/roadmap.md`](roadmap.md).
 > **Supersedes:** vNext v0.2 (ACCEPTED 2026-05-29, Core-first) — preserved as `legacy_static` context only.
 > **Operator contract / product SoT:** root [`README.md`](../README.md), this file, and [`docs/api/internal-contracts.md`](api/internal-contracts.md). [`docs/context/concept-zero.md`](context/concept-zero.md) owns product intent and constraints. [`docs/context/concept-hld.md`](context/concept-hld.md) is a **historical design ledger**, not live CLI instructions.
 > **Scope:** Defined canonical/fresh/derived benchmark populations → (runtime XOR agent)? → model via provider → native evidence, private proof, and bounded exposure studies.
@@ -10,7 +10,7 @@
 1. **Simple spine.** Product path is `benchmark → (runtime|agent)? → model → evidence`. Runtime and agent are mutually exclusive axes; omit both for the executable model-only paths (GPQA/HLE/BFCL). A cataloged agent scaffold is not executable until separately admitted.
 2. **Defined benchmarks only.** Live execution is limited to config-declared executable adapters.
 3. **Official-first execution.** Prefer official distributions, runners, and scorers. BenchEval normalizes evidence; it does not reimplement benchmark semantics unless upstream has no usable feedback path (then label it as fallback).
-4. **Config-first expansion.** New slices/runtimes/models/agents/providers on an existing adapter family are YAML/manifest work.
+4. **Config-first expansion.** New slices/models/providers on a supported protocol and runtime/agent profiles on an existing driver are YAML/manifest work for the user. A new protocol may need one adapter implementation, not a source patch per model/profile. Registry loading alone does not satisfy this requirement; §23 closes the current execution gaps.
 5. **Runtime-owned environments.** Benchmarks and selected runtimes own sandboxes/containers. BenchEval does not ship a separate Docker plane.
 6. **Evidence over claims.** Reports preserve native artifacts and caveats; smoke ≠ full benchmark claim; green tests are not live proof.
 7. **One truth, two entry points.** The CLI remains stable automation; the implemented local browser console calls the same typed application operations and never parses CLI stdout or owns scoring/storage semantics.
@@ -30,8 +30,9 @@
 - `G-07` / `G-08` add complete local-console coverage and CLI/UI parity. `C-07` keeps the console loopback-only; `C-08` keeps UI state and DTOs non-authoritative.
 - `G-09` / `G-12` and `C-11` add exposure studies without changing native scores: source/candidate relation, fidelity, verifier, access, freshness, and interpretation remain separate evidence.
 - `G-10` and `C-09` separate effective access from plan-time `network_policy`; model-only, official Inspect-restricted, and Harbor-uncontrolled paths must not collapse to one label.
-- `G-11`, `C-10`, `C-12`, and `C-13` select BFCL Live then a diagnostic balanced tool-order study for the current frontier API pool, with official code/scorer bytes unchanged and no statistical claim from smoke.
+- `G-11`, `C-10`, `C-12`, and `C-13` select BFCL Live then a diagnostic balanced tool-order study for the current frontier API pool, preserving official execution/scoring logic with only C-10's bound registration exception and no statistical claim from smoke.
 - `N-07`–`N-10` exclude clean/cheating verdicts, generic transformation infrastructure, custom runtime/network controls, controlled training labs, and direct contamination estimates from unpaired populations.
+- `G-13`–`G-15`, `C-14`, and `Q-19`–`Q-22` drive §23 / CF: config-to-native binding, a genuinely scored agent path, and reproducible supported-host onboarding. The clarified `C-10` allows only a declared registration-metadata delta, not changed execution/scoring logic.
 
 ## 1. Product Shape (v1)
 
@@ -47,11 +48,11 @@ benchmark/slice  →  (runtime | agent)?  →  model via provider  →  Evidence
 
 **Live-proof status:** `bfcl-v4`, `hle`, `gpqa-diamond`, and `terminal-bench` hold registered Tier-1 evidence. Terminal-Bench is one native `fix-git` attempt per admitted runtime (`claude-code` `run-20260825-173913-754489-4f43e296`, `codex-cli` `run-20260825-171829-685914-aa08dd1d`), both `model_wrong_solution` with official `reward == 0.0`, plus a valid shared-axis runtime compare (`comparison_valid`, `contaminated_or_legacy`). No benchmark is called Tier-2 until its benchmark-specific checklist is complete. `swe-bench-verified` remains non-executable: official generation and evaluation are one evidence-bound diagnostic lifecycle and never auto-promote the row.
 
-**Admitted execution profiles:** runtimes `claude-code`, `codex-cli`; providers `bytellm`, `ollama-cloud`. `momo` remains a discoverable **scaffold only**: planning or direct execution with it must fail before output reservation or provider/agent launch until a later admission decision.
+**Current capability, not a Cartesian product:** config contains 10 benchmark rows, 36 model metadata entries, two runtime profiles, and two provider profiles. `claude-code` and `codex-cli` have admitted runtime paths. Both providers are labelled admitted in YAML, but the current `ollama-cloud` kind is rejected by the OpenAI-compatible launch resolver; its direct API/handler probes are not full adapter acceptance. No external agent is admitted. `momo` remains a discoverable **scaffold only** and must fail before output reservation or launch. Supported combinations, prepared-host execution, config onboarding, and clean-host deployment must be claimed separately.
 
 **Implemented operator surface:** `bencheval ui` starts one loopback-only Python process and opens an optional browser console. It covers catalog, Run Builder, doctor/preflight, one active run session, validated run/evidence history, report/compare/export, private proofs, and readiness. It does not expose a public HTTP API, remote bind, credential editor, database, durable queue, or UI-only product behavior.
 
-**Proposed exposure surface:** canonical, BFCL Live, and derived BFCL runs remain ordinary evidence-producing executions. Two non-executable diagnostic benchmark identities and a small study manifest declare the expected relation/population; a read-only `study report` operation validates retained evidence before showing native score contrasts. Effective access evidence is additive per attempt. The first release adds no multi-run scheduler, automatic model panel, reference correction, general transform registry, or new scoring authority.
+**Existing exposure slice:** canonical, BFCL Live, and derived BFCL runs remain ordinary evidence-producing executions. Two non-executable diagnostic benchmark identities and typed studies bind one freshness contrast and one tool-order representation pair. The first full model is GPT-5.2 FC; report/proof replay exists, but console integration and final scoped readiness remain pending. This establishes provenance and a sensitivity experiment, not a universal transform or a validated decontaminated score. No multi-run scheduler, automatic model panel, reference correction, general transform registry, or new scoring authority is added.
 
 ## 2. Identity axes
 
@@ -99,9 +100,9 @@ flowchart LR
     A6 --> EN
     EN --> ES[Evidence store]
     ES --> CP[Compare / Report / Export]
-    STM[Exposure study manifests<br/>PROPOSED] --> XS[Study validator / report<br/>PROPOSED]
+    STM[Exposure study manifests] --> XS[Study validator / report]
     ES --> XS
-    BFM[BFCL Live / tool-order materializer<br/>PROPOSED] --> A4
+    BFM[BFCL Live / tool-order materializer] --> A4
     STM --> BFM
     XS --> CP
 ```
@@ -118,8 +119,8 @@ flowchart LR
 | CLI | **argparse** (`bencheval` entrypoint) | Already set; extend `cli.py`, don't replace. |
 | Local browser UI | **NiceGUI 3.x** (`ui` optional extra, IMPLEMENTED) | Python/backend-first, single local process, browser display and real-browser test support. Loopback only; CLI remains stable automation. |
 | Evidence store | **JSONL** (primary) + **Parquet/DuckDB** (analytics) | JSONL now; DuckDB/Parquet via existing `analytics` extra (`duckdb`, `pyarrow`) and `export.py`. **No database** — this is a CLI tool. |
-| Exposure study definition | **Typed YAML + retained JSON manifests** (PROPOSED) | Reuses current config/Pydantic patterns. YAML declares the study; canonical JSON bytes and SHA-256 bind the exact run population/transform. No registry service or DSL. |
-| Exposure analysis | **Existing Python/statistics spine** (PROPOSED) | Raw counts, native rates, directional flips, and bounded confidence output can extend `stats.py`; no SciPy or new analytics dependency is earned before the statistics spike. |
+| Exposure study definition | **Typed YAML + retained JSON manifests** | Implemented for the two BFCL studies; canonical JSON bytes and SHA-256 bind population/transform. No registry service or DSL. |
+| Exposure analysis | **Existing Python/statistics spine** | Raw counts, native rates, directional flips, and bounded uncertainty are implemented; no new analytics dependency is selected. |
 | Harness adapters | **External binaries, not vendored** | Harbor = external CLI (`uv tool install harbor`) and may use Docker internally; Inspect = optional `eval` extra; native/external-command = subprocess. Core library stays dependency-light (no `eval` requirement for core). |
 | Orchestration (heavy) | **Inspect AI** (optional `eval` extra) + **Harbor** (external) | Provider abstraction + sandbox; never reimplement benchmark semantics. |
 | Sandbox ownership | **Runtime-owned** | BenchEval does not ship a Docker plane. Official benchmark runtimes own containers/images when they require them. |
@@ -132,12 +133,12 @@ flowchart LR
 
 | Component | Responsibility | Status | Module(s) |
 |---|---|---|---|
-| Benchmark Registry | Catalog runnable benchmarks, adapters, source, license, native harness, metrics, caveats. | **Implemented:** `benchmark_registry.py` + `config/benchmarks.yaml` (**8** product entries, **4** executable). | `benchmark_registry.py` |
+| Benchmark Registry | Catalog runnable benchmarks, adapters, source, license, native harness, metrics, caveats. | **Implemented:** `benchmark_registry.py` + `config/benchmarks.yaml` (**10** product entries, **4** executable); BFCL Live/tool-order and SWE remain diagnostic only. | `benchmark_registry.py` |
 | Slice Manifest Registry | Typed `smoke`/`lite`/`full`/`custom` instance lists with budget + labels. | Product slices keep instance ids inline; `manifest.py` remains for optional large/generated external lists. | `manifest.py` (+ `slice_manifest.py`) |
 | Model Registry | Model identity, provider, pricing, context limits, version capture. | **Implemented:** `config/models.yaml` + `pricing/` + model registry/types. | `model_registry.py`, `models.py`, `pricing.py` |
 | Runtime Registry | Admitted runtimes (`claude-code`, `codex-cli`) + capability metadata. | `runtime_registry.py` + `config/runtimes/*.yaml`. | `runtime_registry.py` |
 | Agent Registry | Catalog agent scaffolds and their admission state; only `admitted` profiles may enter a plan. MOMO is currently `scaffold`. | `agent_registry.py` + `config/agents/*.yaml`. | `agent_registry.py` |
-| Provider Registry | Admitted providers (`bytellm`, `ollama-cloud`). | `provider_registry.py` + `config/providers/*.yaml`. | `provider_registry.py` |
+| Provider Registry | Provider metadata and credential-name/endpoint resolution. | Loader and OpenAI-compatible resolver exist; the Ollama profile and adapter-specific naming remain inconsistent. Config admission is not compatibility or live proof; CF1 closes this. | `provider_registry.py` |
 | Run Planner | Build `RunPlan` from benchmark + slice + model + (runtime\|agent) + provider. | `benchmark_plan.py` (phase 1 of `run`). | `benchmark_plan.py` |
 | Preflight / Doctor | Runtime/provider env checks before live runs (never prints secrets). | `doctor.py`. | `doctor.py` |
 | Materialization Manager | Cleanup policy + adapter-owned ephemeral dirs. | `lifecycle.py` (`CleanupPolicy`); adapters own workspace layout. | `lifecycle.py` |
@@ -146,10 +147,10 @@ flowchart LR
 | Evidence Normalizer | Convert native output → `EvidenceRecord`. | `evidence.py`. | `evidence.py` |
 | Evidence Store | Evidence JSONL + optional Parquet/DuckDB export. | `evidence.py`, `export.py`. | as listed |
 | Compare/Report/Export | Markdown/JSON reports + cross-run comparisons + run bundles. | `report.py`, `evidence_compare.py`, `export.py`, `run_bundle.py`. | as listed |
-| Effective Access Evidence | Validate and project the concrete official launch's control source, egress, repository history, and optional retrieval audit; never infer them from `network_policy`. | **PROPOSED exposure phase X1.** | `access_evidence.py`, additive `domain.py` / `evidence.py` fields, adapter capture sites |
-| Exposure Study Registry | Load closed study YAML, bind canonical/candidate identities and population rules, and reject unsupported relation/analysis combinations. | **PROPOSED exposure phase X1.** | `exposure_study.py`, `config/studies/*.yaml` |
-| BFCL Study Materializer | Verify BFCL Live bytes and create a run-scoped, code-identical package-data overlay for one balanced tool-order transform; it never scores or mutates the installed package. | **PROPOSED exposure phases X0–X3.** | `bfcl_study.py`, existing `bfcl_native_adapter.py` lifecycle |
-| Exposure Report | Read-only validation and rendering of unpaired freshness contrasts or paired representation studies; preserve native metrics and explicit non-claims. | **PROPOSED exposure phases X2–X4.** | `exposure_report.py`, `stats.py`, application/UI projections |
+| Effective Access Evidence | Validate and project the concrete official launch's control source, egress, repository history, and optional retrieval audit; never infer them from `network_policy`. | **Implemented foundation:** model-only and Harbor facts are launch-derived. SWE remains unknown because its shared post-run Compose pathname does not bind the bytes used at launch; a future run-isolated or launch-time binding is required before stamping blocked. | `access_evidence.py`, additive `domain.py` / `evidence.py` fields, adapter capture sites |
+| Exposure Study Registry | Load closed study YAML, bind canonical/candidate identities and population rules, and reject unsupported relation/analysis combinations. | **Implemented foundation:** the two initial manifest kinds and population/analysis contracts load and hash deterministically; the BFCL tool-order identity binds the source pin, study/transform/seed, exact source mapping, and derived-data digest. | `exposure_study.py`, `identity_strings.py`, `config/studies/*.yaml` |
+| BFCL Study Materializer | Create a run-scoped package-data overlay for one deterministic tool-order transform; it never scores or mutates the installed distribution. | **Implemented for X3:** source mapping, overlay checks, and retained derived files. Registration composition in §23 is not implemented. | `bfcl_study.py`, existing `bfcl_native_adapter.py` lifecycle |
+| Exposure Report | Read-only validation and rendering of unpaired freshness contrasts or paired representation studies; preserve native metrics and explicit non-claims. | **Implemented foundation:** `study validate\|report\|verify`, deterministic `exposure-report-v1` JSON plus Markdown projection, raw-only smoke gate, and `exposure-study-lock-v1` reproduction from two verified proofs. Console projection remains X4.1. | `exposure_report.py`, `stats.py`, application/UI projections |
 | Operator Console | Feature-complete local UI over typed application operations and canonical stores. | **IMPLEMENTED:** all operator pages/actions; browser/scale/accessibility hardening continues. | `application/` and `ui/` packages in §20 |
 
 ## 6. Execution Profiles
@@ -172,7 +173,7 @@ Dry-run planning reports `requires_harbor` / `requires_sandbox` when needed. Tho
 
 ### 7.1 Benchmark Contract (`config/benchmarks.yaml`)
 
-Existing product YAML registry is the authoritative catalog (**8** entries; **4** Tier-0 executable). Schema: `BenchmarkCatalog`/`BenchmarkEntry` in `benchmark_registry.py` (Pydantic, `frozen=True, extra="forbid"`). Fields: id, name, aliases, category, tier (`calibration`/`stretch`/`reference_only`), adapter_status (`cataloged`/`adapter_pending`/`manifest_available`/`unverified`), recommended_backend, recommended_profile, task_count, public_indexed, contamination_risk, single_mode_required, source_url, notes, `default_slice`, `adapter_id`, and `executable`. Ops manuals: `docs/ops/benchmarks/`. `harness_kind` is deliberately **not** configurable in benchmark YAML: the adapter implementation declares the official runner kind used for planning and evidence metadata. New harness families need a Python adapter + executor wiring + official score ingestion; config-only expansion applies when reusing an existing adapter family.
+Existing product YAML registry is the authoritative catalog (**10** entries; **4** Tier-0 executable). Schema: `BenchmarkCatalog`/`BenchmarkEntry` in `benchmark_registry.py` (Pydantic, `frozen=True, extra="forbid"`). Fields: id, name, aliases, category, tier (`calibration`/`stretch`/`reference_only`), adapter_status (`cataloged`/`adapter_pending`/`manifest_available`/`unverified`), recommended_backend, recommended_profile, task_count, public_indexed, contamination_risk, single_mode_required, source_url, notes, `default_slice`, `adapter_id`, and `executable`. Ops manuals: `docs/ops/benchmarks/`. `harness_kind` is deliberately **not** configurable in benchmark YAML: the adapter implementation declares the official runner kind used for planning and evidence metadata. New harness families need a Python adapter + executor wiring + official score ingestion; config-only expansion applies when reusing an existing adapter family.
 
 ### 7.2 Slice Manifest (new typed layer)
 
@@ -237,9 +238,9 @@ class EvidenceRecord(BaseModel):
     reward_hack_risk_label: str | None = None
     verifier_integrity_label: str | None = None
     cleanup_result: str | None = None
-    interpretation_label: str | None = None   # adapter_smoke | rough_regression | ...
+    interpretation_label: str | None = None  # adapter_smoke | rough_regression | ...
     failure_class: str | None = None
-    attempt_validity: str | None = None       # valid | invalid
+    attempt_validity: str | None = None  # valid | invalid
     invalid_reason: str | None = None
     counts_toward_pass_at_k: bool | None = None
     physical_launch_id: str | None = None
@@ -249,14 +250,18 @@ class EvidenceRecord(BaseModel):
 
 Nested `run`/`model`/`runtime`/`attempt`/`artifacts`/`integrity` blocks from HLD §9.3 are **not** adopted as the on-disk shape (would break v0.2 readers); they remain a *report projection* only.
 
-### 7.5 Exposure evidence and study manifests (PROPOSED)
+### 7.5 Exposure evidence and study manifests (IN PROGRESS)
 
 The existing flat `EvidenceRecord` remains additive. Exposure phase E1 adds optional closed values; v0.2/v0.3 rows with all four absent continue to parse:
 
 ```python
-access_control_source: "not_applicable" | "official_default" | "official_profile" | "none" | "unknown" | None
+access_control_source: (
+    "not_applicable" | "official_default" | "official_profile" | "none" | "unknown" | None
+)
 egress_control: "not_applicable" | "blocked" | "restricted" | "uncontrolled" | "unknown" | None
-repository_history: "not_applicable" | "future_history_removed" | "full_history_present" | "unknown" | None
+repository_history: (
+    "not_applicable" | "future_history_removed" | "full_history_present" | "unknown" | None
+)
 retrieval_audit: "not_run" | "no_retrieval_observed" | "retrieval_observed" | None
 ```
 
@@ -266,7 +271,7 @@ These fields describe the concrete attempt, not the benchmark in general. An ada
 
 - stable study id and schema version;
 - `freshness_contrast` or `representation_pair` kind;
-- canonical and candidate benchmark/slice ids;
+- canonical and candidate benchmark/slice ids plus each side's plumbing `smoke_slice_id`;
 - relation class (`fresh_parallel` for BFCL Live, `representation_equivalent` for tool order);
 - comparison mode (`stratified_unpaired` or `paired_by_source_instance`);
 - required constant axes and eligible-population rules;
@@ -284,7 +289,7 @@ Adapters **prefer native harnesses**. Product v1 allowed shapes:
 
 1. **Native wrapper** — call the official runner/scorer, parse its result files, and preserve raw artifacts (GPQA/HLE/BFCL today; future adapters must meet the same bar).
 2. **Harbor wrapper** — Harbor-native terminal tasks (Terminal-Bench 2.1).
-3. **External agent wrapper** — retained scaffold mechanics via `external_agent_adapter.py`; no agent profile is admitted in v1.
+3. **Agent integration** — current `external_agent_adapter.py` retains non-authoritative scaffold mechanics. CF2 selects Harbor's existing native agent interface and official verifier for the first scored profile; no agent is admitted by this design document.
 4. **Diagnostic derived-data wrapper** — stage declared source-bound data for an unchanged official runner/scorer under a distinct benchmark identity. The first and only selected case is BFCL tool-declaration order; it cannot register as the canonical benchmark.
 
 Deferred / not product: Inspect-as-runtime wrappers. Compatibility shims must be explicitly labeled `adapter_smoke`.
@@ -311,7 +316,7 @@ The console preflight route follows the derived official harness: generic Inspec
 
 Exit status, stdout, model self-report, and adapter-invented verdict files never become scoring authority when the upstream benchmark defines an official report. Multi-phase adapters share one cumulative run envelope. A demoted adapter may run only as explicitly labeled diagnostic evidence; diagnostic evidence cannot register `passed`.
 
-For a derived BFCL run, the adapter additionally verifies an exclusive run-owned package overlay before launch and after scoring. All official Python/config/scorer bytes must match the pinned distribution; only the files named by the derived identity may differ. The installed distribution is read-only input and is never restored after mutation because it is never mutated.
+For a derived BFCL run, the adapter additionally verifies an exclusive run-owned package overlay before launch and after scoring. The existing data-only route preserves every official Python/config/scorer byte. The proposed §23 registration route permits one separately recorded model-registration-file delta, identical on all arms; handler/generator/scorer bytes remain pinned and only independently declared candidate data may otherwise differ. The installed distribution is read-only input and is never restored after mutation because it is never mutated.
 
 Current official authority boundaries:
 
@@ -332,7 +337,7 @@ The selected architecture is **explicit adapters over a shared control-plane spi
 - a generic benchmark plugin/lifecycle DSL, because the pending harnesses differ at their scoring, identity, sandbox, and cleanup trust boundaries;
 - a BenchEval-owned orchestration service, database, or Docker plane, because the current operator-owned harness environments and JSONL evidence path meet the product need with fewer stateful components.
 
-Adding a new family therefore means one narrow adapter, one executor dispatch, one official-artifact parser, typed identity/slice config, and the verification gates in §13. Shared helpers are extracted only after at least two admitted adapters demonstrate the same trust-boundary behavior.
+Adding a new family therefore means one narrow adapter, one executor dispatch, one official-artifact parser, typed identity/slice config, and the verification gates in §13. Adding another model/provider/profile on an existing family must instead use the configuration-to-native bridge in §23. Shared helpers are extracted when multiple real paths require the same invariant, not to invent a general plugin platform.
 
 ## 9. Budget Classes
 
@@ -368,7 +373,7 @@ External runtime launch and tool failures are separate: `runtime_launch_failure`
 - **Allowed normal lanes:** local toy patching, authorization repair, alert-triage data, regression tests, and local prompt-injection resistance without exfiltration or live-target access.
 - **Catalog-only v1 boundary:** the official CyberGym and ExploitGym tasks require PoC/exploit behavior against benchmark-owned vulnerable targets. The product decision for v1 is to keep both catalog-only and non-executable; no official PoC/exploit lifecycle is planned for this release. Any post-v1 reconsideration requires a new explicit product decision, a separately labelled sandboxed lane, authoritative success semantics, and operator-host authorization and isolation prerequisites. Relabelling the official PoC lifecycle as merely “defensive” is not sufficient.
 - **Forbidden:** exploit generation against live or third-party targets, real-target attack chains, credential theft, persistence, and mixing any dual-use Stretch result into Core/public weighted totals.
-- **Exposure-study boundary:** public benchmark data and transcripts remain untrusted input. A run-owned variant overlay must use the same anchored/no-follow ownership rules as scored artifacts, may contain only declared public source/derived data plus byte-identical pinned BFCL code, and must never alter the active environment. Retrieval-audit artifacts may contain private prompts or local paths and therefore belong only in private proof unless explicitly sanitized.
+- **Exposure-study boundary:** public benchmark data and transcripts remain untrusted input. Run-owned overlays use the existing anchored/no-follow ownership rules and permit only declared data deltas plus the separately bound §23 registration record; executable handler/scorer logic stays pinned. No installed package or global environment is mutated. Retrieval-audit artifacts remain private unless explicitly sanitized.
 - **Network boundary:** BenchEval records official effective access; it does not claim to secure arbitrary container egress, intercept provider traffic, or maintain a custom destination allow-list. An uncontrolled or unknown state is an honest evidence value, not a launch bypass or a reason to silently change the runtime.
 
 ## 13. Verification Gates
@@ -420,11 +425,15 @@ An exposure report has a separate gate: the study manifest digest is retained; c
 | AR-25 | A non-unknown effective access value requires the retained official launch/profile configuration or a benchmark-specific proof; unsupported control is recorded as `uncontrolled` or `unknown`, not safe. |
 | AR-26 | Relation class is stable task metadata; behavioral fidelity, freshness, verifier integrity, access, and retrieval audit remain independent measured axes. |
 | AR-27 | Canonical, Live, and derived populations have distinct content-bound identities. Derived input never mutates the installed benchmark package or inherits canonical admission. |
-| AR-28 | Official benchmark code/scorer bytes remain pinned and unchanged for a derived study; only declared run-owned data files may differ, and pre/post-run verification is mandatory. |
+| AR-28 | Installed package and official handler/runtime/generator/scorer bytes remain pinned. A run-owned copy may add only the §23 declared model registration shared across arms and separately declared candidate data. Pre/post-run verification and effective harness identity are mandatory. |
 | AR-29 | Exposure reports preserve both native result sets, validate exact paired/stratified populations, and emit no clean/cheating verdict, direct contamination estimate, or universal adjusted score. |
 | AR-30 | Smoke exposure studies prove plumbing only. Inferential output requires a declared effective population and a preselected uncertainty/test method appropriate to paired or unpaired data. |
 | AR-31 | The first freshness study is BFCL non-live versus Live; the first paired variant is one deterministic balanced BFCL tool-order permutation. No generic transform framework exists before a second proven family. |
 | AR-32 | Portable study evidence consists of two verified `private_proof_v1` run objects plus an `exposure-study-lock-v1` manifest that content-binds both proof ids, the exact report inputs, and deterministic report output; public exports redact private transcript/audit material. |
+| AR-33 | On a supported protocol/driver, onboarding a further model/provider/runtime/agent is config-only for the user; metadata loading does not establish compatibility or live proof. |
+| AR-34 | Logical model ID, API model name, provider protocol, native registry/agent selector, and their non-secret resolved digest are bound before confirmation and launch; provider/vendor display names never select transport behavior. |
+| AR-35 | Agent execution reaches a benchmark-owned verifier through a supported native interface; exit zero or agent-authored result JSON cannot score. Scaffold profiles still cannot launch. |
+| AR-36 | A clean supported host follows a pinned per-benchmark preparation recipe and plan-aware preflight; undeclared dependencies and unsupported binding combinations fail before charge. |
 
 ### 13.5 Quality scenarios
 
@@ -457,6 +466,10 @@ An exposure report has a separate gate: the study manifest digest is retained; c
 | QS-25 | Canonical and variant evidence have asymmetric instances or drift in model/provider/runtime/harness/access settings: invalidate the paired study rather than compare different populations. |
 | QS-26 | A successful five-case exposure smoke is reported: show raw counts and `plumbing_only`; do not emit confidence, significance, contamination, or superiority language. |
 | QS-27 | A valid full paired study is copied without its originating checkout: verification requires both named run proofs plus the study lock, recovers study/variant manifests and exact source/derived bytes, and reproduces the locked report JSON digest before the interpretation is trusted. |
+| QS-28 | Two new config-defined models/providers use the same supported protocol: actual CLI/native scoring works without a second Python branch or manually edited package; unsupported protocols fail before launch. |
+| QS-29 | BFCL registration changes, is omitted from a new proof, or differs between canonical/variant/repeat: launch or report fails; historical unextended locks retain byte-identical reproduction. |
+| QS-30 | A native agent profile runs: identity remains on `agent_id` with null runtime, official verifier output alone scores, and a forged/missing agent result cannot pass. |
+| QS-31 | A clean host has only declared base prerequisites: the selected lane's recipe and doctor establish readiness or give an exact prerequisite error before any inference. |
 
 ## 14. VETOs (unchanged where still relevant)
 
@@ -490,6 +503,7 @@ An exposure report has a separate gate: the study manifest digest is retained; c
 | CLI runtimes mutate global config | Medium | Ephemeral home/workspace; config hash capture. |
 | Native harness drift | High | Pin benchmark repo version, image digest, harness version, adapter version. |
 | Adapter maintenance burden | Medium | Native wrappers only; no task reimplementation. |
+| Config registry mistaken for working integration | High | CF acceptance uses new config-defined identities through the real CLI, native registry, scorer, and proof; no special-case provider/runtime names. |
 | Machine-local proof loss | High | Export/import implemented `private_proof_v1`; transfer or refresh operator-host Tier-1 proofs before Tier-2 and never treat a host path alone as durable evidence. |
 | Scored-versus-retained byte drift | High | Copy exact scored bytes under an owned path before descriptor release, stamp the digest, and verify proof contains those bytes. GPQA exact-byte retention is implemented; remaining Tier-2 items are ledger-specific. |
 
@@ -515,7 +529,7 @@ Every production module under `src/bencheval/` has one architectural home below.
 | Planning and preflight | `benchmark_plan.py`, `doctor.py`, `preflight_report.py`, `redaction.py` | Phase-one plan, dependency/env checks, shareable preflight, secret/path redaction. |
 | Execution, isolation, lifecycle | `control_plane_executor.py`, `lifecycle.py`, `run_isolation.py`, `path_safety.py`, `backends.py` | Dispatch, budgets/deadlines, path ownership, cleanup, backend vocabulary. |
 | Executable adapters and integrations | `terminal_bench_harbor.py`, `harbor_claude_code_npm.py`, `harbor_codex_npm.py`, `anthropic_role_shim.py`, `gpqa_adapter.py`, `hle_adapter.py`, `bfcl_native_adapter.py` | Admitted official harnesses and runtime install/shim boundaries. |
-| Agent scaffold mechanics | `external_agent_adapter.py`, `momo_agent_adapter.py` | Non-authoritative external-agent integration retained for future admission work; no v1 agent is executable. |
+| Agent scaffold mechanics | `external_agent_adapter.py`, `momo_agent_adapter.py` | Non-authoritative legacy CLI mechanics; scored native-agent dispatch belongs to the benchmark adapter in CF2, not an agent-owned verifier. |
 | Demoted or pending adapters | `swebench_adapter.py`, `swebench_pro_harbor.py`, `cybergym_adapter.py`, `exploitgym_adapter.py` | Research/diagnostic code only; no catalog-executable claim. |
 | Evidence, identity, admission | `evidence.py`, `identity_strings.py`, `live_proof.py`, `provenance_gates.py`, `adapter_admission.py`, `live_run_manifest.py` | JSONL record, captured identities, qualification, Tier-0 assessment, append-only run registry. |
 | Comparison and statistics | `evidence_compare.py`, `model_compare.py`, `runtime_compare.py`, `stats.py` | Shared-instance validity, deltas, confidence intervals, comparison CLIs. |
@@ -531,6 +545,7 @@ changes extend the current owners above:
 src/bencheval/
   access_evidence.py   - Typed constructors/validation for effective official access evidence; must not enforce network or infer from RunPlan.network_policy.
   exposure_study.py    - Closed study-manifest loader, canonical digest, relation/population validation; must not launch adapters or calculate scores.
+  exposure_selection.py - Deterministic anchored population selection and replay; must not launch models or choose samples from outcomes.
   bfcl_study.py        - BFCL Live verification and run-owned tool-order overlay materialization; must not score, mutate site-packages, or generalize into plugins.
   exposure_report.py   - Read-only freshness/paired analysis and JSON/Markdown rendering; must preserve native scores and fail closed on population/axis drift.
 config/studies/
@@ -547,7 +562,7 @@ tests/regressions/
   test_exposure_report_integrity.py  - Asymmetric population, drift, smoke overclaim, and proof-retention regressions.
 ```
 
-`domain.py` owns the four closed access enums; `evidence.py` owns their additive record fields; `benchmark_registry.py` owns the derived BFCL identity type; `identity_strings.py` owns its stable label; `bfcl_native_adapter.py` remains the only official BFCL generate/evaluate/scoring boundary; `control_plane_executor.py` dispatches diagnostic catalog rows; `proof_bundle.py` retains evidence-referenced study files beneath `artifacts/study/` using the existing `artifact` role (no proof-schema expansion); `cli.py` exposes read-only study validate/report commands; and `application/{dto,operations}.py` plus `ui/pages.py` may project reports only in the final UI-integration phase. None of those files may absorb transform logic.
+`domain.py` owns closed access enums; `evidence.py` owns their additive record fields; `access_evidence.py` owns classification; `exposure_study.py` owns the study/derived-data contract; `identity_strings.py` owns labels; `exposure_selection.py` owns deterministic selection; `bfcl_native_adapter.py` owns official BFCL execution/scoring; and `control_plane_executor.py` dispatches canonical/Live/derived lanes. `exposure_report.py` owns validation, report, and lock; `cli.py` exposes `study validate|select|report|verify`. `proof_bundle.py` retains inventory-bound study/derived files. Final console projections remain pending. The two proposed CF modules and existing-file changes have their source homes in §23.5; no UI/CLI module may absorb transform or registration logic.
 
 ## 18. Remaining adapter architecture
 
@@ -651,14 +666,15 @@ The following decisions are closed for v1:
 9. **Access evidence:** preserve `network_policy` as requested plan intent. Add effective official access/history evidence and optional one-way retrieval audit; do not build a BenchEval egress allow-list or modify runtimes.
 10. **First studies:** run BFCL non-live versus Live as a stratified freshness/generalization contrast, then one balanced tool-declaration order pair if the Live and overlay spikes pass. Both candidate identities remain diagnostic and distinct from admitted `bfcl-v4`.
 11. **Abstraction limit:** no generic transform DSL/plugin/scheduler, reference-panel correction, or controlled training laboratory in the first release. Reopen only after the first study is informative and a second transform family exists.
+12. **Config-first recovery (2026-09-08):** user configuration selects supported protocols, models, and native profiles; adapters own native registration/launch translation. A declared registration-only copy delta is allowed by AR-28. CF closes this missing capability before broadening the research or claiming generic agent support.
 
-The local operator console is now implemented. The next product implementation candidate is the exposure-study program in §22. It does not select a new admitted benchmark family: BFCL Live and tool-order remain diagnostic, SWE promotion stays separate, and every catalog/admission change remains evidence-gated.
+The next product implementation is §23 config-first recovery; the first §22 BFCL experiments are retained evidence, not an onboarding solution. BFCL Live/tool-order stay diagnostic, SWE promotion stays separate, MOMO stays scaffold, and U3/U4 hardening remains lower priority. No new benchmark family or agent is admitted by prose.
 
 ## 20. Local operator console (IMPLEMENTED)
 
 ### 20.0 Evidence and source reconciliation
 
-- `VERIFIED_EXISTING`: the core remains a dependency-light Python CLI with 8 catalog rows, 4 executable benchmarks, 2 admitted runtimes, 2 admitted providers, no admitted agent, canonical YAML/JSONL/files, and report/compare/export/proof operations; the optional `ui` extra adds the local console without entering core imports.
+- `VERIFIED_EXISTING`: the core has 10 catalog rows, 4 executable benchmarks, 2 admitted runtimes, 2 provider profiles labelled admitted, no admitted agent, and canonical file/proof operations. Provider labels are not proof of adapter compatibility (§23); the optional `ui` extra does not enter core imports.
 - `USER_DECISION`: the 2026-09-01 request adds a feature-complete front-end prototype and design. It supersedes only the old dashboard exclusion; hosted, multi-user, database, remote proof, deletion, dual-use execution, and hard-dollar-control exclusions remain.
 - `DEPRECATED`: the Dashboard/Post-MVP statement in historical `docs/context/concept-hld.md` is retained as history, not current intent. The live sources are concept-zero, this architecture, roadmap, and contracts.
 - `ADOPTED`: NiceGUI 3.x based on its official Python/backend-first browser model, local/native modes, async-task guidance, tables/downloads, real browser testing, MIT license, and active release/repository state verified on 2026-09-01.
@@ -795,7 +811,7 @@ Contract rules:
 - **Framework escape hatch:** application operations and DTOs remain NiceGUI- free. If NiceGUI becomes unmaintained, inaccessible, or prevents packaging, replace only `ui/`, not domain/application contracts.
 - **Remote/multi-user request:** triggers a new concept and auth/data/deployment design; never expose this console by changing its bind address alone.
 
-## 22. Benchmark exposure studies (PROPOSED)
+## 22. Benchmark exposure studies (IN PROGRESS)
 
 ### 22.0 Evidence and source reconciliation
 
@@ -805,7 +821,9 @@ Contract rules:
 - `VERIFIED_EXISTING`: the pinned BFCL CLI loads category data from its package `data/` directory and has no arbitrary question-file option. Result/score paths are configurable; source question data is not.
 - `ADOPTED`: official BFCL generate/evaluate and AST score artifacts remain the only scorer path. Official access-control options may be selected and retained.
 - `REJECTED`: a BenchEval network proxy/allow-list, runtime or scorer patch, installed-package mutation, generic transformation DSL, automatic multi-seed scheduler, default reference-model correction, or in-project model training.
-- `SPIKE_REQUIRED`: exact PyPI wheel Live bytes/CLI behavior, run-owned BFCL overlay import behavior, useful frontier population size, and the inferential method beyond raw paired counts.
+- `VERIFIED_2026_09_03`: all ten PyPI wheel Live files byte-match `gorilla@6ea57973…`; the official loader accepts 2,251 unique rows across six categories; a disposable run-owned package copy preserves official loader/scorer behavior after one tool-order change; and the first frontier populations/statistical boundaries are fixed in `config/studies/`.
+- `VERIFIED_EXISTING` (2026-09-08): X0–X3 now include overlay materialization, bound report/selection/variant files, and retained real Live/tool-order studies for GPT-5.2 FC. Their detailed run IDs and review evidence remain in the roadmap; they do not prove a second model or a general pollution-removal method.
+- `REMAINS_REQUIRED`: CF onboarding, X4 final integration/readiness, and X5 research decisions. Fresh SWE effective-config capture remains separate diagnostic evidence, not a prerequisite for model-only BFCL research.
 
 Primary external evidence is the concept ledger E-12–E-22. Cursor's result establishes runtime retrieval as a material confound, not a universal requirement to remove network. The ICML mitigation study and option-position work establish that scorer equivalence does not remove behavioral-fidelity calibration. BFCL Live supplies the lowest-cost official freshness route, while its documented difficulty/composition shift forbids a direct contamination estimate.
 
@@ -816,7 +834,7 @@ Primary external evidence is the concept ledger E-12–E-22. Cursor's result est
 - `G-11` Goal: begin with BFCL Live, then one BFCL tool-order study only if the spikes pass. Architecture impact: two diagnostic identities and a BFCL-specific materializer, not a generic plugin system. Verification: exact wheel pins, official scores, and source/derived manifest replay.
 - `G-12` Goal: constrain interpretation. Architecture impact: closed report validity/non-claim rules and nonzero failure. Verification: golden reports plus hostile population/access/verifier cases.
 - `C-09` Constraint: `network_policy` semantics are backward compatible. Architecture impact: no rename, migration, or inference from historical plans.
-- `C-10` Constraint: official code/scorer bytes do not change. Architecture impact: overlay verification surrounds every derived run. Verification: pre/post-run producer/scorer hashes and installed-tree immutability.
+- `C-10` Constraint: official execution/scoring logic and installed bytes do not change; the explicit §23 registration-only delta is separately bound. Verification: pre/post-run package/scorer hashes, identical registration across arms, and installed-tree immutability.
 - `C-11` Constraint: relation, fidelity, freshness, verifier, access, and retrieval are orthogonal. Architecture impact: separate fields and validation stages.
 - `C-12` / `C-13` Constraint: current frontier API models are primary and smoke is plumbing only. Architecture impact: headroom/cost spike before population selection; report has a raw-only smoke mode.
 - `Q-12`–`Q-18` Quality scenarios: plan/effective access disagreement, uncontrolled Harbor, positive retrieval audit, BFCL pin failure, overlay integrity, asymmetric paired evidence, and smoke overclaim all fail or downgrade exactly as specified in the concept.
@@ -836,7 +854,7 @@ Primary external evidence is the concept ledger E-12–E-22. Cursor's result est
 ```text
 operator
   ├─ existing `bencheval run ... [--diagnostic]`
-  └─ proposed `bencheval study validate|report ...`
+  └─ existing `bencheval study validate|select|report|verify ...`
           │
           ▼
 one BenchEval process
@@ -867,37 +885,41 @@ The access boundary is observational:
 
 **Study registry.** `exposure_study.py` loads repository-owned manifests, validates the two supported kinds/modes, canonicalizes them, and calculates the study digest. It knows benchmark/slice ids and comparison invariants but not adapter launch or scoring semantics.
 
-**BFCL Live path.** `bfcl_study.py` verifies the exact ten Live files against the new catalog identity, then delegates generation/evaluation to `bfcl_native_adapter.py`. There is no materialized variant or output mapping. The new `bfcl-v4-live` row stays diagnostic; its official native scores are real, but the study report treats them as an unpaired distribution.
+**Tool-order path (implemented).** `bfcl_study.py` derives `bfcl-v4-tool-order-v1` from the pinned `bfcl-v4` `multiple`/`parallel_multiple` files: one frozen balanced non-identity rotation per row (`sha256_rotate_v1`: `1 + sha256([algo, seed, id]) mod (k-1)`), `function` order only. A derived run copies the installed package into the run root (`overlay/pkg/bfcl_eval`; fresh files with link count 1, no links, code/config/scorer/ground-truth bytes equal to the installed tree), rewrites only the two declared data files, and launches the unchanged official CLI with `PYTHONPATH` pointing at the copy and bytecode writing disabled (the X0.2 spike proved the loader, CLI entry, scorer module, and data paths all resolve to the copy). The overlay and installed tree are re-verified before generate and around evaluate; any drift is `runtime_config_drift`. `study/variant-manifest.json` retains the content-bound `BfclDerivedDataIdentity` (source pins, study digest, seed, transform, identical-id source mapping, derived-data digest) plus overlay digests, and every scored row references it and both derived files so private proof retains them. The catalog row is a `bfcl-derived-ref` identity naming the source benchmark and study; the pair population is selected once from the canonical universe and inherited by the derived side. Declared paired reports read the manifest and both declared derived data files from the candidate proof's inventory-bound bytes, bind the files to the manifest digests, the derived identity digest, and the mapped instance ids (a manifest without the measured representation is rejected), bind the manifest to the evidence label, catalog source pins, study, selection, and pairing, and retain it in the lock as `variant`.
 
-**BFCL tool-order path.** The materializer reads the pinned canonical JSONL, rejects unsafe/noncanonical source files, and emits a run-owned replacement with only `function` list order changed for declared `multiple` and `parallel_multiple` rows. The algorithm uses source identity, transform version, and instance id to produce a balanced deterministic target position; it records the before/after tool-name order for every row. It copies the pinned BFCL package into an exclusive overlay, verifies all official code/config/scorer files are byte-identical, replaces only the declared data file, and launches the same official CLI from that overlay. It never rewrites output because function names and ground truth are unchanged.
+**BFCL Live path.** `bfcl_native_adapter.py` verifies the exact ten Live files against the separate catalog identity and delegates generation/evaluation to the unchanged official BFCL CLI. Exact plumbing IDs use the official `--run-ids` plus `--partial-eval` lifecycle inside a run-owned BFCL project root. There is no materialized variant or output mapping. One exact id per category trips an upstream bfcl-eval 2026.3.23 defect: `evaluate` writes the official per-category score, then the leaderboard CSV step raises `StatisticsError` computing a latency stdev over one sample. The adapter keeps every other non-zero evaluate exit as `harness_failure`; only that exact crash shape on an exact-id case lets the coherent single-case score artifact decide, and the row records `post_score_summary_failure`. The new `bfcl-v4-live` row stays diagnostic; its future official native scores are real, but the study report will treat them as an unpaired distribution.
+
+**Registration composition (proposed).** The implemented data-only path above remains valid for existing upstream registrations. §23 composes its two question-file changes with a separately verified model-registration delta shared by every study arm. Neither route rewrites model output, function names, ground truth, handlers, or scoring logic.
 
 **Exposure report.** `exposure_report.py` parses evidence through the existing model, applies normal attempt eligibility, verifies manifest and immutable axes, then selects exactly one mode:
 
 - `stratified_unpaired`: BFCL non-live versus Live; report native category counts, rates/intervals, raw delta, and distribution/freshness caveats;
 - `paired_by_source_instance`: canonical versus tool order; require one eligible row per source id on both sides, then report both native rates, paired delta, canonical-only passes, candidate-only passes, concordant outcomes, and the preselected uncertainty result.
 
-No result is silently dropped. Invalid/infra rows remain in exclusions and may invalidate the study if the declared population is no longer comparable. The report owns interpretation, not native scoring or registration.
+No result is silently dropped and none is quietly excluded: an ineligible or infrastructure-failure row on either side fails the whole study closed, naming the rows, because the declared population is no longer comparable. Each side must be one run with captured provenance (required axes, non-fallback harness version, non-provisional benchmark version, producer identity), the catalog adapter/harness identity, and the exact catalog-derived `benchmark_version`; a derived candidate must carry the closed label `<benchmark_id>@derived-<sha256 hex>` and run the source benchmark's adapter and official harness. Declared (inferential) analysis exists only on the proof-backed path: both populations must equal the planned instance set of the retained `run-plan.json` inside a verified complete private proof, with the selection enforced. Derived candidates additionally require the variant and derived-file bindings described above; otherwise only eligible raw-only analysis is available. The public raw-evidence API rejects `declared` outright rather than accepting any caller-supplied population binding. The report owns interpretation, not native scoring or registration.
 
 ### 22.5 Data, identity, and retention
 
 - **Study YAML:** version-controlled intent under `config/studies/`; closed schema, safe ids, no executable code, no secrets. Canonical digest is retained with each report/proof.
 - **Catalog identities:** `bfcl-v4-live` binds the ten exact upstream/wheel files. `bfcl-v4-tool-order-v1` binds the source BFCL identity, transform version, study digest, and derived-file digest. Neither is `executable: true`.
-- **Variant manifest:** immutable JSON under the run's `artifacts/study/`; includes source/derived row mapping, order mapping, digests, and producer/scorer hashes.
+- **Variant manifest:** immutable `study/variant-manifest.json` under the run root, retained at `artifacts/raw/study/variant-manifest.json` in private proof; includes source/derived row mapping, order mapping, digests, and producer/scorer hashes.
 - **Effective access artifact:** retained official task/compose/config digest or explicit known-uncontrolled declaration. Secret-bearing proxy/env bytes are never copied; only non-secret effective identity is stored.
 - **Evidence:** additive access fields; canonical and candidate rows retain their own benchmark versions/native scores. The study does not create synthetic attempt rows.
 - **Report:** deterministic JSON is the machine-readable authority; Markdown/UI are projections. Exclusive output and no-partial-file rules match current compare/report operations.
-- **Run proofs:** study, variant, source/derived, and safe access artifacts are evidence-referenced beneath `artifacts/study/`, so the existing generic `artifact` role retains them without changing `private_proof_v1`.
-- **Study lock:** proof-backed report mode writes a separate `exposure-study-lock-v1` manifest beside the deterministic report. It records the canonical proof ID, candidate proof ID, study digest, exact evidence input selectors and digests, report contract version, and report JSON digest. The manifest digest is computed over its canonical bytes. Verification loads both immutable run proofs by id, checks every bound input, and reproduces the report digest. Keeping the lock outside both proof inventories avoids circular proof ids; it does not change `private_proof_v1`, add a study bundle, or add a new store/index. The portable unit is the lock plus the two named proof objects. Permanent local retention and no-delete policy remain unchanged.
+- **Run proofs:** study, variant, source/derived, and safe access artifacts live under the run root's `study/` directory, are referenced by every scored evidence row, and therefore land at `artifacts/raw/study/…` in `private_proof_v1` under the existing generic `artifact` role with no format change. Today the BFCL adapter writes `study/benchmark-identity.json` (verified package-data pins, harness and benchmark identity) and `study/effective-access.json` (model-only effective access plus the requested `network_policy`) once per run and fails closed as `evidence_corrupt` if a later instance sees different bytes or a link. `study/private/` is reserved for retrieval transcripts; public bundles never include a raw tree, so it can only travel inside private proof.
+- **Population selection:** `study select` materializes the study's declared `sha256_rank_v1` population from the pinned installed package data (`exposure_selection.py`): it verifies every catalog-pinned file, reads the official ids of each declared stratum, ranks them by `sha256(compact JSON ["sha256_rank_v1", seed, benchmark_id, stratum, id])` then id, and takes the first declared count. File order never matters. It writes two ordinary exact-id slice manifests plus one `exposure-selection-v1` record binding the study digest, source identity and per-file pins, seed, sorted candidate ids, and selected ids; the record is invalid unless every stratum replays. Replay alone only proves self-consistency, so the record is also bound to the trusted catalog identity: each stratum's `source_file` must be the official question file, its `source_sha256` must equal the catalog file pin, the side's `benchmark_version` must equal the catalog identity string, and the candidate universe must match the catalog's `populations` anchor (`count` plus `ids_sha256` over the sorted unique ids, derived from the pinned bytes and outside the record). A record trimmed to its own selected ids, or re-pointed at another file or digest, fails. The record must also name the exact study: id, digest, algorithm, and seed. Runs stay study-agnostic. `study report` takes the record with `--selection`; declared analysis requires it and enforces `selected ids == planned ids (run plan) == observed eligible ids` per stratum, so a same-count substitution fails. The lock retains the record beside the study definition; raw-only plumbing locks carry none, and the report's `population_selection` field exists only when a selection was enforced, so pre-selection raw-only report bytes and locks stay reproducible.
+- **Study lock:** proof-backed report mode writes a separate `exposure-study-lock-v1` manifest beside the deterministic report. It records the canonical proof ID, candidate proof ID, study digest, the exact selected study definition (canonical JSON of the validated manifest, so the lock plus two copied proofs reproduce a custom study after its YAML is gone), exact evidence input selectors and digests, report contract version, and report JSON digest. The manifest digest is computed over its canonical bytes. Verification loads both immutable run proofs by id, validates the retained definition against the study digest, checks every bound input, and reproduces the report digest; a supplied study manifest is optional and must match the retained one. Run proofs stay study-agnostic: a run does not select a study, so the definition lives with the lock rather than under `study/`. Keeping the lock outside both proof inventories avoids circular proof ids; it does not change `private_proof_v1`, add a study bundle, or add a new store/index. The portable unit is the lock plus the two named proof objects. Permanent local retention and no-delete policy remain unchanged.
 
 Study/config evolution is additive while schema `0.1` is current. Changing transform logic, balancing, source identity, or population creates a new study or transform version; it never rewrites a finalized manifest or proof. Corrupt or missing study artifacts invalidate only the exposure interpretation, while the underlying native evidence remains readable under its existing rules.
 
 ### 22.6 Interfaces and compatibility
 
-Proposed public CLI additions:
+Existing public study CLI (CF adds no scheduler):
 
 ```text
 bencheval study validate <study-yaml>
-bencheval study report <study-yaml> \
+bencheval study select <study-yaml> [--slices-dir <dir>] [--record <path>] [--max-total-cost-usd <n>]
+bencheval study report <study-yaml> [--selection <exposure-selection-v1.json>] \
   --canonical-evidence <jsonl> \
   --candidate-evidence <jsonl> \
   --format json|markdown \
@@ -915,7 +937,7 @@ bencheval study report <study-yaml> \
   --lock-output <exclusive-path>
 ```
 
-Both proof objects are verified before their owned evidence is loaded. The lock output is required in proof-backed mode and is rejected if either proof id, selected evidence digest, study digest, report contract version, or report JSON digest does not match. Raw evidence-path mode remains useful for pre-proof local diagnostics but cannot make a portable-study claim.
+Both proof objects are verified before their owned evidence is loaded. The lock output is required in proof-backed mode. `bencheval study verify [<study>] --canonical-proof <root> --candidate-proof <root> --lock <path> [--output <exclusive-path>]` re-verifies both copied proofs from the definition retained in the lock (an optional `<study>` must match it), rejects any changed proof id, selected evidence digest, study digest or definition, analysis mode, report contract version, or report JSON digest, reproduces the locked report digest, and can write the reproduced report exclusively. Raw evidence-path mode remains useful for pre-proof local diagnostics but cannot make a portable-study claim. Report and lock are created exclusively together; any failure leaves neither file.
 
 Actual execution deliberately reuses the existing entry point:
 
@@ -945,17 +967,17 @@ Fitness gates are AR-24–AR-32 and QS-20–QS-27. In addition:
 - `make check-production-v1` must stay green for software changes;
 - exact upstream/wheel/overlay hashes and official CLI results are real acceptance evidence; injected runners or synthetic benchmark rows are diagnostic only;
 - the Live report cannot claim pairing or contamination;
-- the tool-order report cannot claim contamination, novelty, or statistical significance until its declared population/analysis gate passes;
+- the tool-order contrast alone never establishes contamination or novel problem solving; inferential statistics require its declared population/analysis gate to pass;
 - a copied `exposure-study-lock-v1` manifest plus both named private proofs must reproduce report validation without the source checkout or mutable installed overlay;
 - a retrieval audit is not a release dependency for model-only BFCL studies.
 
 ### 22.8 Architecture decisions
 
 - **ADR-EX-01 — ACCEPTED:** measure benchmark-specific dependence/exposure sensitivity, not model cleanliness, provider intent, or a decontaminated score.
-- **ADR-EX-02 — ACCEPTED:** do not patch/fork official runtime, harness, or scorer and do not build a BenchEval egress allow-list. Official knobs may be selected and evidenced.
-- **ADR-EX-03 — PROPOSED:** retain `network_policy` as intent and add orthogonal effective-access/retrieval fields to evidence. Consequence: historical rows are unknown rather than reconstructed.
-- **ADR-EX-04 — PROPOSED:** use a manifest-driven read-only study layer over ordinary runs instead of orchestration or a replacement score.
-- **ADR-EX-05 — SPIKE_REQUIRED:** add `bfcl-v4-live` only after exact wheel/CLI verification; add tool order only after the run-owned overlay proves official code/scorer identity and installed-tree immutability.
+- **ADR-EX-02 — ACCEPTED, clarified by ADR-CF-02:** no runtime/generator/scorer fork or custom egress allow-list. Only the declared registration metadata exception in §23 is permitted; it cannot masquerade as unextended upstream code.
+- **ADR-EX-03 — IMPLEMENTED:** retain `network_policy` as intent and add orthogonal effective-access/retrieval fields. Historical rows remain unknown; unavailable concrete access proof remains unknown.
+- **ADR-EX-04 — IMPLEMENTED for CLI:** manifest-driven read-only studies over ordinary runs, not orchestration or replacement scoring. X4 console/readiness remains pending.
+- **ADR-EX-05 — IMPLEMENTED for the first model:** X0–X3 preserve exact wheel/CLI, overlay, native-score, and copied-proof evidence. This does not qualify new model registrations or providers.
 - **ADR-EX-06 — ACCEPTED:** relation class and behavioral fidelity are separate; choice/tool order is representation-equivalent even when model behavior changes.
 - **ADR-EX-07 — ACCEPTED:** BFCL Live precedes a balanced tool-order pair; MATH()/DyVal and controlled training remain deferred for the frontier-first product.
 - **ADR-EX-08 — ACCEPTED:** no generic transform abstraction before a second family and an informative first study create demonstrated reuse pressure.
@@ -972,7 +994,7 @@ Fitness gates are AR-24–AR-32 and QS-20–QS-27. In addition:
 
 ### 22.10 Implementation guardrails
 
-- Never change a runtime, official BFCL Python/config/scorer byte, provider prompt/tool behavior, or installed package in place for an exposure study.
+- Never change installed packages, runtime/handler/generator/scorer logic, or silently change provider prompt/tool behavior. The sole Python/config-byte exception is the declared registration-only copy delta in §23; its identity is shared across arms and retained separately from data variants.
 - Never derive effective access from `network_policy`, `requires_sandbox`, a benchmark name, or lack of observed retrieval.
 - Keep transform materialization in `bfcl_study.py`; keep native scoring in `bfcl_native_adapter.py`; keep analysis in `exposure_report.py`.
 - Keep study YAML declarative and closed. No Python entry points, templates that execute code, generic transform names, or arbitrary file paths from config.
@@ -981,3 +1003,145 @@ Fitness gates are AR-24–AR-32 and QS-20–QS-27. In addition:
 - Test substitutes may verify deterministic local failure handling only and carry the repository-required justification; they cannot prove BFCL, access controls, provider behavior, exposure results, or readiness.
 - Do not expose the new report in the UI until CLI/domain contracts and copied-proof verification pass. UI remains a projection and cannot loosen claims.
 - Do not add a third-party statistics, transformation, sandbox, or training dependency without a new architecture review and evidence that the standard library/current stack is insufficient.
+
+## 23. Config-first capability recovery (ACCEPTED design; CF1–CF2 implemented and live-proven 2026-09-08, `terminus-2` admitted 2026-09-09, CF3.1 implemented and rehearsed on a clean host 2026-09-09, CF3.2 review accepted 2026-09-09)
+
+### 23.0 Evidence and source reconciliation
+
+- **Current intent:** concept-zero G-13–G-15 and the user correction of 2026-09-08 require supported benchmark preparation, config-first onboarding, and evidence about transformation effects. A checklist completion percentage is not a capability or research-validity measure.
+- **Verified existing:** typed YAML registries, the OpenAI-compatible endpoint/env resolver, four admitted benchmark paths, two runtime paths, and first-model BFCL studies. Registration metadata is not an executed support matrix.
+- **Contradicted by execution (at design time):** `ollama-cloud` was labelled admitted but its `kind: ollama` was rejected by `resolve_openai_compatible_launch`; GPQA special-cased `bytellm`; Harbor maps runtime IDs in Python; the external CLI agent path deliberately records no authoritative pass because verifier wiring is missing. CF1 closed the first two (direct `openai_compatible` Ollama Cloud profile; protocol-derived Inspect namespace); the runtime/agent items remain for CF2.
+- **Pinned upstream limit:** BFCL generation and evaluation both look up `MODEL_CONFIG_MAPPING`. The [pinned integration guide](https://github.com/ShishirPatil/gorilla/blob/6ea57973c7a6097fd7c5915698c54c17c5b1b6c8/berkeley-function-call-leaderboard/CONTRIBUTING.md) documents adding a `ModelConfig` and reusing a compatible handler, not a dynamic CLI plugin hook. Directly constructing a handler does not prove the CLI path.
+- **Adopted routes:** the existing pinned BFCL package/handler and [Ollama's direct OpenAI-compatible cloud API](https://docs.ollama.com/integrations/droid). Local credentialed probes reached `qwen3.5:397b` through `OpenAICompletionsHandler`; official CLI registration/scoring is still unproven. No dependency upgrade, new gateway, local Ollama remote bind, or firewall change is required for this route.
+- **Native agent evidence:** [Harbor's agent interface](https://www.harborframework.com/docs/agents) supports names and installed `BaseAgent` import paths. Read-only inspection found both routes and `terminus-2` in dev-box Harbor 0.17.1. Latest online examples do not override that installed API; CF2 must capture its exact version/config before live acceptance.
+- **Historical/stale:** earlier R/U checkmarks describe bounded work, not all model/profile combinations. The first X0–X3 experiments and all finalized proof/lock bytes remain valid historical evidence. §23 clarifies future binding behavior; it does not rewrite those runs or promote their claims.
+
+### 23.1 Drivers and quality scenarios
+
+- `G-13` / `AR-33–AR-34`: a user adds another model/provider on a supported protocol using config only. The actual API name, endpoint, native registration, and handler must match the confirmed plan. Verify with at least two newly configured model entries, not one hardcoded Qwen branch.
+- `G-14` / `AR-35`: a supported native agent interface produces an official benchmark result. Agent self-report and process exit remain non-authoritative. Verify a real Harbor agent-profile run with null runtime identity and the retained official reward.
+- `G-15` / `AR-36`: a clean supported host follows a declared dependency recipe and plan-aware preflight. Verify install/preflight/run without borrowing a developer's venv or modifying source. Docker/credentials remain external prerequisites, not a new BenchEval service.
+- `Q-19–Q-22` / `QS-28–QS-31`: unsupported protocol/driver/handler, changed registration, missing official verifier, and absent dependencies fail before a claimed successful run; old proofs and reports remain readable and reproducible.
+
+### 23.2 Candidates and selected architecture
+
+**Keep literal upstream registries and per-model exceptions:** smallest code delta today, but every unsupported model reopens a manual source-edit decision. Reject as the product direction: it fails G-13 even when direct API calls work.
+
+**Selected: typed binding resolution plus native configuration bridges.** Keep the same CLI, process model, registries, executors, evidence, and proof store. A small model-binding resolver turns declarative model/provider data into a frozen, non-secret launch contract. Adapters translate it into existing native inputs. BFCL gets a deterministic registration-only package-copy delta; Harbor uses its existing agent-name/import interface. Two proposed modules have bounded ownership in §23.5. This adds no service, database, queue, plugin marketplace, remote API, or required dependency. Existing pinned dependencies/licenses remain in place; inference cost is usage evidence, not an enforced dollar guarantee.
+
+**Generic plugin engine or universal proxy:** reject. It would own protocol rewriting, lifecycle callbacks, arbitrary executable config, and scoring risks the official adapters already handle. Likewise reject an in-memory BFCL dictionary monkeypatch wrapper: it hides a changed launch contract while giving weaker retained evidence than an explicit copied-file delta.
+
+Adversarial revision: registration must be shared by canonical, variant, and repeat; a candidate-only registration confounds treatment. A name/marker alone is not provenance. Provider names and model families must not choose a transport. Support lists must not enable incompatible combinations. These are acceptance requirements, not future polish.
+
+### 23.3 Proposed configuration and resolution contract
+
+The fields below were proposed on 2026-09-08 and are **implemented** by CF1 (`model_registry.py`, `provider_registry.py`, `model_binding.py`; roadmap CF1.1); the text stays as the design record. Extend existing YAML owners; do not create a second model registry.
+
+- `config/providers/<id>.yaml`: keep `provider.id` as a user-facing route identity; `provider.kind` selects a supported protocol. CF1 supports `openai_compatible`, including compatible Ollama Cloud access. `base_url_env`, `default_base_url`, and `api_key_env` remain declarative references. Unsupported native protocols produce a typed compatibility error, not an invented SDK namespace. For direct Cloud use `https://ollama.com/v1`, `OLLAMA_API_KEY`, and an optional `OLLAMA_CLOUD_BASE_URL`; do not couple this to the local daemon's `OLLAMA_HOST` setting.
+- `config/models.yaml`: add optional `api_model` and closed `backend_bindings`. `id` remains the logical evidence/CLI model ID; `api_model` is the exact vendor API name, never a guessed suffix-stripped alias. Vendor family is descriptive metadata, not a protocol dispatch enum. Preserve existing serialized family labels while allowing a new descriptive family without another transport-code branch.
+- `backend_bindings.bfcl`: `mode: upstream | configured`, optional `registry_id` (defaults to logical `id`), and, for configured mode only, `handler: openai_completions_fc` plus explicit `underscore_to_dot`. This initial handler key maps in code to the existing pinned `OpenAICompletionsHandler` with `is_fc_model=True`; YAML cannot name arbitrary Python or define request/scoring callbacks. Upstream mode resolves and checks the real registered API name/flags; configured mode requires an explicit API name.
+- The [pinned `ModelConfig`](https://github.com/ShishirPatil/gorilla/blob/6ea57973c7a6097fd7c5915698c54c17c5b1b6c8/berkeley-function-call-leaderboard/bfcl_eval/constants/model_config.py) also requires descriptive metadata. Reuse `display_name`; allow optional model `reference_url`, `organization`, and `license`. If absent, the registration identifies the public provider endpoint as its hosting reference and labels organization/license `unknown`, rather than inventing vendor or licensing provenance. Unavailable input/output prices remain `None` (unmeasured), never zero/free. These values are retained in the registration payload, not used as transport dispatch rules.
+- `config/bfcl-v4-supported-models.yaml` remains the base version/upstream pin and legacy upstream allowlist. New configured registrations come from the validated model binding; do not duplicate their model definitions in a second overlay-registration list. Never overwrite or relabel an existing upstream key.
+- Shipped legacy rows receive explicit bindings where needed. Missing new fields in old config preserve established adapter behavior; do not introduce a generic name-rewriting heuristic. New configured routes must use the explicit contract.
+
+For example, the selected future model shape is:
+
+```yaml
+id: ollama-qwen3.5-397b-fc
+family: qwen
+display_name: Qwen3.5 397B via Ollama Cloud (FC)
+provider_route: ollama-cloud
+api_model: qwen3.5:397b
+backend_bindings:
+  bfcl:
+    mode: configured
+    handler: openai_completions_fc
+    underscore_to_dot: true
+```
+
+`model_binding.py` resolves logical ID, API name, provider ID/protocol/public endpoint identity, adapter/native registry ID, handler key, normalization flags, and a canonical SHA-256. It returns data, not a client or subprocess. Provider credentials are resolved only at launch by `provider_registry.py`; neither binding nor hash contains secret values.
+
+New `RunPlan` payloads retain optional `model_binding` and, when applicable, `judge_binding` snapshots before confirmation/output launch. The snapshots carry their digests; CLI/UI confirmation must include them. HLE prediction and judge phases resolve their own model/provider binding instead of silently sending the judge to the candidate provider. GPQA derives its Inspect namespace from protocol/backend binding, not from `provider_id`. Adapter-specific defaults/parameters are captured honestly; a field is not advertised as controllable unless the selected native handler supports it.
+
+Evidence keeps `model_id` logical and `provider_id` primary. Retain `execution/model-binding.json` (including any judge binding) as an ordinary referenced artifact; use existing `adapter_metadata` for `model_binding_sha256`, effective API ID, and native registry ID. Existing evidence fields/proof formats remain additive; no new registry service or database is introduced. All callers, including direct executor and console entry points, enforce the same resolution/preflight boundary. A changed binding requires a new plan/confirmation, never a silent late substitution.
+
+### 23.4 BFCL registration-only package route
+
+The installed package is read-only. `bfcl_package.py` owns one shared package-copy/verifier implementation for registration-only and registration-plus-variant runs; move the existing BFCL copy checks rather than duplicate them. `bfcl_study.py` keeps only data-transform/variant responsibilities.
+
+1. Verify the base distribution/version, reviewed registry-file digest, and catalog data pins. Resolve the selected upstream or configured binding before provider charge.
+2. For configured mode, copy the package into the exclusively owned run root using real copies, not cache hardlinks. Generate exactly one appended registration in `constants/model_config.py` using a fixed renderer and validated primitive values. Existing file bytes remain an exact prefix; existing registry entries cannot change. All other code, handlers, generator, scorer, config, and answer files remain byte-identical.
+3. Use that same registration content for canonical, variant, and repeat. The variant adds only its separately declared question-file changes. Invoke the real `bfcl generate` and `bfcl evaluate` entry points from the copy; direct class calls are not acceptance evidence.
+4. Retain `execution/bfcl-registration.json`: schema/version, base package/upstream identity, original and generated file hashes, logical/registry/API names, handler and FC/normalization flags, canonical registration payload and digest. Reference it from every row. Keep it separate from `study/variant-manifest.json`, because ordinary runs select no study and all arms need registration.
+5. Stamp an effective harness identity such as `bfcl-eval@2026.3.23+registration-<full-sha256>`, while retaining the base version separately. Before/after both phases, verify the exact permitted changed-file set, registration, data, and unchanged installed tree. Drift fails closed under existing failure classes.
+
+Initial configured-model runs require explicit diagnostic execution even on the canonical benchmark; they do not borrow its model/provider admission proof or register `passed`. Profile qualification is a later evidence-backed action. Official score JSONL remains sole verdict authority, including the existing narrowly verified post-score latency-summary exception; do not widen that exception for onboarding.
+
+Proof loading/reporting must bind the retained registration bytes and effective harness identity, not trust a suffix or arbitrary metadata claim. The same digest is required across paired arms; candidate representation remains bound to its own derived files. Old unextended proof/lock/report bytes still reproduce exactly, with no new null/default fields added to historical report output. New registration fields appear only when present. Keep the separate two-proof study lock and existing proof inventory format; no new store or study bundle.
+
+### 23.5 Source tree, ownership, and dependency direction
+
+§17 and §20 continue to cover every unchanged production module. CF changes only these owners and added the two files proposed for CF1 (implemented 2026-09-08):
+
+```text
+src/bencheval/
+  model_binding.py           - CF1 (implemented): pure resolved model/native-binding DTOs and digest; no credentials, SDK clients, launch, scoring, or UI imports.
+  bfcl_package.py            - CF1 (implemented): BFCL-only fixed registration rendering, owned package copy/verification, and registration manifest; no model calls or scoring.
+  model_registry.py         - Typed model/API/backend config; no per-vendor dispatch logic.
+  provider_registry.py      - Protocol/public endpoint resolution and launch-only credential env; no benchmark semantics.
+  runtime_registry.py       - Typed native runtime-driver binding, not a Python runtime-ID lookup table.
+  agent_registry.py         - Typed native agent binding and scaffold/draft/admitted policy; config labels never prove execution.
+  domain.py                 - Additive frozen plan binding snapshots; preserve legacy reads.
+  benchmark_plan.py         - Resolve compatibility/bindings before confirmation; never import optional harness packages just to list/core-plan.
+  doctor.py                 - Verify the resolved plan's native model/driver/dependency requirements before charge; no optimistic registry-only readiness.
+  control_plane_executor.py - Consume the frozen binding and route actors through their benchmark-owned adapter/verifier; no generated registration source or scoring rules here.
+  bfcl_native_adapter.py    - Official CLI lifecycle, binding/package integration, and the existing score parser.
+  bfcl_study.py             - Deterministic data transform and variant identity; consume shared package staging, not model registration semantics.
+  gpqa_adapter.py           - Protocol-to-Inspect binding and official log authority; remove route-name special cases.
+  hle_adapter.py            - Per-phase candidate/judge bindings; preserve official scripts/data/judged authority.
+  terminal_bench_harbor.py  - Config-selected native runtime/agent through Harbor and retained official reward; no runtime-ID-to-agent mapping in execution logic.
+  external_agent_adapter.py - Legacy non-authoritative CLI path; never claim scored support until a real verifier route replaces it.
+  evidence.py               - Existing logical axes and additive binding metadata only.
+  proof_bundle.py           - Inventory-bound registration/binding reads and ordinary artifact retention; no registry execution.
+  exposure_report.py        - Validate binding/registration equality for new proofs; preserve old locks; no model selection or launch.
+  cli.py                    - Stable flags and shared plan/doctor operations; no backend compatibility patches in handlers.
+  application/{dto,operations}.py - Project the same compatibility/binding data; no second resolver.
+  ui/pages.py               - Honest available/unsupported views; never turn declared admission into launch readiness.
+config/{models.yaml,providers/,runtimes/,agents/} - Sole declarative onboarding inputs; no embedded scripts/secrets.
+tests/specs/                - CF behavior RED contracts; no documentation text/count assertions.
+```
+
+Direction: registries/types → pure binding resolution → planner/doctor → native adapter → evidence/proof → report/application/UI. BFCL data transformation and model registration compose through one package staging owner; neither imports the UI or reimplements the scorer. Optional BFCL/Harbor SDK imports stay at their concrete verification/launch boundary so core installation remains dependency-light.
+
+### 23.6 Runtime and agent onboarding
+
+CF2 extends runtime `launch` with a closed `harbor` binding: an explicit upstream agent selector and, where required, a code-owned installation recipe key for the existing Codex/Claude integrations. Backend driver selects behavior; the user-facing runtime ID does not. Preserve the existing noninteractive commands, version pins, credential separation, and evidence identity when migrating shipped profiles.
+
+Agent config becomes a discriminated native-binding shape. Keep legacy `kind: external_cli` readable and non-authoritative. Add `kind: harbor` with exactly one `harbor_agent` or `harbor_import_path`, typed non-secret native kwargs, declared supported harnesses, and version/source identity. Import paths refer to operator-installed implementations of Harbor's existing interface, not inline code or download URLs. Preflight checks the installed factory/interface and captures its implementation identity. No new agent plugin protocol is designed.
+
+New actor plans carry an optional frozen `actor_binding` snapshot, owned by the existing domain/runtime/agent types and included in confirmation. Retain its non-secret selector, implementation/version identity, effective kwargs and digest as `execution/actor-binding.json`, referenced by evidence with `adapter_metadata.actor_binding_sha256`. A changed binding invalidates confirmation; do not reconstruct historical bindings from today's profiles. This uses ordinary proof artifact retention, not a new actor registry or proof format.
+
+The first real candidate is `terminus-2` on Terminal-Bench; its presence in Harbor is not BenchEval admission. A known wired native profile in `draft` may run only with explicit diagnostic opt-in; scaffold always rejects, including MOMO. Enforce this on planner, direct executor, and UI paths. After independent official-score proof, admit only the demonstrated profile/combination, never every Harbor agent or arbitrary external CLI.
+
+Dispatch `--agent` through the benchmark adapter and Harbor's official verifier, not through an alternate host command that bypasses scoring. Evidence has `agent_id`, null `runtime_id`, and retained agent version/config/source identity (including native defaults); it must not masquerade as an existing runtime. Model-only benchmarks still reject agents. SWE remains its separately demoted diagnostic. Missing official results fail as today; an agent's exit zero, stdout, or writable result JSON cannot pass.
+
+### 23.7 Deployment, compatibility, and research continuation
+
+Keep one checkout/local process and the existing locked dependency groups. Core/wheel/UI installation and a live BFCL/HLE/Harbor environment are different support claims. CF3 supplies a short per-benchmark preparation recipe and extends doctor to consume the same resolved benchmark/slice/model/actor selections as planning; no new installer engine, Docker service, or environment scheduler is selected. Test on a clean supported host/venv with Python/uv and the explicitly named external prerequisites, not the already prepared study checkout. Decided interface (CF3.1 dev-spec, 2026-09-09; contracts in `tests/specs/test_supported_host_preflight_contracts.py`): `doctor.run_plan_doctor(plan)` is the single preflight — it takes the frozen `RunPlan` the planner produced (so admission, model-only, provider, and binding refusals happen before any probe), dispatches on `harness_kind`, and reports the resolved `selection` (benchmark, slice, harness, runtime/agent, provider, model, judge, binding digests), the harness's `PreparationRecipe` (one code-owned `uv sync` command per harness kind plus named external prerequisites; its execution context is a BenchEval checkout at its `uv.lock` — an installed wheel or exported bundle plans and preflights but cannot prepare, and failing preparation checks cite the hint that says so), and the `host` roots (config source `checkout` | `bencheval_home` | `wheel` | `config_tree`, results root, `preparation.context` `checkout` | `installed_wheel` | `config_bundle`). The CLI form `bencheval doctor <benchmark>[/<slice>] --model … [--runtime|--agent] [--provider] [--diagnostic]` and `OperatorOperations.preflight(request)` call it; the executor's real-runner preflight for all four executable families (Harbor, Inspect, HLE, BFCL) calls it before any output is reserved, keeping the adapters' launch-time identity checks; credentials are checked on the routes the plan resolved (the candidate's model binding snapshot, else `provider_id`; the judge binding snapshot for HLE) through the same launch resolver the adapters use, so a registered model that declares no `provider_route` and runs on `--provider` or the shipped default fails preflight before reservation (CF3.2 review F001, fixed 2026-09-09; the model's declared route is only the legacy `--backend`/`--profile` form's input); model-only GPQA gains no Docker requirement; every config bundle must ship `config/agents`. The clean-host rehearsal (roadmap CF3.1) established two preparation facts now encoded in the tree: CPython 3.12 is pinned by `.python-version` because the locked harness wheels have no 3.14 build, and `inspect-ai` is pinned to 0.3.252 because later releases require `openai>=3.1.0` at runtime while the `inspect-harbor<0.7.4` litellm range caps openai at 2.x; the doctor's `inspect_openai_client` check reports that floor before any reservation. Support vocabulary for the CF3.2 matrix: *registered* (config row validates), *compatible* (the planner accepts the combination), *preflight-ready* (plan doctor `ok` on the host), *live-proven* (a registered run of exactly that combination); an admission flag alone is none of the last three.
+
+Old config/plan/evidence reading and existing public CLI flags remain compatible. New fields are optional for legacy reads; migrate shipped configs deliberately and retain their existing effective behavior. Never infer missing historical binding from today's config or change historical proof/lock bytes. A new execution always resolves and confirms its effective binding before launch. Test old locks, new registered proofs, source-removed reproduction, and wheel/config-bundle delivery through actual APIs; do not test prose or documentation counts.
+
+After CF1's real configured CLI proof, the next research packet can reuse the frozen 200-case cohort and one variant for a second model, with a separate canonical repeat. It does not depend on CF2 agent work or general U3 hardening, but it does require a frozen content-identified execution snapshot and scoped review of the changed path. Keep the initial $50 allocation within the $1,000 campaign ceiling; capture usage and distinguish estimates from bills. No automatic spend-to-cap or 600-case launch is authorized by a doc checkmark.
+
+Interpretation stays within-model/serving-configuration sensitivity. Different providers/handlers do not become a bare-model ranking. The existing study seed controls both selection and rotation; changing it is not a fixed-cohort rotation-only experiment. Predeclare and version any separation before further-seed claims; do not rewrite current selections. More models/seeds or a second benchmark family require measured information value under X5, not a generic transform framework. Proof integrity still does not certify unpolluted model capability.
+
+### 23.8 Decisions, risks, and peer guardrails
+
+- **ADR-CF-01 — ACCEPTED:** config-first is an end-to-end user capability on supported drivers, not just a registry loader. Consequence: native registration and namespace mapping are adapter responsibilities; first proof must add a further config entry without another Python change. Reject per-model exception branches and global support inferred from `admission` labels.
+- **ADR-CF-02 — ACCEPTED design, implemented in CF1.2:** clarify C-10/AR-28 and supersede the blanket prohibition on a copied model-registration file changing. Permit only the fixed, retained registration delta described above, shared across arms. Reject installed-package mutation, handler/scorer forks, in-memory registry monkeypatch launchers, and arbitrary executable configuration.
+- **ADR-CF-03 — ADOPTED interface, SPIKE_REQUIRED lane:** use Harbor's existing native agent interface and verifier for first scored agent onboarding. No custom generic agent protocol; MOMO and legacy raw CLI scoring stay scaffold-only.
+- **ADR-CF-04 — ACCEPTED:** close config onboarding and narrow real-run proof before adding research breadth. Existing X0–X3 evidence stays complete for its original first-model scope; no percentage of checked tasks implies generalized pollution mitigation or readiness.
+
+Risks are bounded: a new upstream package version may break the fixed registration recipe (fail its pin check; review the recipe, not a fuzzy patch); an API may not expose enough model/alias identity (record the serving configuration and uncertainty, not a verified-vendor claim); native agent defaults may differ (capture/pin them before comparing); and new bindings may change historical report bytes (preserve old reproduction as a gate). If registration needs any additional executable-file change, or the selected agent cannot reach the official verifier, stop that lane with concrete evidence rather than widening the exception.
+
+CF1.1–CF1.3 are implemented and live-proven (roadmap CF1; `model_binding.py`, `bfcl_package.py`, contracts under `tests/specs/`). Decisions taken during implementation: the plan snapshots are `RunPlan.model_binding_snapshot`/`judge_binding_snapshot` (the pre-existing `RunPlan.model_binding` literal stays the runtime-ownership axis); `--provider` defaults to the model's declared route; the registration is appended after the pinned mapping so the original file bytes remain an exact prefix; configured-registration runs pass `--diagnostic` on the executable row (CLI and console alike) and plan as `diagnostic_only`; registration provenance (`display_name`, `reference_url`, `organization`, `license`) is resolved into the binding snapshot so the effective harness identity is fixed at confirmation and the registry is never re-read at execution; every model-only launch re-checks the provider endpoint against the confirmed snapshot and fails closed on a changed override; HLE launches both phases with the snapshot's exact API names. Review round 1 fixed three more: the binding digest's canonical form omits nulls (a later optional field never changes a retained snapshot's digest; `tests/fixtures/exposure/cf13` holds the retained CF1.3 proofs and lock as the regression), upstream bindings are checked against the pinned registry's real `model_name` at preflight and launch (an allowlisted key alone proves nothing), and the configured-registration diagnostic policy applies only to BFCL execution. The canonical digest contract is frozen as `model_binding.canonical_sha256` (compact, key-sorted JSON with nulls omitted at every depth) and is shared by CF2 actor bindings; compatibility is claimed only for snapshots hashed in that form. A retained null-including draft, should one surface, gets explicit support for its identified format, never a rewritten digest or a migration framework. CF2.1–CF2.2 are implemented against `tests/specs/test_native_profile_binding_contracts.py` and `tests/specs/test_native_agent_scoring_contracts.py`: runtime profiles carry a closed `launch.harbor` binding (`agent`, code-owned `install_recipe`, `setup_timeout_multiplier`; the recipe implies its agent) and the adapter launches from it, so the profile id selects nothing; `agent_registry` is a discriminated union (`external_cli` scaffold | `harbor` native with one selector, typed non-secret `kwargs`, `version_pin`, `source`); `actor_binding.py` resolves either into a digest-bound `RunPlan.actor_binding_snapshot` retained as `execution/actor-binding.json`, with launch refusing a profile edited after planning; a draft native agent plans as `diagnostic_only` and launches only with explicit diagnostic on planner, executor, CLI, and console (`resolve_launchable_agent`); native agents launch host-side through Harbor's LiteLLM backend on the confirmed model binding (`--model <namespace>/<api_model>`, `--agent-kwarg api_base=`), the provider key travelling only through the mode-0600 `--env-file`; kwargs named after routing/lifecycle parameters or credentials are refused; only the official verifier reward scores and a mismatched `agent_info` forfeits the pass. Import-path agents validate in config but are refused at launch until an actual implementation is exercised (CF2.3). The independent delta review added five guards: the planner and executor refuse any agent on a model-only adapter whatever the profile declares; strings Harbor's kwarg parser would retype (`True`/`False`/`None`, JSON scalars) are quoted and surrounding whitespace is refused; the launch identity (binding drift, installed selector, credential alphabet, endpoint) is resolved before any output reservation for both actor kinds; failure rows keep the actor/model digests and the retained manifest; agent rows fold the actor digest and the effective env/proxy identity into `runtime_config_hash`. CF2.3 live evidence is recorded in roadmap CF2.3 (Terminus-2 official reward 1.0 as diagnostic; shipped Claude/Codex lanes re-qualified with unchanged behavior and without new manifest registrations). After independent review (2026-09-09) `terminus-2` is admitted for exactly the demonstrated combination — Terminus-2 2.0.0 with `parser_name=json` on Harbor 0.17.1, Terminal-Bench 2.1 `fix-git`, `ollama-qwen3.5-397b-fc` on direct Ollama Cloud. Admission changes neither the actor binding nor the argv, the retained run stays diagnostic, and other model/task/provider combinations are not live-proven by it. Import-path agents stay refused at launch, MOMO stays scaffold, and no old experiment needs rerunning.

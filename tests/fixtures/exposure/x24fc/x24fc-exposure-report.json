@@ -1,0 +1,110 @@
+{
+  "analysis_mode": "plumbing_only",
+  "candidate": {
+    "benchmark_id": "bfcl-v4-live",
+    "benchmark_version": "bfcl-v4-live@bfcl-eval-2026.3.23+data-939b6ed93f816d9b",
+    "overall": {
+      "eligible": 6,
+      "passed": 4
+    },
+    "run_id": "run-20260905-060424-633249-776d338b",
+    "slice_id": "plumbing-6",
+    "strata": {
+      "live_irrelevance": {
+        "eligible": 1,
+        "passed": 0
+      },
+      "live_multiple": {
+        "eligible": 1,
+        "passed": 1
+      },
+      "live_parallel": {
+        "eligible": 1,
+        "passed": 0
+      },
+      "live_parallel_multiple": {
+        "eligible": 1,
+        "passed": 1
+      },
+      "live_relevance": {
+        "eligible": 1,
+        "passed": 1
+      },
+      "live_simple": {
+        "eligible": 1,
+        "passed": 1
+      }
+    }
+  },
+  "canonical": {
+    "benchmark_id": "bfcl-v4",
+    "benchmark_version": "bfcl-v4@bfcl-eval-2026.3.23+data-79bb46df7e8c7d7b",
+    "overall": {
+      "eligible": 5,
+      "passed": 5
+    },
+    "run_id": "run-20260905-060326-458331-cd0e3aed",
+    "slice_id": "exposure-plumbing-5",
+    "strata": {
+      "irrelevance": {
+        "eligible": 1,
+        "passed": 1
+      },
+      "multiple": {
+        "eligible": 1,
+        "passed": 1
+      },
+      "parallel": {
+        "eligible": 1,
+        "passed": 1
+      },
+      "parallel_multiple": {
+        "eligible": 1,
+        "passed": 1
+      },
+      "simple_python": {
+        "eligible": 1,
+        "passed": 1
+      }
+    }
+  },
+  "caveats": [
+    "relation=fresh_parallel: a gap measures benchmark_specific_dependence, not model cleanliness, cheating, novelty, or a corrected score",
+    "smoke population proves plumbing only; no rate, interval, or test is emitted",
+    "populations are unpaired and stratified; difficulty, language, and category mix shifts are not separated from freshness"
+  ],
+  "comparison_mode": "stratified_unpaired",
+  "constant_axes": {
+    "access_control_source": "not_applicable",
+    "egress_control": "not_applicable",
+    "harness_kind": "bfcl-native",
+    "harness_version": "bfcl-eval@2026.3.23",
+    "model_id": "gpt-5.2-2025-12-11-FC",
+    "producer_content_sha256": "sha256:65af229e7a13184e5fba8b76c93820873a6a20a58a8c3d084201f0952ff1f9a2",
+    "provider_config_hash": "sha256:9aa16a5d15202c47e2e7dd180f99f4dd22825b30516082d8a9070cdf7f7e7627",
+    "provider_id": "bytellm",
+    "repository_history": "not_applicable",
+    "runtime_id": null
+  },
+  "forbidden_claims": [
+    "clean",
+    "contaminated",
+    "cheating",
+    "decontaminated_score",
+    "novelty",
+    "superiority",
+    "universal_adjusted_score"
+  ],
+  "kind": "freshness_contrast",
+  "permitted_interpretation": "benchmark_specific_dependence",
+  "population_binding": [
+    "run-plan.json@sha256:602213953276091d9e82ce881ae8a5c207d134b8aebd12fc8ef8cdf2ea648ee3",
+    "run-plan.json@sha256:9198c33294fdee4d8bfcbe0878397ede161c92058363ab7bd2d467a987527aa9"
+  ],
+  "population_scale": "smoke",
+  "relation": "fresh_parallel",
+  "report_contract_version": "exposure-report-v1",
+  "retrieval_observed": false,
+  "study_id": "bfcl-v4-live-vs-non-live",
+  "study_sha256": "sha256:e1d7d6b2c01f273e943cd29c377d49fceb38814b88c213d0f928763a08474a77"
+}

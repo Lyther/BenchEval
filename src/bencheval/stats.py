@@ -30,9 +30,32 @@ def newcombe_diff(
     hi_c: float,
     delta: float,
 ) -> tuple[float, float]:
-    ci_low = delta - math.sqrt((p_b - lo_b) ** 2 + (hi_c - p_c) ** 2)
-    ci_high = delta + math.sqrt((hi_b - p_b) ** 2 + (p_c - lo_c) ** 2)
+    """Newcombe (1998) method 10 interval for ``delta = p_c - p_b``.
+
+    The lower bound subtracts the candidate's lower Wilson distance combined
+    with the baseline's upper distance; the upper bound adds the candidate's
+    upper distance combined with the baseline's lower distance.
+    """
+    ci_low = delta - math.sqrt((p_c - lo_c) ** 2 + (hi_b - p_b) ** 2)
+    ci_high = delta + math.sqrt((hi_c - p_c) ** 2 + (p_b - lo_b) ** 2)
     return (ci_low, ci_high)
 
 
-__all__ = ["Z_95", "newcombe_diff", "wilson"]
+def exact_binomial_two_sided(b: int, c: int) -> float:
+    """Two-sided exact binomial p-value for discordant pair counts ``b`` and ``c``.
+
+    Under the null the discordant pairs split evenly; the p-value doubles the
+    lower tail of Binomial(b + c, 0.5) at min(b, c) and is capped at 1.0. Zero
+    discordant pairs carry no evidence and return 1.0.
+    """
+    if b < 0 or c < 0:
+        raise ValueError("discordant counts must be non-negative")
+    n = b + c
+    if n == 0:
+        return 1.0
+    k = min(b, c)
+    tail = sum(math.comb(n, i) for i in range(k + 1)) / 2**n
+    return min(1.0, 2.0 * tail)
+
+
+__all__ = ["Z_95", "exact_binomial_two_sided", "newcombe_diff", "wilson"]

@@ -40,8 +40,12 @@ def test_hle_commands_target_artifacts_work_dir_with_run_and_model_identity(
         model_id="kimi-k2.7-code",
         provider_id="bytellm",
     )
-    # Full identity must retain provider + model_id (not basename-only).
-    plan = plan.model_copy(update={"model_id": "org/kimi-k2.7-code"})
+    # Full identity must retain provider + model_id (not basename-only). The
+    # copy drops the binding snapshot: a plan without one launches the logical
+    # id verbatim (legacy rule), which is what this identity check exercises.
+    plan = plan.model_copy(
+        update={"model_id": "org/kimi-k2.7-code", "model_binding_snapshot": None}
+    )
     artifacts = tmp_path / "art" / "run-artifacts"
     run_id = "run-abc-123"
     pred_cmd, judge_cmd = build_hle_run_commands(

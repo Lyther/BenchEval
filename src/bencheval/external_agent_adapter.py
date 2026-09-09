@@ -96,6 +96,11 @@ def build_external_agent_command(
     if not plan.agent_id:
         raise BenchEvalError("external agent adapter requires plan.agent_id")
     profile = load_agent_catalog().by_id(plan.agent_id)
+    if profile.agent.kind != "external_cli":
+        raise BenchEvalError(
+            f"agent {plan.agent_id!r} is a native {profile.agent.kind!r} binding dispatched by "
+            "its benchmark adapter, not by the legacy external CLI path",
+        )
     cmd = list(profile.agent.command)
     cmd.extend(
         [

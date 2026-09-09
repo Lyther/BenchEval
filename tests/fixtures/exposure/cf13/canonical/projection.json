@@ -1,0 +1,16 @@
+{
+  "benchmark": "bfcl-v4",
+  "bundle_path": null,
+  "event_count": 1,
+  "evidence_path": null,
+  "first_generated_at": "2026-09-08T07:22:21.759045+00:00",
+  "host": "n37-089-091",
+  "last_generated_at": "2026-09-08T07:22:21.759045+00:00",
+  "model_id": "ollama-qwen3.5-397b-fc",
+  "notes": "CF1.3 configured registration canonical plumbing (diagnostic)",
+  "report_path": null,
+  "run_id": "run-20260908-070838-004519-ccfbce2e",
+  "runtime": null,
+  "slice_id": "tool-order-canonical-plumbing-2",
+  "status": "completed"
+}

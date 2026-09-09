@@ -1,0 +1,101 @@
+{
+  "files": [
+    {
+      "path": "artifacts/raw/execution/bfcl-registration.json",
+      "role": "artifact",
+      "sha256": "cfe25d00a911eb58f96b78569b8bed650daa257a6c0fc361bb0ac9812107c2d1",
+      "size": 998
+    },
+    {
+      "path": "artifacts/raw/multiple_19/scores/ollama-qwen3.5-397b-fc/non_live/BFCL_v4_multiple_score.json",
+      "role": "artifact",
+      "sha256": "92ab4990b62f1b6dfd7a6afa01877b87316d60d5e3a8c221330d83b7bf0696d5",
+      "size": 56
+    },
+    {
+      "path": "artifacts/raw/multiple_19/stderr.log",
+      "role": "artifact",
+      "sha256": "ebbede11f058b26307916f8aae1e9ae9382d8ad80bc06ae415200f22ddda47d8",
+      "size": 6615
+    },
+    {
+      "path": "artifacts/raw/multiple_19/stdout.log",
+      "role": "artifact",
+      "sha256": "49343326d8d2de6e730476854364e01b17ad4ac532efb26af46fa68aa43c3062",
+      "size": 177
+    },
+    {
+      "path": "artifacts/raw/overlay/pkg/bfcl_eval/constants/model_config.py",
+      "role": "artifact",
+      "sha256": "dd8019b4da5d9c4834445e7685e063e4dc10e4f522cf447c8159af2552a0ecfe",
+      "size": 79364
+    },
+    {
+      "path": "artifacts/raw/parallel_multiple_125/scores/ollama-qwen3.5-397b-fc/non_live/BFCL_v4_parallel_multiple_score.json",
+      "role": "artifact",
+      "sha256": "92ab4990b62f1b6dfd7a6afa01877b87316d60d5e3a8c221330d83b7bf0696d5",
+      "size": 56
+    },
+    {
+      "path": "artifacts/raw/parallel_multiple_125/stderr.log",
+      "role": "artifact",
+      "sha256": "c9dca04da17ffc44dccd357cc5b1dbe8f67e2d2c78e9501df9c87005f716252c",
+      "size": 6615
+    },
+    {
+      "path": "artifacts/raw/parallel_multiple_125/stdout.log",
+      "role": "artifact",
+      "sha256": "3bb5f097fb2e1f462147f56129b7816a1d131778195cec413d124eafd6bb941b",
+      "size": 195
+    },
+    {
+      "path": "artifacts/raw/study/benchmark-identity.json",
+      "role": "artifact",
+      "sha256": "9b44f8b7e606af99e191a020fc5647c8417bb750469caa8d084f22641caae3dc",
+      "size": 2524
+    },
+    {
+      "path": "artifacts/raw/study/effective-access.json",
+      "role": "artifact",
+      "sha256": "06655189d54fa9ce7ff84d142807b872f72f7f25b5d1efcc593b8a0e2357e003",
+      "size": 286
+    },
+    {
+      "path": "evidence.jsonl",
+      "role": "evidence",
+      "sha256": "7e3052dfd29122672d00f2ada465eae06a0e0ebcf2728eaf1cc8f3fb940e882a",
+      "size": 7236
+    },
+    {
+      "path": "history.jsonl",
+      "role": "history",
+      "sha256": "f276fb4abf0e2883eb9c2fa9aebf19532e5c9ee397387ad1adb3fb0f310baf8b",
+      "size": 416
+    },
+    {
+      "path": "projection.json",
+      "role": "projection",
+      "sha256": "9ec221e6662d75ebd16aa545dba19147890019c05144815e2ec3975416f9b02a",
+      "size": 524
+    },
+    {
+      "path": "proof.json",
+      "role": "proof",
+      "sha256": "7af392671dfb61880ce0430270ca82c1af457f0638fb595e39e0840ed3d70875",
+      "size": 159
+    },
+    {
+      "path": "report.md",
+      "role": "report",
+      "sha256": "23e03da6d72282b001b6378d5fdfb0d95730fe175830426d05a6ccdd7afb8515",
+      "size": 1576
+    },
+    {
+      "path": "run-plan.json",
+      "role": "run_plan",
+      "sha256": "6bce3c021398264bc211b94a75a99a7961c7520865810477aac6851403a25252",
+      "size": 1288
+    }
+  ],
+  "schema_version": "private_proof_inventory_v1"
+}

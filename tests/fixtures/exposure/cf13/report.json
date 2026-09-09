@@ -1,0 +1,103 @@
+{
+  "analysis_mode": "plumbing_only",
+  "candidate": {
+    "benchmark_id": "bfcl-v4-tool-order-v1",
+    "benchmark_version": "bfcl-v4-tool-order-v1@derived-703a44fc02a8883f07560c5bacb401f9bbda8b9649a74ff30145ef88670e30fe",
+    "overall": {
+      "eligible": 2,
+      "passed": 2
+    },
+    "run_id": "run-20260908-070915-107154-84ea6c6f",
+    "slice_id": "tool-order-derived-plumbing-2",
+    "strata": {
+      "multiple": {
+        "eligible": 1,
+        "passed": 1
+      },
+      "parallel_multiple": {
+        "eligible": 1,
+        "passed": 1
+      }
+    }
+  },
+  "canonical": {
+    "benchmark_id": "bfcl-v4",
+    "benchmark_version": "bfcl-v4@bfcl-eval-2026.3.23+data-79bb46df7e8c7d7b",
+    "overall": {
+      "eligible": 2,
+      "passed": 2
+    },
+    "run_id": "run-20260908-070838-004519-ccfbce2e",
+    "slice_id": "tool-order-canonical-plumbing-2",
+    "strata": {
+      "multiple": {
+        "eligible": 1,
+        "passed": 1
+      },
+      "parallel_multiple": {
+        "eligible": 1,
+        "passed": 1
+      }
+    }
+  },
+  "caveats": [
+    "relation=representation_equivalent: a gap measures benchmark_specific_dependence, not model cleanliness, cheating, novelty, or a corrected score",
+    "smoke population proves plumbing only; no rate, interval, or test is emitted"
+  ],
+  "comparison_mode": "paired_by_source_instance",
+  "constant_axes": {
+    "access_control_source": "not_applicable",
+    "egress_control": "not_applicable",
+    "harness_kind": "bfcl-native",
+    "harness_version": "bfcl-eval@2026.3.23+registration-05b2da6384a295799278ec9efae6a52dde655f7fbd3ab61bd5a3364f1c25a151",
+    "model_id": "ollama-qwen3.5-397b-fc",
+    "producer_content_sha256": "sha256:5e3eb2f137579fd8ceca3927d5710d62e4a10ada57a7f458bce172436ae0b8a8",
+    "provider_config_hash": "sha256:3d4a1ee8f420f3fd02ce98554b9575671ceb9e00cdfa570bb3357e1ca400988f",
+    "provider_id": "ollama-cloud",
+    "repository_history": "not_applicable",
+    "runtime_id": null
+  },
+  "forbidden_claims": [
+    "clean",
+    "contaminated",
+    "cheating",
+    "decontaminated_score",
+    "novelty",
+    "superiority",
+    "universal_adjusted_score"
+  ],
+  "kind": "representation_pair",
+  "pairs": {
+    "both_fail": 0,
+    "both_pass": 2,
+    "candidate_only_pass": 0,
+    "canonical_only_pass": 0,
+    "eligible": 2
+  },
+  "permitted_interpretation": "benchmark_specific_dependence",
+  "population_binding": [
+    "run-plan.json@sha256:51c0c8d2dc7c60008c004702e92033b07082afd3837861205001a09f084c2d7a",
+    "run-plan.json@sha256:75266257aea31a82ee2c3c044628e44036f14db05183c44761bedc37d24d84f1"
+  ],
+  "population_scale": "smoke",
+  "registration": {
+    "api_model": "qwen3.5:397b",
+    "base_harness_version": "bfcl-eval@2026.3.23",
+    "handler": "openai_completions_fc",
+    "harness_version": "bfcl-eval@2026.3.23+registration-05b2da6384a295799278ec9efae6a52dde655f7fbd3ab61bd5a3364f1c25a151",
+    "registration_sha256": "sha256:05b2da6384a295799278ec9efae6a52dde655f7fbd3ab61bd5a3364f1c25a151",
+    "registry_id": "ollama-qwen3.5-397b-fc"
+  },
+  "relation": "representation_equivalent",
+  "report_contract_version": "exposure-report-v1",
+  "retrieval_observed": false,
+  "study_id": "bfcl-v4-tool-order-v1",
+  "study_sha256": "sha256:36903ca7afb4a1d94f0bb7c2fecbd174d6ff6c9aa5b353516dad0cbbea25724b",
+  "variant": {
+    "benchmark_version": "bfcl-v4-tool-order-v1@derived-703a44fc02a8883f07560c5bacb401f9bbda8b9649a74ff30145ef88670e30fe",
+    "derived_data_sha256": "sha256:c2bb8007d09ed5d956dc6f57d11bdcd5545bcb74bead72a530fb7bdab374b0fa",
+    "transform_id": "bfcl-tool-order",
+    "transform_version": "1",
+    "variant_sha256": "sha256:65f040dfd5d5df40b5f75441879c82271df52dcc24bcc713a4cfe5ff9d821662"
+  }
+}

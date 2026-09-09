@@ -27,6 +27,9 @@ from typing import Literal, NewType, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from bencheval.actor_binding import ActorBinding
+from bencheval.model_binding import ModelBinding
+
 # ---------------------------------------------------------------------------
 # 1. BRANDED IDS (anti-string-law, Python adaptation)
 # ---------------------------------------------------------------------------
@@ -176,9 +179,73 @@ ContaminationLabel = Literal["none", "public_possible", "known_contaminated", "l
 RewardHackRiskLabel = Literal["none", "known_public_risk", "verified_safe"]
 VerifierIntegrityLabel = Literal["native", "bencheval", "unknown"]
 
+# Concrete effective-access evidence. These are attempt facts, not requested
+# policy: adapters may stamp them only from their actual launch contract or a
+# retained effective configuration.
+AccessControlSource = Literal[
+    "not_applicable",
+    "official_default",
+    "official_profile",
+    "none",
+    "unknown",
+]
+EgressControl = Literal[
+    "not_applicable",
+    "blocked",
+    "restricted",
+    "uncontrolled",
+    "unknown",
+]
+RepositoryHistory = Literal[
+    "not_applicable",
+    "future_history_removed",
+    "full_history_present",
+    "unknown",
+]
+RetrievalAudit = Literal[
+    "not_run",
+    "no_retrieval_observed",
+    "retrieval_observed",
+]
+
 # ---------------------------------------------------------------------------
 # 3. RUNTIME PROFILE (config/runtimes/<id>.yaml) — new in v0.3
 # ---------------------------------------------------------------------------
+
+
+# Code-owned Harbor installation recipes for the shipped CLI integrations. A
+# key maps in Python to a fixed ``module:Class`` import path; YAML never names
+# Python or a download URL.
+HarborInstallRecipe = Literal["claude_code_npm", "codex_npm"]
+# Each recipe installs exactly one upstream agent; the binding's ``agent`` must
+# name it, so a recipe can never be paired with a different identity.
+HARBOR_RECIPE_AGENTS: dict[str, str] = {"claude_code_npm": "claude-code", "codex_npm": "codex"}
+
+
+class HarborRuntimeBinding(BaseModel):
+    """Closed Harbor driver binding of a runtime profile (architecture §23.6).
+
+    ``agent`` is the upstream Harbor agent name the driver runs and the
+    identity expected back in the trial result; the public runtime ``id`` never
+    selects launch behavior.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    agent: str = Field(pattern=_ID_PATTERN)
+    install_recipe: HarborInstallRecipe | None = None
+    setup_timeout_multiplier: int | None = Field(default=None, ge=1, le=64)
+
+    @model_validator(mode="after")
+    def _recipe_matches_agent(self) -> HarborRuntimeBinding:
+        if self.install_recipe is not None:
+            installed = HARBOR_RECIPE_AGENTS[self.install_recipe]
+            if installed != self.agent:
+                raise ValueError(
+                    f"install_recipe {self.install_recipe!r} installs Harbor agent "
+                    f"{installed!r}, not {self.agent!r}",
+                )
+        return self
 
 
 class RuntimeLaunch(BaseModel):
@@ -191,6 +258,9 @@ class RuntimeLaunch(BaseModel):
     env_vars_required: tuple[str, ...] = ()
     env_vars_optional: tuple[str, ...] = ()
     timeout_sec_default: int = Field(gt=0, le=86_400)
+    # Absent on profiles written before CF2; the Harbor adapter refuses to
+    # launch a runtime without one once runtime-ID branching is removed.
+    harbor: HarborRuntimeBinding | None = None
 
 
 class RuntimeCapabilities(BaseModel):
@@ -378,6 +448,13 @@ class RunPlan(BaseModel):
     model_id: str = Field(min_length=1)
     judge_model_id: str | None = Field(default=None, min_length=1)
     model_binding: RuntimeModelBinding
+    # Frozen non-secret binding snapshots resolved at plan time (architecture
+    # §23.3). Absent on plans written before CF1; a changed binding is a new plan.
+    model_binding_snapshot: ModelBinding | None = None
+    judge_binding_snapshot: ModelBinding | None = None
+    # Frozen non-secret actor (runtime or native agent) binding resolved at
+    # plan time (architecture §23.6); absent on model-only and pre-CF2 plans.
+    actor_binding_snapshot: ActorBinding | None = None
     instances: tuple[RunPlanInstance, ...] = Field(min_length=1)
     budget_class: BudgetClass
     max_cost_usd: float = Field(ge=0.0)
@@ -488,16 +565,15 @@ class AttemptSummaryDTO(BaseModel):
 
 
 __all__ = [
-    # Branded IDs
+    "AccessControlSource",
     "AdapterId",
-    # Enums
     "AdapterKindLiteral",
-    # Models
     "AttemptSummaryDTO",
     "BenchmarkId",
     "BudgetClass",
     "CleanupResult",
     "ContaminationLabel",
+    "EgressControl",
     "ExecutionBackend",
     "ExecutionProfile",
     "FailureLabel",
@@ -507,6 +583,8 @@ __all__ = [
     "IntegrityMetadata",
     "InterpretationLabel",
     "ModelId",
+    "RepositoryHistory",
+    "RetrievalAudit",
     "RewardHackRiskLabel",
     "RunId",
     "RunPlan",

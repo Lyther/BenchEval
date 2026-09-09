@@ -53,6 +53,10 @@ def _control_plane_axes_section(records: list[EvidenceRecord]) -> list[str]:
         f"- Contamination: {_aggregate_axis(records, lambda r: r.contamination_label)}",
         f"- Reward-hack risk: {_aggregate_axis(records, lambda r: r.reward_hack_risk_label)}",
         f"- Verifier integrity: {_aggregate_axis(records, lambda r: r.verifier_integrity_label)}",
+        f"- Access control source: {_aggregate_axis(records, lambda r: r.access_control_source)}",
+        f"- Egress control: {_aggregate_axis(records, lambda r: r.egress_control)}",
+        f"- Repository history: {_aggregate_axis(records, lambda r: r.repository_history)}",
+        f"- Retrieval audit: {_aggregate_axis(records, lambda r: r.retrieval_audit)}",
         "",
     ]
     return lines

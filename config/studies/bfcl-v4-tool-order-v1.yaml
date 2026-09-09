@@ -1,0 +1,56 @@
+schema_version: "0.1"
+id: bfcl-v4-tool-order-v1
+kind: representation_pair
+relation: representation_equivalent
+comparison_mode: paired_by_source_instance
+canonical:
+  benchmark_id: bfcl-v4
+  slice_id: tool-order-canonical-v1
+  smoke_slice_id: tool-order-canonical-plumbing-2
+candidate:
+  benchmark_id: bfcl-v4-tool-order-v1
+  slice_id: tool-order-derived-v1
+  smoke_slice_id: tool-order-derived-plumbing-2
+required_constant_axes:
+  - model_id
+  - provider_id
+  - provider_config_hash
+  - harness_kind
+  - harness_version
+  - runtime_id
+  - access_control_source
+  - egress_control
+  - repository_history
+eligible_population: native_eligible_only
+population:
+  selection_algorithm: sha256_rank_v1
+  seed: bencheval-bfcl-tool-order-v1
+  smoke_per_stratum: 1
+  canonical_counts:
+    multiple: 100
+    parallel_multiple: 100
+  candidate_counts:
+    multiple: 100
+    parallel_multiple: 100
+analysis:
+  smoke_mode: raw_only
+  interval: wilson_95
+  difference_interval: not_applicable
+  paired_test: exact_binomial
+permitted_interpretation: benchmark_specific_dependence
+forbidden_claims:
+  - clean
+  - contaminated
+  - cheating
+  - decontaminated_score
+  - novelty
+  - superiority
+  - universal_adjusted_score
+variant:
+  transform_id: bfcl-tool-order
+  transform_version: "1"
+  source_categories:
+    - multiple
+    - parallel_multiple
+  balance_algorithm: sha256_rotate_v1
+  source_mapping_required: true

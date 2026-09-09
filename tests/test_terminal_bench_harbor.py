@@ -587,3 +587,5 @@ def test_run_instance_harness_failure(tmp_path: Path) -> None:
     )
     assert out.primary_pass is False
     assert out.failure_class == "harness_failure"
+    assert out.access_evidence is not None
+    assert out.access_evidence.egress_control == "uncontrolled"

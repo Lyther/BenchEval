@@ -11,6 +11,7 @@ verification), so a captured string is evidence, not a claim.
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from bencheval.benchmark_registry import (
     HfDatasetSnapshotIdentity,
     InspectEvalsCsvIdentity,
 )
+from bencheval.exposure_study import BfclDerivedDataIdentity
 
 SHORT_DIGEST_HEX = 16
 
@@ -68,12 +70,27 @@ def hle_benchmark_identity(identity: HfDatasetSnapshotIdentity) -> str:
     )
 
 
-def bfcl_benchmark_identity(identity: BfclPackageDataIdentity) -> str:
-    """``bfcl-v4@bfcl-eval-<version>+data-<short-combined-sha>``."""
+def bfcl_benchmark_identity(
+    identity: BfclPackageDataIdentity,
+    *,
+    benchmark_id: str = "bfcl-v4",
+) -> str:
+    """``<benchmark-id>@bfcl-eval-<version>+data-<short-combined-sha>``."""
     return (
-        f"bfcl-v4@bfcl-eval-{identity.bfcl_eval_version}"
+        f"{benchmark_id}@bfcl-eval-{identity.bfcl_eval_version}"
         f"+data-{combined_data_sha256(identity.files)[:SHORT_DIGEST_HEX]}"
     )
+
+
+def bfcl_derived_benchmark_identity(identity: BfclDerivedDataIdentity) -> str:
+    """Full-digest identity for the source-bound BFCL tool-order derivative."""
+    canonical = json.dumps(
+        identity.model_dump(mode="json"),
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    digest = hashlib.sha256(canonical).hexdigest()
+    return f"{identity.benchmark_id}@derived-{digest}"
 
 
 def file_sha256(path: Path) -> str:

@@ -1,0 +1,16 @@
+{
+  "benchmark": "bfcl-v4",
+  "bundle_path": null,
+  "event_count": 1,
+  "evidence_path": null,
+  "first_generated_at": "2026-09-05T06:11:17.435287+00:00",
+  "host": "n37-089-091",
+  "last_generated_at": "2026-09-05T06:11:17.435287+00:00",
+  "model_id": "gpt-5.2-2025-12-11-FC",
+  "notes": "X2.4 prep FC canonical exact-id plumbing",
+  "report_path": null,
+  "run_id": "run-20260905-060326-458331-cd0e3aed",
+  "runtime": null,
+  "slice_id": "exposure-plumbing-5",
+  "status": "completed"
+}

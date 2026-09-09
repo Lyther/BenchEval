@@ -102,6 +102,111 @@ benchmarks:
         data/possible_answer/BFCL_v4_parallel.json: sha256:8a6aa19c1adddc6a5a2f7e40f9dbf30cc7e95815e7b830c90589ab318229e0f0
         data/possible_answer/BFCL_v4_parallel_multiple.json: sha256:5ebf24f458c1f16300c05505d83d6f0a1b68b79be273a033febd0d4f840507e3
         data/possible_answer/BFCL_v4_simple_python.json: sha256:90cd5bc653690ee8e459b5b3f3fc9458606f7f3fcbf795bb51b7dc581f8c86dc
+      populations:
+        data/BFCL_v4_irrelevance.json:
+          count: 240
+          ids_sha256: sha256:6ba30826a466875e1ae6502537e1425886c8777f9269f1d8e04410b1506fe1e3
+        data/BFCL_v4_multiple.json:
+          count: 200
+          ids_sha256: sha256:ce186ec8ff77e1e97325d7243bbc66b175185bcf473f05b752f969fe8d3c5241
+        data/BFCL_v4_parallel.json:
+          count: 200
+          ids_sha256: sha256:2fe16d0c21a6a5873a04f60d13381bd91c81f5566ec2fb94b5120bda21e2a395
+        data/BFCL_v4_parallel_multiple.json:
+          count: 200
+          ids_sha256: sha256:edb09e99a592a7363f79090d571cb4ac2d6af0d3c38cd59a430a1430b3175647
+        data/BFCL_v4_simple_python.json:
+          count: 400
+          ids_sha256: sha256:6fdb83fd14aca7d46d09ce098ca7d9ef2611d279cd10fe62b1f0392cba7a6b38
+  - id: bfcl-v4-live
+    name: Berkeley Function Calling Leaderboard v4 Live
+    aliases:
+      - BFCL v4 Live
+    category: tool_use
+    tier: calibration
+    adapter_status: manifest_available
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 2251
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: false
+    source_url: https://gorilla.cs.berkeley.edu/leaderboard.html
+    notes: >
+      Diagnostic-only official BFCL Live data from the same pinned bfcl-eval
+      package and upstream commit as the admitted canonical row. This identity
+      is distinct from bfcl-v4, remains non-executable, and cannot inherit its
+      Tier-1 registration. The six-category plumbing slice selects one exact
+      official id per category; all scoring remains `bfcl evaluate` authority.
+    adapter_id: bfcl
+    executable: false
+    default_slice: plumbing-6
+    identity:
+      kind: bfcl-package-data
+      bfcl_eval_version: 2026.3.23
+      upstream_commit: 6ea57973c7a6097fd7c5915698c54c17c5b1b6c8
+      files:
+        data/BFCL_v4_live_irrelevance.json: sha256:6559fda2beaceb609a2cd2e504c65b4a56cb448e1ef88fddfd199e163d163349
+        data/BFCL_v4_live_multiple.json: sha256:fd8ccfad4d911420d0e3341dbe2fff77d1d341da934248b9bb2bda24ab3a10c8
+        data/BFCL_v4_live_parallel.json: sha256:6c26e9fdc3350cf596e6d1ea9c179cbff834761bccf562f4141ed29a839ca421
+        data/BFCL_v4_live_parallel_multiple.json: sha256:21d4b9319c1faac431e22757b367ea28917fe467364c3a4b17f16ec06d4f6e79
+        data/BFCL_v4_live_relevance.json: sha256:e03f9e241657a137cba48a89ee12f47bf3fcb7e4f6274263e9c699a0c974203a
+        data/BFCL_v4_live_simple.json: sha256:1af2ac87dca47556db7b7e37e51e28b459a38b594e3c7b3c792b4903598ca0c4
+        data/possible_answer/BFCL_v4_live_multiple.json: sha256:97e90d59c5bd76c55a2920ce93e5566e9046307d3f558578f085f9d3a56c3084
+        data/possible_answer/BFCL_v4_live_parallel.json: sha256:8a9f189ff0e832ebbbbdade1fd95a7dbcc67406e9177df3f0aad76f59ab00350
+        data/possible_answer/BFCL_v4_live_parallel_multiple.json: sha256:f5b5f360556c5feb51db46fb9f56ee4b304f4b45b161599bbb14161c98a2873f
+        data/possible_answer/BFCL_v4_live_simple.json: sha256:fec9cfa9744a936f9126981e85a2023da1e63e273eafebc81923a1162fad70ce
+      populations:
+        data/BFCL_v4_live_irrelevance.json:
+          count: 884
+          ids_sha256: sha256:7296250827a60118a7ad880e2ab0610e1fe319fde6fd6a0963f3af67a604c8e1
+        data/BFCL_v4_live_multiple.json:
+          count: 1053
+          ids_sha256: sha256:96d9015b2f01ea9a9a090afa8bd8638d81dccccd07d6632379dfc79a35c213ae
+        data/BFCL_v4_live_parallel.json:
+          count: 16
+          ids_sha256: sha256:baf46c687be0300539bbe54cac246bb7d986bba297e59cd7bc8fb28ecf906547
+        data/BFCL_v4_live_parallel_multiple.json:
+          count: 24
+          ids_sha256: sha256:477331ca6a084d234725dd08a1a75e2b405c6d39d01e7c839490d17900cca26a
+        data/BFCL_v4_live_relevance.json:
+          count: 16
+          ids_sha256: sha256:30106ef4c3776575d62d321f1e94c1eab500258277fc3992b56f6e9f337cd3f1
+        data/BFCL_v4_live_simple.json:
+          count: 258
+          ids_sha256: sha256:aa668d6c39d5c7ca6080eced2e43a4573a30b506db7fa84a6d91bd7d6fd05ce3
+  - id: bfcl-v4-tool-order-v1
+    name: Berkeley Function Calling Leaderboard v4 balanced tool-order variant
+    aliases:
+      - BFCL v4 tool order
+    category: tool_use
+    tier: calibration
+    adapter_status: manifest_available
+    recommended_backend: inspect
+    recommended_profile: E3
+    task_count: 400
+    public_indexed: true
+    contamination_risk: medium
+    single_mode_required: false
+    source_url: https://gorilla.cs.berkeley.edu/leaderboard.html
+    notes: >
+      Diagnostic-only derived data: the pinned bfcl-v4 multiple and
+      parallel_multiple rows with one deterministic balanced non-identity
+      rotation of each row's function list (sha256_rotate_v1), staged as a
+      run-owned byte-identical copy of the pinned package whose only changed
+      files are those two data files. Ground truth, code, and scorer are the
+      source bytes; scoring remains `bfcl evaluate` authority. This identity is
+      distinct from bfcl-v4, non-executable, never registers passed, and pairs
+      each derived case with its identical source id.
+    adapter_id: bfcl
+    executable: false
+    default_slice: tool-order-derived-plumbing-2
+    identity:
+      kind: bfcl-derived-ref
+      source_benchmark_id: bfcl-v4
+      study_id: bfcl-v4-tool-order-v1
+      transform_id: bfcl-tool-order
+      transform_version: "1"
   - id: swe-bench-pro
     name: SWE-bench Pro
     aliases:

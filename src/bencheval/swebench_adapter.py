@@ -15,6 +15,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
+from bencheval.access_evidence import EffectiveAccessEvidence
 from bencheval.backends import INSPECT_BACKEND
 from bencheval.domain import FailureLabel, RunPlan
 from bencheval.exceptions import AdapterFailureError, BenchEvalError
@@ -165,6 +166,7 @@ class SwebenchInstanceOutcome:
     predictions_path: str | None = None
     summary_path: str | None = None
     identity_artifact_paths: tuple[str, ...] = ()
+    access_evidence: EffectiveAccessEvidence | None = None
 
 
 class SwebenchProcessRunner(Protocol):

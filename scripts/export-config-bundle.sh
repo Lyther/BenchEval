@@ -23,7 +23,8 @@ mkdir -p \
   "${DEST}/config/runtimes" \
   "${DEST}/config/agents" \
   "${DEST}/config/providers" \
-  "${DEST}/config/slices"
+  "${DEST}/config/slices" \
+  "${DEST}/config/studies"
 rsync -a \
   "${REPO_ROOT}/config/benchmarks.yaml" \
   "${REPO_ROOT}/config/models.yaml" \
@@ -33,4 +34,5 @@ rsync -a "${REPO_ROOT}/config/runtimes/" "${DEST}/config/runtimes/"
 rsync -a "${REPO_ROOT}/config/agents/" "${DEST}/config/agents/"
 rsync -a "${REPO_ROOT}/config/providers/" "${DEST}/config/providers/"
 rsync -a "${REPO_ROOT}/config/slices/" "${DEST}/config/slices/"
+rsync -a "${REPO_ROOT}/config/studies/" "${DEST}/config/studies/"
 printf 'Bundle written to %s\n' "${DEST}"

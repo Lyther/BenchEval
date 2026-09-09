@@ -22,7 +22,7 @@ def test_benchmark_registry_exports_from_package() -> None:
 
 def test_default_benchmark_catalog_has_current_expected_count() -> None:
     catalog = load_benchmark_catalog()
-    assert len(catalog.benchmarks) == 8
+    assert len(catalog.benchmarks) == 10
 
 
 def test_product_catalog_ids() -> None:
@@ -32,6 +32,8 @@ def test_product_catalog_ids() -> None:
         "terminal-bench",
         "swe-bench-verified",
         "bfcl-v4",
+        "bfcl-v4-live",
+        "bfcl-v4-tool-order-v1",
         "swe-bench-pro",
         "gpqa-diamond",
         "hle",

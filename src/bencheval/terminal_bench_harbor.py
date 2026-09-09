@@ -9,15 +9,24 @@ import stat
 import subprocess
 import tempfile
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
 from urllib.parse import urlsplit
 
+from bencheval.access_evidence import EffectiveAccessEvidence, harbor_uncontrolled_access
+from bencheval.actor_binding import ActorBinding, actor_binding_for_runtime
 from bencheval.doctor import harbor_revision
-from bencheval.domain import FailureLabel, RunPlan, RuntimeCatalog
+from bencheval.domain import (
+    HARBOR_RECIPE_AGENTS,
+    FailureLabel,
+    HarborRuntimeBinding,
+    RunPlan,
+    RuntimeCatalog,
+)
 from bencheval.exceptions import AdapterFailureError, BenchEvalError
+from bencheval.model_binding import ModelBinding, require_snapshot_endpoint
 from bencheval.path_safety import validate_control_plane_instance_id
 from bencheval.run_isolation import (
     dir_identity_error,
@@ -45,9 +54,32 @@ HARBOR_OFFICIAL_RESULT_NAME = "harbor-official-result.json"
 CLAUDE_CODE_NPM_IMPORT_PATH = "bencheval.harbor_claude_code_npm:ClaudeCodeNpmInstall"
 CODEX_NPM_IMPORT_PATH = "bencheval.harbor_codex_npm:CodexNpmInstall"
 
-_RUNTIME_TO_HARBOR_AGENT: dict[str, str] = {
-    "codex-cli": "codex",
+
+@dataclass(frozen=True, slots=True)
+class _InstallRecipe:
+    import_path: str
+    agent: str
+
+
+# Code-owned installation recipes (architecture §23.6): a runtime profile's
+# ``launch.harbor.install_recipe`` key selects one of these fixed import paths;
+# YAML never names Python. ``agent`` is the upstream identity the recipe installs.
+_INSTALL_RECIPES: dict[str, _InstallRecipe] = {
+    "claude_code_npm": _InstallRecipe(
+        CLAUDE_CODE_NPM_IMPORT_PATH, HARBOR_RECIPE_AGENTS["claude_code_npm"]
+    ),
+    "codex_npm": _InstallRecipe(CODEX_NPM_IMPORT_PATH, HARBOR_RECIPE_AGENTS["codex_npm"]),
 }
+# Strings Harbor's kwarg parser would retype (JSON scalars plus these Python
+# literals) are quoted so they arrive as the digested string.
+_HARBOR_LITERAL_STRINGS = frozenset({"True", "False", "None"})
+# Harbor's host-side LLM backend is LiteLLM; the provider *protocol* selects the
+# namespace, exactly as GPQA derives its Inspect namespace (§23.3).
+_LLM_NAMESPACE_BY_PROVIDER_KIND: dict[str, str] = {"openai_compatible": "openai"}
+_LLM_CREDENTIAL_ENV = "OPENAI_API_KEY"
+_CREDENTIAL_SAFE_CHARS = frozenset(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._:/+=-"
+)
 _PROXY_FORWARD_FLAG = "BENCHEVAL_HARBOR_FORWARD_PROXY"
 _PROXY_ENV_NAMES = (
     "HTTP_PROXY",
@@ -59,7 +91,6 @@ _PROXY_ENV_NAMES = (
 )
 _CODEX_PROVIDER_ID = "bytellm"
 _CODEX_CONFIG_TARGET = "/logs/agent/config.toml"
-_CLI_AGENT_SETUP_TIMEOUT_MULTIPLIER = "8"
 _CLAUDE_CODE_ALLOWED_TOOLS_ENV = "BENCHEVAL_CLAUDE_CODE_ALLOWED_TOOLS"
 _PROVIDER_BASE_URL_ENVS = ("ANTHROPIC_BASE_URL", "OPENAI_BASE_URL")
 
@@ -95,6 +126,7 @@ class TerminalBenchInstanceOutcome:
     # pin when the run path passes expectations).
     agent_name: str | None = None
     agent_version: str | None = None
+    access_evidence: EffectiveAccessEvidence | None = None
 
 
 class HarborProcessRunner(Protocol):
@@ -107,16 +139,64 @@ class HarborProcessRunner(Protocol):
     ) -> HarborCliResult: ...
 
 
-def harbor_agent_for_runtime(runtime_id: str) -> str:
-    if runtime_id == "claude-code":
-        return "claude-code"
-    agent = _RUNTIME_TO_HARBOR_AGENT.get(runtime_id)
-    if agent is None:
+def installed_harbor_agent_names() -> tuple[str, ...]:
+    """Upstream agent names registered by the installed Harbor distribution.
+
+    Read at the verification boundary only (no core import of Harbor); the
+    result is uncharged native-interface evidence, not admission.
+    """
+    try:
+        from harbor.models.agent.name import AgentName
+    except ImportError as e:
+        raise BenchEvalError("harbor is not installed; run `uv sync --extra eval`") from e
+    return tuple(str(member.value) for member in AgentName)
+
+
+def harbor_launch_binding(
+    runtime_id: str, *, catalog: RuntimeCatalog | None = None
+) -> HarborRuntimeBinding:
+    """The runtime profile's closed Harbor driver binding; a runtime without one cannot launch."""
+    runtime_catalog = catalog if catalog is not None else load_runtime_catalog()
+    try:
+        profile = runtime_catalog.by_id(runtime_id)
+    except KeyError as e:
+        raise BenchEvalError(f"unknown runtime {runtime_id!r}") from e
+    binding = profile.launch.harbor
+    if binding is None:
         raise BenchEvalError(
-            f"runtime {runtime_id!r} has no Harbor --agent mapping; "
-            f"known: {sorted((*_RUNTIME_TO_HARBOR_AGENT, 'claude-code'))}",
+            f"runtime {runtime_id!r} declares no launch.harbor binding; "
+            "a runtime without a native driver binding cannot launch under Harbor",
         )
-    return agent
+    return binding
+
+
+def _require_installed_selector(agent: str, installed: Sequence[str]) -> None:
+    if agent not in installed:
+        raise BenchEvalError(
+            f"selector {agent!r} is not an installed Harbor agent; installed selectors: "
+            + ", ".join(sorted(installed)),
+        )
+
+
+def verify_harbor_runtime_binding(
+    binding: HarborRuntimeBinding,
+    *,
+    installed_agents: Sequence[str] | None = None,
+) -> None:
+    """Fail closed unless ``binding.agent`` is an installed Harbor agent name.
+
+    ``installed_agents`` defaults to the installed distribution's registry; a
+    caller may inject the list it already captured.
+    """
+    names = (
+        tuple(installed_agents) if installed_agents is not None else installed_harbor_agent_names()
+    )
+    _require_installed_selector(binding.agent, names)
+
+
+def harbor_agent_for_runtime(runtime_id: str, *, catalog: RuntimeCatalog | None = None) -> str:
+    """Upstream Harbor agent identity a runtime profile launches (from its binding)."""
+    return harbor_launch_binding(runtime_id, catalog=catalog).agent
 
 
 def harbor_dataset_task_name(instance_id: str) -> str:
@@ -128,9 +208,9 @@ def harbor_dataset_task_name(instance_id: str) -> str:
 _UNSAFE_AGENT_ENV_CHARS = frozenset("\n\r\t =")
 
 
-def _harbor_claude_custom_model_args(plan: RunPlan) -> list[str]:
+def _harbor_claude_custom_model_args(plan: RunPlan, binding: HarborRuntimeBinding) -> list[str]:
     """Allow Harbor Claude to use a catalog model that is not an Anthropic SKU."""
-    if plan.runtime_id != "claude-code":
+    if binding.install_recipe != "claude_code_npm":
         return []
     model = plan.model_id
     if model == "runtime-default":
@@ -186,27 +266,27 @@ def _harbor_agent_version_pin(runtime_id: str, *, catalog: RuntimeCatalog | None
     return pin
 
 
-def write_harbor_proxy_env_file(*, network_policy: str) -> Path | None:
+def _proxy_env_lines(network_policy: str) -> list[str]:
     # Plan policy wins over the operator opt-in flag: deny never forwards host
     # proxy into the Harbor task env (even when BENCHEVAL_HARBOR_FORWARD_PROXY=1).
-    if network_policy == "deny":
-        return None
     if network_policy not in ("allow", "benchmark_required"):
-        return None
+        return []
     if os.environ.get(_PROXY_FORWARD_FLAG) != "1":
-        return None
-
+        return []
     lines: list[str] = []
     for name in _PROXY_ENV_NAMES:
         value = os.environ.get(name)
         if not value or "\n" in value:
             continue
         lines.append(f"{name}={value}")
+    return lines
+
+
+def _write_env_file(lines: Sequence[str], *, prefix: str) -> Path | None:
     if not lines:
         return None
-
     # Outside the evidence/raw tree so private bundles cannot archive credentials.
-    fd, name = tempfile.mkstemp(prefix="bencheval-harbor-proxy-", suffix=".env")
+    fd, name = tempfile.mkstemp(prefix=prefix, suffix=".env")
     env_file = Path(name)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -218,6 +298,36 @@ def write_harbor_proxy_env_file(*, network_policy: str) -> Path | None:
         env_file.unlink(missing_ok=True)
         raise
     return env_file
+
+
+def write_harbor_proxy_env_file(*, network_policy: str) -> Path | None:
+    """Mode-0600 ``--env-file`` carrying only the forwarded host proxy variables."""
+    return _write_env_file(_proxy_env_lines(network_policy), prefix="bencheval-harbor-proxy-")
+
+
+def write_harbor_launch_env_file(
+    *, network_policy: str, credentials: Mapping[str, str]
+) -> Path | None:
+    """One mode-0600 ``--env-file`` for proxy forwarding plus host-side agent credentials.
+
+    Harbor loads it into its own process (``load_dotenv(override=True)``),
+    which is where a built-in agent's LiteLLM calls run; nothing here reaches
+    argv, the task container, or the evidence tree, and the caller unlinks the
+    file right after launch.
+    """
+    lines = _proxy_env_lines(network_policy)
+    for name, value in credentials.items():
+        _check_credential_value(name, value)
+        lines.append(f"{name}={value}")
+    return _write_env_file(lines, prefix="bencheval-harbor-launch-")
+
+
+def _check_credential_value(name: str, value: str) -> None:
+    if not value or any(character not in _CREDENTIAL_SAFE_CHARS for character in value):
+        raise BenchEvalError(
+            f"credential {name} cannot be placed in the Harbor env file "
+            "(empty or contains characters outside the token alphabet)",
+        )
 
 
 def _toml_string(value: str) -> str:
@@ -281,6 +391,105 @@ def _codex_config_mounts_json(config_file: Path) -> str:
     )
 
 
+def _harbor_kwarg_value(value: object) -> str:
+    """Render a typed kwarg for Harbor's ``json.loads``-then-plain-string parser.
+
+    Numbers and booleans travel as JSON so they arrive typed; a string that JSON
+    would retype (``"1"``, ``"true"``) is quoted so it stays a string.
+    """
+    if isinstance(value, bool | int | float):
+        return json.dumps(value)
+    text = str(value)
+    if text in _HARBOR_LITERAL_STRINGS:
+        return json.dumps(text)
+    try:
+        json.loads(text)
+    except ValueError:
+        return text
+    return json.dumps(text)
+
+
+def _llm_model_name(snapshot: ModelBinding) -> str:
+    namespace = _LLM_NAMESPACE_BY_PROVIDER_KIND.get(snapshot.provider_kind)
+    if namespace is None:
+        raise BenchEvalError(
+            f"provider {snapshot.provider_id!r} kind {snapshot.provider_kind!r} "
+            "has no supported Harbor LLM binding",
+        )
+    return f"{namespace}/{snapshot.api_model}"
+
+
+def confirmed_agent_binding(plan: RunPlan) -> tuple[ActorBinding, ModelBinding]:
+    """The plan's confirmed native-agent actor and model bindings (fail closed when absent)."""
+    if plan.agent_id is None:
+        raise BenchEvalError("plan launches no agent")
+    actor = plan.actor_binding_snapshot
+    if actor is None or actor.actor_kind != "agent" or actor.actor_id != plan.agent_id:
+        raise BenchEvalError(
+            f"agent {plan.agent_id!r} plan carries no confirmed actor binding; "
+            "re-plan before launching",
+        )
+    if actor.harbor_agent is None:
+        # Identity of an operator-installed class is not captured yet; only
+        # upstream-name selectors are a wired launch path (roadmap CF2.3).
+        raise BenchEvalError(
+            f"agent {plan.agent_id!r} selects import path {actor.import_path!r}; "
+            "import-path agents are not a wired launch path yet",
+        )
+    snapshot = plan.model_binding_snapshot
+    if snapshot is None:
+        raise BenchEvalError(
+            f"agent {plan.agent_id!r} plan carries no confirmed model binding; "
+            "re-plan before launching",
+        )
+    return actor, snapshot
+
+
+def _native_agent_launch_args(plan: RunPlan) -> list[str]:
+    actor, snapshot = confirmed_agent_binding(plan)
+    args = ["--agent", str(actor.harbor_agent)]
+    # Endpoint and model come from the confirmed model binding; profile kwargs
+    # cannot name them (actor_binding.RESERVED_NATIVE_KWARGS).
+    args.extend(["--agent-kwarg", f"api_base={snapshot.base_url}"])
+    for key in sorted(actor.kwargs):
+        args.extend(["--agent-kwarg", f"{key}={_harbor_kwarg_value(actor.kwargs[key])}"])
+    return args
+
+
+def _runtime_launch_args(
+    plan: RunPlan,
+    *,
+    artifacts_dir: Path,
+    instance_dir_fd: int | None,
+    runtime_catalog: RuntimeCatalog | None,
+) -> list[str]:
+    runtime_id = str(plan.runtime_id)
+    binding = harbor_launch_binding(runtime_id, catalog=runtime_catalog)
+    recipe = _INSTALL_RECIPES[binding.install_recipe] if binding.install_recipe else None
+    # Harbor 0.17+ takes a custom (recipe) agent as --agent module:Class and a
+    # built-in one by its upstream name.
+    args = ["--agent", recipe.import_path if recipe is not None else binding.agent]
+    if binding.install_recipe == "claude_code_npm":
+        allowed_tools = os.environ.get(_CLAUDE_CODE_ALLOWED_TOOLS_ENV)
+        if allowed_tools and "\n" not in allowed_tools:
+            args.extend(["--agent-kwarg", f"allowed_tools={allowed_tools}"])
+    if binding.setup_timeout_multiplier is not None:
+        args.extend(["--agent-setup-timeout-multiplier", str(binding.setup_timeout_multiplier)])
+    if recipe is not None:
+        # The recipe installs exactly the catalog-pinned version the post-run
+        # agent_info check compares against. A built-in agent is not installed
+        # by BenchEval; its identity is only compared after the run.
+        pin = _harbor_agent_version_pin(runtime_id, catalog=runtime_catalog)
+        args.extend(["--agent-kwarg", f"version={pin}"])
+    args.extend(_harbor_provider_base_url_args())
+    args.extend(_harbor_claude_custom_model_args(plan, binding))
+    if binding.install_recipe == "codex_npm":
+        codex_config = _write_codex_provider_config(artifacts_dir, instance_dir_fd)
+        if codex_config is not None:
+            args.extend(["--mounts-json", _codex_config_mounts_json(codex_config)])
+    return args
+
+
 def build_harbor_run_command(
     *,
     plan: RunPlan,
@@ -289,54 +498,39 @@ def build_harbor_run_command(
     dataset: str = HARBOR_DATASET,
     proxy_env_file: Path | None = None,
     instance_dir_fd: int | None = None,
+    runtime_catalog: RuntimeCatalog | None = None,
 ) -> tuple[str, ...]:
     validate_control_plane_instance_id(instance_id)
-    if plan.runtime_id is None:
-        raise BenchEvalError("Harbor adapter requires runtime_id (use --runtime)")
+    if plan.runtime_id is None and plan.agent_id is None:
+        raise BenchEvalError(
+            "Harbor adapter requires runtime_id or agent_id (use --runtime or --agent)"
+        )
     # Harbor cannot disable container egress; deny is an unenforceable claim.
     if plan.network_policy == "deny":
         raise BenchEvalError(
             "Harbor adapter cannot enforce network_policy=deny "
             "(no container network isolation); use benchmark_required or allow",
         )
-    agent = harbor_agent_for_runtime(plan.runtime_id)
-    model = plan.model_id
     cmd: list[str] = [
         "harbor",
         "run",
         "--yes",
     ]
-    # Caller owns lifecycle (create via write_harbor_proxy_env_file + finally unlink).
+    # Caller owns lifecycle (create via write_harbor_launch_env_file + finally unlink).
     if proxy_env_file is not None:
-        # Proxy credentials stay in the mode-0600 env file only — never argv.
+        # Proxy/credential values stay in the mode-0600 env file only — never argv.
         cmd.extend(["--env-file", str(proxy_env_file.resolve())])
-    if plan.runtime_id == "claude-code":
-        # Harbor 0.17+ takes a custom agent as --agent module:Class.
-        cmd.extend(["--agent", CLAUDE_CODE_NPM_IMPORT_PATH])
-        allowed_tools = os.environ.get(_CLAUDE_CODE_ALLOWED_TOOLS_ENV)
-        if allowed_tools and "\n" not in allowed_tools:
-            cmd.extend(["--agent-kwarg", f"allowed_tools={allowed_tools}"])
-    elif plan.runtime_id == "codex-cli":
-        cmd.extend(["--agent", CODEX_NPM_IMPORT_PATH])
+    if plan.agent_id is not None:
+        cmd.extend(_native_agent_launch_args(plan))
     else:
-        cmd.extend(["--agent", agent])
-    if plan.runtime_id in {"claude-code", "codex-cli"}:
         cmd.extend(
-            [
-                "--agent-setup-timeout-multiplier",
-                _CLI_AGENT_SETUP_TIMEOUT_MULTIPLIER,
-            ],
+            _runtime_launch_args(
+                plan,
+                artifacts_dir=artifacts_dir,
+                instance_dir_fd=instance_dir_fd,
+                runtime_catalog=runtime_catalog,
+            )
         )
-        # Pin the agent version at launch: the container-side install must be
-        # exactly the catalog-pinned version the post-run agent_info check
-        # compares against.
-        cmd.extend(["--agent-kwarg", f"version={_harbor_agent_version_pin(plan.runtime_id)}"])
-    cmd.extend(_harbor_provider_base_url_args())
-    cmd.extend(_harbor_claude_custom_model_args(plan))
-    if plan.runtime_id == "codex-cli":
-        codex_config = _write_codex_provider_config(artifacts_dir, instance_dir_fd)
-        if codex_config is not None:
-            cmd.extend(["--mounts-json", _codex_config_mounts_json(codex_config)])
     cmd.extend(
         [
             "--dataset",
@@ -349,8 +543,10 @@ def build_harbor_run_command(
             "1",
         ],
     )
-    if model != "runtime-default":
-        cmd.extend(["--model", model])
+    if plan.agent_id is not None:
+        cmd.extend(["--model", _llm_model_name(confirmed_agent_binding(plan)[1])])
+    elif plan.model_id != "runtime-default":
+        cmd.extend(["--model", plan.model_id])
     return tuple(cmd)
 
 
@@ -690,6 +886,7 @@ def parse_harbor_instance_outcome(
     result_pin: _ResultPin | None = None,
     expected_agent_name: str | None = None,
     expected_agent_version: str | None = None,
+    proxy_forwarded: bool | None = None,
 ) -> TerminalBenchInstanceOutcome:
     stdout_file = artifacts_dir / "stdout.log"
     stderr_file = artifacts_dir / "stderr.log"
@@ -868,7 +1065,11 @@ def parse_harbor_instance_outcome(
         "harbor_dataset": HARBOR_DATASET,
         "harbor_command": _sanitized_command_for_metadata(cli.command),
         "network_policy": network_policy,
-        "proxy_forwarded": "1" if "--env-file" in cli.command else "0",
+        "proxy_forwarded": (
+            ("1" if proxy_forwarded else "0")
+            if proxy_forwarded is not None
+            else ("1" if "--env-file" in cli.command else "0")
+        ),
     }
     if harness_version:
         metadata["harness_version"] = harness_version
@@ -983,6 +1184,106 @@ def _try_retain_after_budget_exceeded(
         return None
 
 
+@dataclass(frozen=True, slots=True)
+class _LaunchIdentity:
+    agent: str
+    agent_version: str | None
+    credentials: dict[str, str]
+    metadata: dict[str, str]
+
+
+def _installed_selectors(
+    installed_agents: Sequence[str] | None, *, real_runner: bool
+) -> tuple[str, ...] | None:
+    """Installed-selector list for verification; the real launch always reads the
+    installed distribution, an injected runner checks only an injected list."""
+    if installed_agents is not None:
+        return tuple(installed_agents)
+    if real_runner:
+        return installed_harbor_agent_names()
+    return None
+
+
+def _resolve_launch_identity(
+    plan: RunPlan,
+    *,
+    runtime_catalog: RuntimeCatalog | None,
+    installed_agents: Sequence[str] | None,
+    real_runner: bool,
+) -> _LaunchIdentity:
+    """Bind the launch to the confirmed actor identity before any subprocess.
+
+    Runtime plans launch their profile's closed Harbor binding (and must still
+    match the snapshot they were confirmed with); native agent plans launch the
+    confirmed actor binding on the confirmed model binding, with the provider
+    credential resolved only here and only for the host-side ``harbor`` process.
+    """
+    selectors = _installed_selectors(installed_agents, real_runner=real_runner)
+    metadata: dict[str, str] = {}
+    if plan.agent_id is not None:
+        actor, snapshot = confirmed_agent_binding(plan)
+        agent = str(actor.harbor_agent)
+        if selectors is not None:
+            _require_installed_selector(agent, selectors)
+        from bencheval.provider_registry import resolve_openai_compatible_launch
+
+        provider_launch = resolve_openai_compatible_launch(snapshot.provider_id)
+        require_snapshot_endpoint(snapshot, base_url=provider_launch.base_url)
+        credentials = {_LLM_CREDENTIAL_ENV: provider_launch.environment[_LLM_CREDENTIAL_ENV]}
+        _check_credential_value(_LLM_CREDENTIAL_ENV, credentials[_LLM_CREDENTIAL_ENV])
+        metadata.update(
+            {
+                "actor_binding_sha256": actor.sha256,
+                "model_binding_sha256": snapshot.sha256,
+                "api_model": snapshot.api_model,
+                "harbor_agent": agent,
+                "agent_version_pin": actor.agent_version_pin or "",
+            }
+        )
+        return _LaunchIdentity(agent, actor.agent_version_pin, credentials, metadata)
+
+    runtime_id = str(plan.runtime_id)
+    catalog = runtime_catalog if runtime_catalog is not None else load_runtime_catalog()
+    binding = harbor_launch_binding(runtime_id, catalog=catalog)
+    if plan.actor_binding_snapshot is not None:
+        current = actor_binding_for_runtime(catalog.by_id(runtime_id))
+        if current.sha256 != plan.actor_binding_snapshot.sha256:
+            raise BenchEvalError(
+                f"runtime {runtime_id!r} binding changed since planning "
+                f"({plan.actor_binding_snapshot.sha256} -> {current.sha256}); "
+                "re-plan before launching",
+            )
+        metadata["actor_binding_sha256"] = plan.actor_binding_snapshot.sha256
+    if selectors is not None:
+        verify_harbor_runtime_binding(binding, installed_agents=selectors)
+    pin = _harbor_agent_version_pin(runtime_id, catalog=catalog)
+    metadata.update({"harbor_agent": binding.agent, "agent_version_pin": pin})
+    if binding.install_recipe is not None:
+        metadata["install_recipe"] = binding.install_recipe
+    return _LaunchIdentity(binding.agent, pin, {}, metadata)
+
+
+def preflight_harbor_launch(
+    plan: RunPlan,
+    *,
+    runtime_catalog: RuntimeCatalog | None = None,
+    installed_agents: Sequence[str] | None = None,
+    real_runner: bool = True,
+) -> dict[str, str]:
+    """Resolve and verify the launch identity without launching or reserving anything.
+
+    The executor calls this before it claims run outputs so a changed binding,
+    an uninstalled selector, a missing credential, or a drifted endpoint stops
+    the run before any evidence file or artifact directory exists.
+    """
+    return _resolve_launch_identity(
+        plan,
+        runtime_catalog=runtime_catalog,
+        installed_agents=installed_agents,
+        real_runner=real_runner,
+    ).metadata
+
+
 def run_harbor_dataset_instance(
     *,
     plan: RunPlan,
@@ -993,20 +1294,30 @@ def run_harbor_dataset_instance(
     expected_adapter_id: str,
     process_runner: HarborProcessRunner | None = None,
     timeout_sec: int | None = None,
+    runtime_catalog: RuntimeCatalog | None = None,
+    installed_agents: Sequence[str] | None = None,
 ) -> TerminalBenchInstanceOutcome:
     if plan.adapter_id != expected_adapter_id:
         raise BenchEvalError(
             f"Harbor adapter {expected_adapter_id!r} cannot run adapter_id={plan.adapter_id!r}",
         )
     runtime_id = plan.runtime_id
-    if runtime_id is None:
-        raise BenchEvalError("Harbor adapter requires runtime_id (use --runtime)")
+    if runtime_id is None and plan.agent_id is None:
+        raise BenchEvalError(
+            "Harbor adapter requires runtime_id or agent_id (use --runtime or --agent)"
+        )
     revision = harbor_revision()
     if revision is None and process_runner is None:
         raise AdapterFailureError(
             "harbor CLI is not available",
             failure_label="runtime_launch_failure",
         )
+    launch = _resolve_launch_identity(
+        plan,
+        runtime_catalog=runtime_catalog,
+        installed_agents=installed_agents,
+        real_runner=process_runner is None,
+    )
 
     validate_control_plane_instance_id(instance_id)
     instance_dir = prepare_instance_artifacts_dir(artifacts_dir / instance_id)
@@ -1018,8 +1329,12 @@ def run_harbor_dataset_instance(
         instance_dir,
         role="terminal-bench instance artifacts directory",
     )
-    proxy_env = write_harbor_proxy_env_file(network_policy=plan.network_policy)
+    proxy_forwarded = bool(_proxy_env_lines(plan.network_policy))
+    proxy_env: Path | None = None
     try:
+        proxy_env = write_harbor_launch_env_file(
+            network_policy=plan.network_policy, credentials=launch.credentials
+        )
         command = build_harbor_run_command(
             plan=plan,
             instance_id=instance_id,
@@ -1027,6 +1342,7 @@ def run_harbor_dataset_instance(
             dataset=dataset,
             proxy_env_file=proxy_env,
             instance_dir_fd=instance_fd,
+            runtime_catalog=runtime_catalog,
         )
         if timeout_sec is not None:
             wall = timeout_sec
@@ -1110,17 +1426,24 @@ def run_harbor_dataset_instance(
                 latency_sec=cli.latency_sec,
                 command=cli.command,
             )
-            outcome = parse_harbor_instance_outcome(
-                instance_id=instance_id,
-                cli=cli,
-                artifacts_dir=instance_dir,
-                repo_root=repo_root,
-                harness_version=revision,
-                network_policy=plan.network_policy,
-                instance_dir_fd=instance_fd,
-                result_pin=result_pin,
-                expected_agent_name=harbor_agent_for_runtime(runtime_id),
-                expected_agent_version=_harbor_agent_version_pin(runtime_id),
+            outcome = replace(
+                parse_harbor_instance_outcome(
+                    instance_id=instance_id,
+                    cli=cli,
+                    artifacts_dir=instance_dir,
+                    repo_root=repo_root,
+                    harness_version=revision,
+                    network_policy=plan.network_policy,
+                    instance_dir_fd=instance_fd,
+                    result_pin=result_pin,
+                    expected_agent_name=launch.agent,
+                    expected_agent_version=launch.agent_version,
+                    proxy_forwarded=proxy_forwarded,
+                ),
+                access_evidence=harbor_uncontrolled_access(),
+            )
+            outcome = replace(
+                outcome, adapter_metadata={**outcome.adapter_metadata, **launch.metadata}
             )
             if retained_rel is None:
                 return outcome
@@ -1128,6 +1451,11 @@ def run_harbor_dataset_instance(
         finally:
             if result_pin.chain_fd is not None:
                 os.close(result_pin.chain_fd)
+    except AdapterFailureError as e:
+        # Failure rows keep the confirmed launch identity too (§23.6).
+        for key, value in launch.metadata.items():
+            e.adapter_metadata.setdefault(key, value)
+        raise
     finally:
         if proxy_env is not None:
             proxy_env.unlink(missing_ok=True)
@@ -1142,6 +1470,8 @@ def run_terminal_bench_instance(
     repo_root: Path,
     process_runner: HarborProcessRunner | None = None,
     timeout_sec: int | None = None,
+    runtime_catalog: RuntimeCatalog | None = None,
+    installed_agents: Sequence[str] | None = None,
 ) -> TerminalBenchInstanceOutcome:
     return run_harbor_dataset_instance(
         plan=plan,
@@ -1152,6 +1482,8 @@ def run_terminal_bench_instance(
         expected_adapter_id=TERMINAL_BENCH_ADAPTER_ID,
         process_runner=process_runner,
         timeout_sec=timeout_sec,
+        runtime_catalog=runtime_catalog,
+        installed_agents=installed_agents,
     )
 
 
@@ -1164,9 +1496,15 @@ __all__ = [
     "HarborProcessRunner",
     "TerminalBenchInstanceOutcome",
     "build_harbor_run_command",
+    "confirmed_agent_binding",
     "harbor_agent_for_runtime",
+    "harbor_launch_binding",
+    "installed_harbor_agent_names",
     "parse_harbor_instance_outcome",
+    "preflight_harbor_launch",
     "run_harbor_dataset_instance",
     "run_terminal_bench_instance",
+    "verify_harbor_runtime_binding",
+    "write_harbor_launch_env_file",
     "write_harbor_proxy_env_file",
 ]

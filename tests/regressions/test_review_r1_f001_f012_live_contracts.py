@@ -67,9 +67,11 @@ def test_f001_harbor_producer_stamps_native_label(tmp_path: Path) -> None:
     arts = tmp_path / "raw"
 
     def fake(command, *, cwd: Path | None, timeout_sec: int) -> HarborCliResult:
-        dirs = [p for p in arts.iterdir() if p.is_dir()]
-        assert dirs, "instance dir must exist before Harbor launch"
-        (dirs[0] / "result.json").write_text(
+        # The run root also retains execution/actor-binding.json (CF2), so the
+        # instance directory is addressed by its id, not as "the first directory".
+        instance_dir = arts / "fix-git"
+        assert instance_dir.is_dir(), "instance dir must exist before Harbor launch"
+        (instance_dir / "result.json").write_text(
             json.dumps({"verifier": {"rewards": {"reward": 1.0}}}),
             encoding="utf-8",
         )

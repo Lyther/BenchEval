@@ -1,0 +1,9 @@
+{
+  "access_control_source": "not_applicable",
+  "basis": "official_bfcl_cli_model_only",
+  "egress_control": "not_applicable",
+  "repository_history": "not_applicable",
+  "requested_network_policy": "allow",
+  "retrieval_audit": "not_run",
+  "schema_version": "bfcl-study-access-v1"
+}

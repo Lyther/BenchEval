@@ -1,0 +1,16 @@
+{
+  "adapter_id": "bfcl",
+  "base_harness_version": "bfcl-eval@2026.3.23",
+  "benchmark_id": "bfcl-v4-tool-order-v1",
+  "benchmark_version": "bfcl-v4-tool-order-v1@derived-703a44fc02a8883f07560c5bacb401f9bbda8b9649a74ff30145ef88670e30fe",
+  "harness_kind": "bfcl-native",
+  "harness_version": "bfcl-eval@2026.3.23+registration-05b2da6384a295799278ec9efae6a52dde655f7fbd3ab61bd5a3364f1c25a151",
+  "identity": {
+    "kind": "bfcl-derived-ref",
+    "source_benchmark_id": "bfcl-v4",
+    "study_id": "bfcl-v4-tool-order-v1",
+    "transform_id": "bfcl-tool-order",
+    "transform_version": "1"
+  },
+  "schema_version": "bfcl-study-identity-v1"
+}

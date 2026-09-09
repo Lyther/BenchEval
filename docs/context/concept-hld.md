@@ -220,7 +220,7 @@ Core suite only as internal self-test/private regression
 
 ## 5. Benchmark Strategy
 
-BenchEval should classify benchmarks by execution role, not by marketing importance. **Live product YAML** (`config/benchmarks.yaml`) has **8** catalog rows and **4** Tier-0 executables (`swe-bench-verified` demoted; `cybergym` remains pending full official lifecycle); the broader research catalog is docs-only (`docs/context/external-benchmark-catalog.md`). Historical drafts of this HLD assumed a large metadata catalog (~81 ids) for adapter planning — that count is no longer the product registry.
+BenchEval should classify benchmarks by execution role, not by marketing importance. At this v0.3 snapshot, live product YAML had **8** catalog rows and **4** Tier-0 executables (`swe-bench-verified` demoted; `cybergym` pending its full official lifecycle). For current catalog state, use `config/benchmarks.yaml` and `docs/roadmap.md`; the broader research catalog is docs-only (`docs/context/external-benchmark-catalog.md`). Earlier drafts of this HLD assumed a large metadata catalog (~81 ids) for adapter planning — that count is not the product registry.
 
 ### 5.1 Benchmark Classes
 

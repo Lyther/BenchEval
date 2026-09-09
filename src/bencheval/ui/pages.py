@@ -322,11 +322,8 @@ def run_builder_page() -> None:
             _notify_error(BenchEvalError("build a valid plan before preflight"))
             return
         try:
-            report = OPS.doctor(
-                backend=value.backend,
-                profile=value.execution_profile,
-                model_id=value.model_id,
-            )
+            # The same resolved selection the plan preview came from (CF3.1).
+            report = OPS.preflight(value.request)
             _set_json(preflight_result, report)
             if report.ok:
                 preflight["fingerprint"] = value.fingerprint

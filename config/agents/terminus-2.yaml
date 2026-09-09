@@ -1,0 +1,27 @@
+schema_version: "0.1"
+agent:
+  id: terminus-2
+  display_name: Terminus 2 (Harbor built-in)
+  kind: harbor
+  # Upstream Harbor agent name; identity expected back in the trial result's
+  # agent_info (name "terminus-2", version "2.0.0"). Runs host-side through
+  # Harbor's LiteLLM backend on the plan's model/provider binding.
+  harbor_agent: terminus-2
+  kwargs:
+    parser_name: json
+  version_pin: "2.0.0"
+  source: harbor==0.17.1 built-in
+  supported_harnesses:
+    - harbor
+  notes: >
+    Admitted 2026-09-09 after independent review of the CF2.3 evidence for
+    exactly this combination: Terminus-2 2.0.0 (parser_name=json) on Harbor
+    0.17.1, Terminal-Bench 2.1 tier1-one/fix-git, model ollama-qwen3.5-397b-fc
+    (qwen3.5:397b, direct Ollama Cloud); dev-box run
+    run-20260908-150221-437459-86b913ba, official verifier reward 1.0, proof
+    sha256:e25e2f20..., actor binding sha256:ff5c68e8... (unchanged by this
+    admission). That run stays a diagnostic/completed row; an ordinary passed
+    registration comes from a later non-diagnostic run (roadmap CF3.1).
+    Admission covers the integration, not every model/task/provider
+    combination. Agent exit status is never a score.
+admission: admitted

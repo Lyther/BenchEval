@@ -89,6 +89,21 @@ class InspectEvalsCsvIdentity(BaseModel):
     sha256: str = Field(pattern=_SHA256_PIN_RE.pattern)
 
 
+class BfclPopulationPin(BaseModel):
+    """Trusted candidate universe of one pinned question file: id count and digest.
+
+    ``ids_sha256`` is sha256 over the sorted unique ids joined by newlines (with
+    a trailing newline). It is derived from the pinned file bytes, so a
+    selection record's candidate pool can be checked against reviewed catalog
+    data instead of against itself.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    count: int = Field(ge=1)
+    ids_sha256: str = Field(pattern=_SHA256_PIN_RE.pattern)
+
+
 class BfclPackageDataIdentity(BaseModel):
     """Pin for BFCL package data files inside the installed ``bfcl-eval`` dist."""
 
@@ -98,15 +113,42 @@ class BfclPackageDataIdentity(BaseModel):
     bfcl_eval_version: str = Field(min_length=1)
     upstream_commit: str = Field(pattern=_GIT_COMMIT_PIN)
     files: dict[str, str] = Field(min_length=1)
+    # Optional per-question-file population anchors; keys must be pinned files.
+    # Not part of the benchmark version digest (``combined_data_sha256`` covers
+    # ``files`` only), so adding anchors never moves an admitted identity.
+    populations: dict[str, BfclPopulationPin] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _files_are_sha256_pins(self) -> Self:
         _validate_pinned_files(self.files)
+        unpinned = sorted(set(self.populations) - set(self.files))
+        if unpinned:
+            raise ValueError(f"identity populations name unpinned files: {unpinned}")
         return self
 
 
+class BfclDerivedDataRef(BaseModel):
+    """Catalog reference for the single BFCL derived-data diagnostic benchmark.
+
+    It names the pinned source benchmark, the study that declares the
+    transform and population, and the transform version; the content-bound
+    derived identity itself is materialized per run and retained in proof.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["bfcl-derived-ref"]
+    source_benchmark_id: str = Field(min_length=1)
+    study_id: str = Field(min_length=1)
+    transform_id: Literal["bfcl-tool-order"]
+    transform_version: Literal["1"]
+
+
 BenchmarkIdentity = Annotated[
-    HfDatasetSnapshotIdentity | InspectEvalsCsvIdentity | BfclPackageDataIdentity,
+    HfDatasetSnapshotIdentity
+    | InspectEvalsCsvIdentity
+    | BfclPackageDataIdentity
+    | BfclDerivedDataRef,
     Field(discriminator="kind"),
 ]
 

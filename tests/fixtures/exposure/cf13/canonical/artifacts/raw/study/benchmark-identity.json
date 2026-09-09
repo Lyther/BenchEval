@@ -1,0 +1,47 @@
+{
+  "adapter_id": "bfcl",
+  "base_harness_version": "bfcl-eval@2026.3.23",
+  "benchmark_id": "bfcl-v4",
+  "benchmark_version": "bfcl-v4@bfcl-eval-2026.3.23+data-79bb46df7e8c7d7b",
+  "harness_kind": "bfcl-native",
+  "harness_version": "bfcl-eval@2026.3.23+registration-05b2da6384a295799278ec9efae6a52dde655f7fbd3ab61bd5a3364f1c25a151",
+  "identity": {
+    "bfcl_eval_version": "2026.3.23",
+    "files": {
+      "data/BFCL_v4_irrelevance.json": "sha256:2b6ed4c2e992cdcf5f1678a701851f944bef7550ee026ed1ddb89efed5be01a6",
+      "data/BFCL_v4_multiple.json": "sha256:aef168155ebd74b7ac2401198b201343bc7d16d7a3d7e0d4e6d8ee82c6969b2a",
+      "data/BFCL_v4_parallel.json": "sha256:19f51a82eff42e5d62541aa500115a056eb78f437c2ba1f10415fd7c8e5dda84",
+      "data/BFCL_v4_parallel_multiple.json": "sha256:8863ea8433239f55c5f016154cf0830853c89f693c6ea270396a2fa121960579",
+      "data/BFCL_v4_simple_python.json": "sha256:82dd63ba502eb2520c6b5d1d9a5c4b590e03ff261565175561f6228a367d1991",
+      "data/possible_answer/BFCL_v4_multiple.json": "sha256:244e00ce9395df948bcafc7bee64e8f9c87ef70887587d83cae45b13699f3047",
+      "data/possible_answer/BFCL_v4_parallel.json": "sha256:8a6aa19c1adddc6a5a2f7e40f9dbf30cc7e95815e7b830c90589ab318229e0f0",
+      "data/possible_answer/BFCL_v4_parallel_multiple.json": "sha256:5ebf24f458c1f16300c05505d83d6f0a1b68b79be273a033febd0d4f840507e3",
+      "data/possible_answer/BFCL_v4_simple_python.json": "sha256:90cd5bc653690ee8e459b5b3f3fc9458606f7f3fcbf795bb51b7dc581f8c86dc"
+    },
+    "kind": "bfcl-package-data",
+    "populations": {
+      "data/BFCL_v4_irrelevance.json": {
+        "count": 240,
+        "ids_sha256": "sha256:6ba30826a466875e1ae6502537e1425886c8777f9269f1d8e04410b1506fe1e3"
+      },
+      "data/BFCL_v4_multiple.json": {
+        "count": 200,
+        "ids_sha256": "sha256:ce186ec8ff77e1e97325d7243bbc66b175185bcf473f05b752f969fe8d3c5241"
+      },
+      "data/BFCL_v4_parallel.json": {
+        "count": 200,
+        "ids_sha256": "sha256:2fe16d0c21a6a5873a04f60d13381bd91c81f5566ec2fb94b5120bda21e2a395"
+      },
+      "data/BFCL_v4_parallel_multiple.json": {
+        "count": 200,
+        "ids_sha256": "sha256:edb09e99a592a7363f79090d571cb4ac2d6af0d3c38cd59a430a1430b3175647"
+      },
+      "data/BFCL_v4_simple_python.json": {
+        "count": 400,
+        "ids_sha256": "sha256:6fdb83fd14aca7d46d09ce098ca7d9ef2611d279cd10fe62b1f0392cba7a6b38"
+      }
+    },
+    "upstream_commit": "6ea57973c7a6097fd7c5915698c54c17c5b1b6c8"
+  },
+  "schema_version": "bfcl-study-identity-v1"
+}

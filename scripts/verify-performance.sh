@@ -9,8 +9,6 @@ readonly REPO_ROOT
 
 cd "${REPO_ROOT}"
 
-export PYTHONPATH="${REPO_ROOT}/src:${PYTHONPATH:-}"
-
 printf '=== BenchEval verify-performance ===\n'
 printf 'Host: %s\n' "$(hostname)"
 printf 'Python: %s\n' "$(uv run python -V 2>&1)"
@@ -109,8 +107,7 @@ printf '\n=== pytest timing (domain subset) ===\n'
   tests/test_evidence_compare.py \
   tests/test_model_compare.py \
   tests/test_runtime_compare.py \
-  tests/test_paths.py \
-  2>&1 | tail -8
+  tests/test_paths.py
 
 printf '\n=== full suite (wall clock) ===\n'
-/usr/bin/time -p uv run pytest -q 2>&1 | tail -5
+/usr/bin/time -p uv run pytest -q

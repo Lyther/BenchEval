@@ -1,0 +1,16 @@
+{
+  "benchmark": "bfcl-v4-live",
+  "bundle_path": null,
+  "event_count": 1,
+  "evidence_path": null,
+  "first_generated_at": "2026-09-05T06:11:17.754004+00:00",
+  "host": "n37-089-091",
+  "last_generated_at": "2026-09-05T06:11:17.754004+00:00",
+  "model_id": "gpt-5.2-2025-12-11-FC",
+  "notes": "X2.4 prep FC Live diagnostic plumbing",
+  "report_path": null,
+  "run_id": "run-20260905-060424-633249-776d338b",
+  "runtime": null,
+  "slice_id": "plumbing-6",
+  "status": "completed"
+}

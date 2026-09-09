@@ -29,6 +29,7 @@ def _write_minimal_bundle(root: Path) -> None:
     (root / "config" / "runtimes").mkdir(parents=True)
     (root / "config" / "providers").mkdir(parents=True)
     (root / "config" / "slices").mkdir(parents=True)
+    (root / "config" / "agents").mkdir(parents=True)
     (root / "config" / "benchmarks.yaml").write_text("benchmarks: []\n", encoding="utf-8")
     (root / "config" / "models.yaml").write_text("models: []\n", encoding="utf-8")
     (root / "config" / "bfcl-v4-supported-models.yaml").write_text(
@@ -47,6 +48,10 @@ def _write_minimal_bundle(root: Path) -> None:
     )
     (root / "config" / "slices" / "smoke.yaml").write_text(
         "schema_version: '0.1'\nslice:\n  id: smoke\n  benchmark_id: bfcl-v4\n",
+        encoding="utf-8",
+    )
+    (root / "config" / "agents" / "momo.yaml").write_text(
+        "schema_version: '0.1'\nagent:\n  id: momo\n  kind: external_cli\n",
         encoding="utf-8",
     )
 
@@ -69,6 +74,17 @@ def test_repo_root_walks_up_from_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyP
     monkeypatch.delenv("BENCHEVAL_HOME", raising=False)
     monkeypatch.chdir(nested)
     assert repo_root() == root.resolve()
+
+
+def test_repo_root_finds_editable_checkout_from_outside_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An editable src-layout install resolves its checkout from any working directory."""
+    checkout = Path(__file__).resolve().parents[1]
+    assert (checkout / "config" / "benchmarks.yaml").is_file()
+    monkeypatch.delenv("BENCHEVAL_HOME", raising=False)
+    monkeypatch.chdir(tmp_path)
+    assert repo_root() == checkout
 
 
 def test_repo_root_cwd_marker_without_bundle_raises(

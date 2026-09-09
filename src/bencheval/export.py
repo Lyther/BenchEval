@@ -64,6 +64,10 @@ def _table_schemas(pa):
                 ("instance_id", pa.string()),
                 ("interpretation_label", pa.string()),
                 ("harness_version", pa.string()),
+                ("access_control_source", pa.string()),
+                ("egress_control", pa.string()),
+                ("repository_history", pa.string()),
+                ("retrieval_audit", pa.string()),
             ],
         ),
         "failures": pa.schema(
@@ -139,6 +143,10 @@ def _attempt_rows(records: list[EvidenceRecord]) -> list[dict[str, object]]:
                 "instance_id": record.instance_id,
                 "interpretation_label": record.interpretation_label,
                 "harness_version": record.harness_version,
+                "access_control_source": record.access_control_source,
+                "egress_control": record.egress_control,
+                "repository_history": record.repository_history,
+                "retrieval_audit": record.retrieval_audit,
             },
         )
     return rows

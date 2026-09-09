@@ -11,16 +11,22 @@ import stat
 import subprocess
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from bencheval.access_evidence import EffectiveAccessEvidence, model_only_access
 from bencheval.benchmark_registry import HfDatasetSnapshotIdentity
 from bencheval.domain import FailureLabel, RunPlan
 from bencheval.exceptions import AdapterFailureError, BenchEvalError
+from bencheval.model_binding import require_snapshot_endpoint
 from bencheval.path_safety import validate_control_plane_instance_id
 from bencheval.provenance_gates import is_captured_harness_version
-from bencheval.provider_registry import resolve_openai_compatible_launch
+from bencheval.provider_registry import (
+    OpenAICompatibleLaunch,
+    ProviderCatalog,
+    resolve_openai_compatible_launch,
+)
 from bencheval.run_isolation import (
     dir_identity_error,
     open_owned_dir_fd,
@@ -82,6 +88,7 @@ class HleInstanceOutcome:
     verifier_log_path: str | None
     adapter_metadata: dict[str, str]
     counts_toward_pass_at_k: bool
+    access_evidence: EffectiveAccessEvidence = field(default_factory=model_only_access)
 
 
 @dataclass(frozen=True, slots=True)
@@ -814,13 +821,14 @@ def _build_hle_commands(
     pred_script, judge_script = scripts
     n = max(max_samples, 1)
     workers = str(_MIN_HLE_WORKERS)
+    candidate_api, judge_api = hle_effective_model_ids(plan)
     pred_cmd = (
         "python",
         str(pred_script.resolve()),
         "--dataset",
         dataset_name,
         "--model",
-        plan.model_id,
+        candidate_api,
         "--max_completion_tokens",
         "8192",
         "--num_workers",
@@ -838,9 +846,30 @@ def _build_hle_commands(
         "--num_workers",
         workers,
         "--judge",
-        plan.judge_model_id,
+        judge_api,
     )
     return (pred_cmd, judge_cmd)
+
+
+def hle_effective_model_ids(plan: RunPlan) -> tuple[str, str]:
+    """(candidate, judge) API model names the official scripts are launched with.
+
+    A confirmed binding snapshot supplies the exact vendor API name; legacy
+    plans without one keep sending the logical ids verbatim.
+    """
+    if plan.judge_model_id is None:
+        raise BenchEvalError("hle adapter requires a planned judge_model_id")
+    candidate = (
+        plan.model_binding_snapshot.api_model
+        if plan.model_binding_snapshot is not None
+        else plan.model_id
+    )
+    judge = (
+        plan.judge_binding_snapshot.api_model
+        if plan.judge_binding_snapshot is not None
+        else plan.judge_model_id
+    )
+    return candidate, judge
 
 
 def _clear_path(path: Path) -> None:
@@ -1035,6 +1064,40 @@ def _default_process_runner(
     )
 
 
+def resolve_hle_phase_launches(
+    plan: RunPlan,
+    *,
+    environ: Mapping[str, str] | None = None,
+    require_api_key: bool = True,
+    providers: ProviderCatalog | None = None,
+) -> tuple[OpenAICompatibleLaunch, OpenAICompatibleLaunch]:
+    """(prediction, judge) launches: each phase binds its own provider route.
+
+    The judge route comes from the plan's judge binding snapshot; legacy plans
+    without one keep the candidate provider for both phases.
+    """
+    if plan.judge_model_id is None:
+        raise BenchEvalError("hle adapter requires a planned judge_model_id")
+    prediction = resolve_openai_compatible_launch(
+        plan.provider_id, environ=environ, require_api_key=require_api_key, providers=providers
+    )
+    judge_provider = (
+        plan.judge_binding_snapshot.provider_id
+        if plan.judge_binding_snapshot is not None
+        else plan.provider_id
+    )
+    judge = (
+        prediction
+        if judge_provider == plan.provider_id
+        else resolve_openai_compatible_launch(
+            judge_provider, environ=environ, require_api_key=require_api_key, providers=providers
+        )
+    )
+    require_snapshot_endpoint(plan.model_binding_snapshot, base_url=prediction.base_url)
+    require_snapshot_endpoint(plan.judge_binding_snapshot, base_url=judge.base_url)
+    return prediction, judge
+
+
 def run_hle_slice(
     *,
     plan: RunPlan,
@@ -1051,10 +1114,7 @@ def run_hle_slice(
         raise BenchEvalError(f"hle adapter cannot run adapter_id={plan.adapter_id!r}")
     for inst in plan.instances:
         validate_control_plane_instance_id(inst.instance_id)
-    launch = resolve_openai_compatible_launch(
-        plan.provider_id,
-        require_api_key=process_runner is None,
-    )
+    launch, judge_launch = resolve_hle_phase_launches(plan, require_api_key=process_runner is None)
     # open_owned_dir_fd creates the artifacts directory (converting OSError to
     # BenchEvalError) and pins its inode before launching the harness: every
     # BenchEval-owned write below is anchored to this descriptor, and the
@@ -1135,16 +1195,20 @@ def run_hle_slice(
             dataset_name = _resolve_hle_dataset_name(pinned_identity)
         except BenchEvalError as e:
             raise AdapterFailureError(str(e), failure_label="runtime_config_drift") from e
-        launch_env = launch.environment
+        offline: dict[str, str] = {}
         if pinned_identity is not None and process_runner is None:
             # The pinned snapshot is verified and pre-warmed above; the harness
             # runs strictly offline against it.
-            launch_env = {
-                **launch.environment,
+            offline = {
                 "HF_HUB_OFFLINE": "1",
                 "HF_DATASETS_OFFLINE": "1",
                 "HF_DATASETS_CACHE": str(datasets_cache),
             }
+        # Prediction then judge: each subprocess gets its own provider binding.
+        phase_envs = (
+            {**launch.environment, **offline},
+            {**judge_launch.environment, **offline},
+        )
         commands = _build_hle_commands(
             plan=plan,
             scripts=copies,
@@ -1180,7 +1244,7 @@ def run_hle_slice(
                     latency_sec=total_latency,
                     adapter_metadata={"hle_command": " ".join(command)},
                 )
-            cli = runner(command, cwd=cwd, timeout_sec=remaining, env=launch_env)
+            cli = runner(command, cwd=cwd, timeout_sec=remaining, env=phase_envs[index])
             work_identity_error = dir_identity_error(
                 work_fd,
                 paths.work_dir,
@@ -1377,8 +1441,9 @@ def run_hle_slice(
             "interpretation": "adapter_smoke",
             "score_source": "official" if official is not None else "missing",
             "evidence_shape": "aggregate_slice",
-            "effective_model_id": plan.model_id,
+            "effective_model_id": hle_effective_model_ids(plan)[0],
             "judge_model_id": plan.judge_model_id,
+            "effective_judge_model_id": hle_effective_model_ids(plan)[1],
             # Honest dataset identity: the pinned catalog repo when an identity
             # is bound, else the legacy cais/hle default or the
             # BENCHEVAL_HLE_DATASET mirror (never hidden from evidence).
@@ -1399,8 +1464,9 @@ def run_hle_slice(
             "returncode": last_rc,
             "planned_sample_slots": len(plan.instances),
             "work_dir": str(paths.work_dir),
-            "effective_model_id": plan.model_id,
+            "effective_model_id": hle_effective_model_ids(plan)[0],
             "judge_model_id": plan.judge_model_id,
+            "effective_judge_model_id": hle_effective_model_ids(plan)[1],
         }
         if official is not None:
             native.update(
