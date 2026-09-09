@@ -26,18 +26,24 @@ bencheval = "bencheval.cli:main"
 "config/providers" = "bencheval/_bundled/config/providers"
 "config/agents" = "bencheval/_bundled/config/agents"
 "config/slices" = "bencheval/_bundled/config/slices"
+"config/studies" = "bencheval/_bundled/config/studies"
 
 [project.optional-dependencies]
 eval = [
     # >=0.3.252: first release allowing click>=8.3.3 (GHSA/PYSEC click fix; older
     # inspect-ai caps click<8.2.2, which pins us to a vulnerable click).
     # Bounded: tested resolution is 0.3.x (uv.lock); 0.x minors may break.
-    "inspect-ai>=0.3.252,<0.4.0",
+    # <0.3.253: every later release requires openai>=3.1.0 at runtime
+    # (validate_openai_client), which the litellm range pulled by
+    # inspect-harbor<0.7.4 cannot satisfy; the GPQA Tier-1 proof and the
+    # CF3.1 clean-host rehearsal run on 0.3.252 with openai 2.x.
+    "inspect-ai>=0.3.252,<0.3.253",
     # Bounded: tested resolution is 0.8.x (uv.lock); 0.x minors may break.
     "inspect-evals>=0.8.0,<0.9.0",
     # >=0.5.0: drops the litellm<1.82.7 pin so litellm can move past its GHSA fixes.
-    # Bounded: tested resolution is 0.7.x (uv.lock); 0.x minors may break.
-    "inspect-harbor>=0.5.0,<0.8.0",
+    # 0.7.4+ requires Harbor 0.22; the admitted TB path is proven against
+    # Harbor 0.17. Keep that migration out of routine dependency refreshes.
+    "inspect-harbor>=0.5.0,<0.7.4",
     # Bounded: tested resolution is 0.2.x (uv.lock); 0.x minors may break.
     "inspect-swe>=0.2.47,<0.3.0",
 ]
@@ -53,7 +59,7 @@ dev = [
     "hypothesis>=6.155.3",
     "pytest>=9.0.3",
     "pytest-cov>=7.1.0",
-    "ruff>=0.15.10",
+    "ruff>=0.16.5",
 ]
 bfcl = [
     # Exact adapter/catalog pin; this package supplies both `bfcl` and
@@ -78,7 +84,7 @@ swe = [
 # environment and must not silently move without re-running that smoke proof.
 override-dependencies = [
     "datamodel-code-generator==0.64.0",
-    "filelock==3.32.4",
+    "filelock==3.32.5",
 ]
 # Security floor on a transitive dep: inspect-evals 0.8.0 depends on datasets
 # unconstrained and resolved 4.8.4, flagged by PYSEC-2026-3716 (fixed in 5.0.1).
@@ -94,7 +100,9 @@ target-version = "py312"
 # config/selftest/**/workspaces/**/repo is intentional fixture data (mini-repos staged by
 # the selftests, some deliberately representing OLD/backward-compatible configs). Never lint
 # or reformat fixtures — modernizing them defeats their purpose.
-extend-exclude = ["config/selftest"]
+# tests/fixtures/exposure/** holds retained real proofs (inventory-bound bytes, including a
+# copied bfcl_eval registry file); linting or reformatting them would break their digests.
+extend-exclude = ["config/selftest", "tests/fixtures"]
 
 [tool.ruff.lint]
 # Strict for correctness + hygiene, minus the noisy rules. Kept in sync with MOMO's
