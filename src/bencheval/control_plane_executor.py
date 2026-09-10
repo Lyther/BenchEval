@@ -818,6 +818,7 @@ def _evidence_from_scored_instance(
     cleanup_result: CleanupResult | None = None,
     runtime_version: str | None = None,
     access_evidence: EffectiveAccessEvidence | None = None,
+    token_usage: dict[str, int] | None = None,
 ) -> EvidenceRecord:
     artifact_paths = [p for p in paths if p]
     failure_labels: list[str] = []
@@ -869,6 +870,7 @@ def _evidence_from_scored_instance(
             access_evidence.repository_history if access_evidence is not None else None
         ),
         retrieval_audit=access_evidence.retrieval_audit if access_evidence is not None else None,
+        token_usage=token_usage,
     )
 
 
@@ -930,6 +932,22 @@ def _evidence_from_hle_outcome(
     )
 
 
+def _bfcl_token_usage(outcome: BfclInstanceOutcome) -> dict[str, int] | None:
+    """Token accounting from the retained official generation record, when it holds an answer."""
+    usage = outcome.native_score.get("generation_usage")
+    if not isinstance(usage, dict):
+        return None
+    counts = {}
+    for key, field_name in (
+        ("input_token_count", "input_tokens"),
+        ("output_token_count", "output_tokens"),
+    ):
+        value = usage.get(key)
+        if isinstance(value, int) and not isinstance(value, bool):
+            counts[field_name] = value
+    return counts or None
+
+
 def _evidence_from_bfcl_outcome(
     *,
     plan: RunPlan,
@@ -953,6 +971,7 @@ def _evidence_from_bfcl_outcome(
         adapter_metadata=outcome.adapter_metadata,
         paths=(
             outcome.verifier_log_path,
+            outcome.generation_record_path,
             outcome.stdout_path,
             outcome.stderr_path,
             *outcome.study_artifact_paths,
@@ -960,6 +979,7 @@ def _evidence_from_bfcl_outcome(
         verifier_log_path=outcome.verifier_log_path,
         cleanup_result=cleanup_result,
         access_evidence=outcome.access_evidence,
+        token_usage=_bfcl_token_usage(outcome),
     )
 
 

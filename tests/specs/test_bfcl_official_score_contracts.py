@@ -56,7 +56,15 @@ from bencheval.bfcl_native_adapter import (
     parse_bfcl_instance_outcome,
     run_bfcl_instance,
 )
+from bencheval.control_plane_executor import execute_control_plane_run
+from bencheval.evidence import (
+    INFRASTRUCTURE_FAILURE_CLASSES,
+    eligible_for_pass_at_k,
+    read_evidence_jsonl,
+)
 from bencheval.exceptions import BenchEvalError
+from bencheval.live_run_manifest import LiveRunRecord, append_live_run
+from bencheval.proof_bundle import export_private_proof
 
 # The only model registered in config/models.yaml that the pinned upstream
 # MODEL_CONFIG_MAPPING supports (constants/model_config.py:180).
@@ -430,3 +438,250 @@ def test_runtime_default_model_is_rejected_before_any_harness_launch(tmp_path: P
             process_runner=runner,
         )
     assert runner.calls == []
+
+
+# --- inference failures recorded by the official generation phase (CF4.1 review F001) ---
+
+_FC_MODEL = "gpt-5.2-2025-12-11-FC"
+_BFCL_IDENTITY = "bfcl-v4@bfcl-eval-2026.3.23+data-79bb46df7e8c7d7b"
+# Observed shapes from run-20260909-095350-269014-a37f9311 (dev-box-cpu, bfcl-eval
+# 2026.3.23): ``generate`` caught a provider timeout and recorded it in place of
+# the answer; ``evaluate`` then scored the error string as a wrong answer.
+_TIMEOUT_TRACEBACK = (
+    "Traceback (most recent call last):\n"
+    '  File ".../site-packages/openai/_base_client.py", line 1098, in request\n'
+    "    raise APITimeoutError(request=request) from err\n"
+    "openai.APITimeoutError: Request timed out.\n"
+)
+_TIMEOUT_RESULT = "Error during inference: Request timed out."
+_TIMEOUT_EXCEPTION = "openai.APITimeoutError: Request timed out."
+_TIMEOUT_GENERATION_ROW: dict[str, object] = {
+    "id": "multiple_19",
+    "result": _TIMEOUT_RESULT,
+    "traceback": _TIMEOUT_TRACEBACK,
+}
+_ANSWER_GENERATION_ROW: dict[str, object] = {
+    "id": "multiple_19",
+    "result": '[{\'religion_history_get_schisms\': \'{"religion":"Christianity","count":3}\'}]',
+    "input_token_count": 591,
+    "output_token_count": 122,
+    "latency": 3.6628196239471436,
+}
+
+
+def _timeout_score_rows(instance_id: str, model_id: str, category: str) -> list[dict[str, object]]:
+    return [
+        {"accuracy": 0.0, "correct_count": 0, "total_count": 1},
+        {
+            "id": instance_id,
+            "model_name": model_id,
+            "test_category": category,
+            "valid": False,
+            "error": ["Invalid syntax. Failed to decode AST. 'str' object has no attribute 'keys'"],
+            "error_type": "ast_decoder:decoder_failed",
+            "prompt": {"id": instance_id, "question": [[{"role": "user", "content": "..."}]]},
+            "model_result_raw": _TIMEOUT_RESULT,
+            "possible_answer": [{"triangle_properties.get": {"side1": [5]}}],
+        },
+    ]
+
+
+def _parse_exact(
+    base: Path,
+    *,
+    generation_row: Mapping[str, object],
+    score_rows: list[dict[str, object]],
+    instance_id: str = "multiple_19",
+    category: str = "multiple",
+):
+    score_dir = base / "scores"
+    _write_score_jsonl(score_dir, _SUPPORTED_MODEL, f"BFCL_v4_{category}_score.json", score_rows)
+    record_path = (
+        base
+        / "inst"
+        / "results"
+        / _SUPPORTED_MODEL
+        / "non_live"
+        / f"BFCL_v4_{category}_result.json"
+    )
+    record_path.parent.mkdir(parents=True, exist_ok=True)
+    record = json.dumps(generation_row) + "\n"
+    record_path.write_text(record, encoding="utf-8")
+    cli = BfclCliResult(0, "", "", 0.1, ("bfcl", "evaluate", "--partial-eval"))
+    return parse_bfcl_instance_outcome(
+        instance_id=instance_id,
+        cli=cli,
+        artifacts_dir=base / "inst",
+        repo_root=base,
+        harness_version=_PINNED_HARNESS_VERSION,
+        score_dir=score_dir,
+        model_id=_SUPPORTED_MODEL,
+        test_category=category,
+        generation_record=record.encode("utf-8"),
+        generation_record_path=str(record_path),
+    )
+
+
+def test_inference_error_in_the_generation_record_is_a_serving_path_failure(
+    tmp_path: Path,
+) -> None:
+    """The official zero score stands, but a case whose generation phase caught a
+    provider exception never reached a model answer: it is an infrastructure
+    failure (ineligible for any native population), not a wrong solution."""
+    rows = _timeout_score_rows("multiple_19", _SUPPORTED_MODEL, "multiple")
+    out = _parse_exact(
+        tmp_path / "timeout", generation_row=_TIMEOUT_GENERATION_ROW, score_rows=rows
+    )
+    assert out.primary_pass is False
+    assert out.partial_score == 0.0
+    assert out.native_score["accuracy"] == 0.0  # the official verdict is retained
+    assert out.failure_class == "remote_infra_failure"
+    assert out.failure_class in INFRASTRUCTURE_FAILURE_CLASSES
+    assert out.native_score["generation_error"] == {
+        "result": _TIMEOUT_RESULT,
+        "exception": _TIMEOUT_EXCEPTION,
+    }
+    assert "generation_usage" not in out.native_score
+    assert out.generation_record_path is not None
+    assert out.generation_record_path.endswith("BFCL_v4_multiple_result.json")
+    assert out.verifier_log_path is not None
+    assert out.verifier_log_path.endswith("BFCL_v4_multiple_score.json")
+
+    # Control: the same official failure with a real model answer stays a wrong
+    # solution, and its usage is carried with the row.
+    control = _parse_exact(
+        tmp_path / "answer", generation_row=_ANSWER_GENERATION_ROW, score_rows=rows
+    )
+    assert control.primary_pass is False
+    assert control.failure_class == "model_wrong_solution"
+    assert "generation_error" not in control.native_score
+    assert control.native_score["generation_usage"] == {
+        "input_token_count": 591,
+        "output_token_count": 122,
+        "latency": pytest.approx(3.6628196239471436),
+    }
+
+
+def _observed_runner(
+    generation_rows: Mapping[str, Mapping[str, object]],
+    score_rows: Mapping[str, list[dict[str, object]]],
+):
+    """An injected bfcl CLI writing the observed generation record and official score per case."""
+
+    def runner(
+        command: Sequence[str],
+        *,
+        cwd: Path | None,
+        timeout_sec: int,
+        env: Mapping[str, str],
+    ) -> BfclCliResult:
+        del cwd, timeout_sec
+        call = tuple(command)
+        ids = json.loads(
+            (Path(env["BFCL_PROJECT_ROOT"]) / "test_case_ids_to_generate.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        category, (instance_id,) = next(iter(ids.items()))
+        if call[1] == "generate":
+            root = Path(call[call.index("--result-dir") + 1])
+            path = root / _FC_MODEL / "non_live" / f"BFCL_v4_{category}_result.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(generation_rows[instance_id]) + "\n", encoding="utf-8")
+        else:
+            root = Path(call[call.index("--score-dir") + 1])
+            path = root / _FC_MODEL / "non_live" / f"BFCL_v4_{category}_score.json"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                "".join(json.dumps(row) + "\n" for row in score_rows[instance_id]),
+                encoding="utf-8",
+            )
+        return BfclCliResult(0, "", "", 0.1, call)
+
+    return runner
+
+
+def test_exact_id_run_retains_the_generation_record_and_keeps_timeouts_ineligible(
+    tmp_path: Path,
+) -> None:
+    """End to end through the executor: a timeout case is an ineligible
+    infrastructure row with its generation record retained beside the official
+    score, an answered case carries its token usage, and a complete proof keeps
+    the record."""
+    plan = plan_control_plane(
+        benchmark_id="bfcl-v4",
+        slice_id="tool-order-canonical-plumbing-2",
+        runtime_id=None,
+        model_id=_FC_MODEL,
+    )
+    assert [i.instance_id for i in plan.instances] == ["multiple_19", "parallel_multiple_125"]
+    generation = {
+        "multiple_19": _TIMEOUT_GENERATION_ROW,
+        "parallel_multiple_125": {**_ANSWER_GENERATION_ROW, "id": "parallel_multiple_125"},
+    }
+    scores = {
+        "multiple_19": _timeout_score_rows("multiple_19", _FC_MODEL, "multiple"),
+        "parallel_multiple_125": [{"accuracy": 1.0, "correct_count": 1, "total_count": 1}],
+    }
+    evidence = tmp_path / "results" / "evidence" / "run.jsonl"
+    artifacts = tmp_path / "results" / "raw" / "run"
+    summary = execute_control_plane_run(
+        plan=plan,
+        output_path=evidence,
+        artifacts_dir=artifacts,
+        run_id="run-f001-test",
+        bfcl_process_runner=_observed_runner(generation, scores),
+        bfcl_benchmark_identity=_BFCL_IDENTITY,
+    )
+    assert (summary.passed_count, summary.failed_count) == (1, 1)
+    rows = {row.instance_id: row for row in read_evidence_jsonl(evidence)}
+    timeout, answer = rows["multiple_19"], rows["parallel_multiple_125"]
+    assert timeout.primary_pass is False
+    assert timeout.partial_score == 0.0
+    assert timeout.failure_class == "remote_infra_failure"
+    assert timeout.failure_labels == ["remote_infra_failure"]
+    assert eligible_for_pass_at_k(timeout) is False
+    assert timeout.native_score["generation_error"]["exception"] == _TIMEOUT_EXCEPTION
+    assert timeout.token_usage is None
+    assert (
+        len([p for p in timeout.artifact_paths if p.endswith("BFCL_v4_multiple_result.json")]) == 1
+    )
+    assert answer.primary_pass is True
+    assert answer.failure_class is None
+    assert eligible_for_pass_at_k(answer) is True
+    assert answer.token_usage == {"input_tokens": 591, "output_tokens": 122}
+
+    # The generic proof mechanism retains the generation record with the official score.
+    manifest = tmp_path / "runs.jsonl"
+    append_live_run(
+        manifest,
+        LiveRunRecord(
+            run_id="run-f001-test",
+            host="test-host",
+            benchmark="bfcl-v4",
+            slice_id=plan.slice_id,
+            model_id=_FC_MODEL,
+            evidence_path=str(evidence),
+            status="completed",
+            generated_at=timeout.created_at,
+        ),
+    )
+    exported = export_private_proof(
+        run_id="run-f001-test",
+        evidence_path=evidence,
+        artifacts_dir=artifacts,
+        manifest_path=manifest,
+        output_dir=tmp_path / "proof",
+    )
+    assert exported.classification == "complete"
+    retained = {
+        row.instance_id: row for row in read_evidence_jsonl(exported.root / "evidence.jsonl")
+    }
+    record = next(
+        path
+        for path in retained["multiple_19"].artifact_paths
+        if path.endswith("BFCL_v4_multiple_result.json")
+    )
+    body = json.loads((exported.root / record).read_text(encoding="utf-8"))
+    assert body["result"] == _TIMEOUT_RESULT
+    assert "APITimeoutError" in body["traceback"]

@@ -155,6 +155,10 @@ class BfclInstanceOutcome:
     # Run-level study artifacts (`study/…` under the run root) referenced by
     # every scored row so private proof retains them with the generic role.
     study_artifact_paths: tuple[str, ...] = ()
+    # The official generation record of an exact-id case (``results/…_result.json``),
+    # retained with the generic artifact role so a proof keeps the typed
+    # inference outcome and token usage next to the official score.
+    generation_record_path: str | None = None
 
 
 class BfclProcessRunner(Protocol):
@@ -691,8 +695,8 @@ def _read_exact_result_bytes(
     result_dir: Path,
     model_id: str,
     test_category: str,
-) -> bytes:
-    """Read the one official category result through the pinned result root."""
+) -> tuple[bytes, Path]:
+    """Read the one official category result (bytes, path) through the pinned result root."""
     target = f"{_SCORE_FILE_PREFIX}_{test_category}_result.json"
     candidates = _find_official_artifact_candidates(
         root_dir=result_dir,
@@ -708,7 +712,7 @@ def _read_exact_result_bytes(
         )
     candidate = candidates[0]
     try:
-        return _read_artifact_candidate_bytes(
+        data = _read_artifact_candidate_bytes(
             root_fd=result_root_fd,
             root_dir=result_dir,
             candidate=candidate,
@@ -716,6 +720,7 @@ def _read_exact_result_bytes(
         )
     finally:
         _close_artifact_candidates(candidates)
+    return data, candidate.path
 
 
 def _require_exact_result_id(data: bytes, *, instance_id: str) -> None:
@@ -813,6 +818,54 @@ POST_SCORE_SUMMARY_FAILURE = "leaderboard_latency_stdev_single_sample"
 _STDEV_CRASH_FINAL_LINE = "StatisticsError: stdev requires at least two data points"
 _STDEV_CRASH_FRAMES = ("generate_leaderboard_csv", "get_cost_latency_info")
 
+# bfcl-eval 2026.3.23 ``generate`` catches handler exceptions and writes
+# ``{"id", "result": "Error during inference: <message>", "traceback": …}`` in
+# place of a model response; ``evaluate`` then scores that error string as a
+# wrong answer. The official zero score stands, but the case never reached a
+# model answer: it is a serving-path failure, classified apart from
+# ``model_wrong_solution`` so it can never enter a native-eligible population.
+INFERENCE_ERROR_PREFIX = "Error during inference: "
+INFERENCE_FAILURE_CLASS: FailureLabel = "remote_infra_failure"
+
+
+def _exact_generation_row(data: bytes) -> dict[str, object] | None:
+    """The single official generation row of an exact-id case; None when unreadable."""
+    try:
+        rows = [json.loads(line) for line in data.decode("utf-8").splitlines() if line.strip()]
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if len(rows) != 1 or not isinstance(rows[0], dict):
+        return None
+    return rows[0]
+
+
+def generation_inference_error(row: Mapping[str, object]) -> dict[str, str] | None:
+    """The typed inference failure ``bfcl generate`` recorded instead of an answer, if any."""
+    result = row.get("result")
+    traceback_text = row.get("traceback")
+    error_result = isinstance(result, str) and result.startswith(INFERENCE_ERROR_PREFIX)
+    has_traceback = isinstance(traceback_text, str) and traceback_text.strip() != ""
+    if not error_result and not has_traceback:
+        return None
+    error = {"result": result[:200] if isinstance(result, str) else ""}
+    if has_traceback:
+        lines = [line.strip() for line in str(traceback_text).splitlines() if line.strip()]
+        error["exception"] = lines[-1][:200]
+    return error
+
+
+def generation_usage(row: Mapping[str, object]) -> dict[str, int | float] | None:
+    """Token counts and latency the official generation row reports for a model answer."""
+    usage: dict[str, int | float] = {}
+    for key in ("input_token_count", "output_token_count"):
+        value = row.get(key)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            usage[key] = value
+    latency = row.get("latency")
+    if isinstance(latency, (int, float)) and not isinstance(latency, bool) and latency >= 0:
+        usage["latency"] = float(latency)
+    return usage or None
+
 
 def _is_post_score_summary_crash(cli: BfclCliResult, *, exact_case: bool) -> bool:
     """True only for the exact upstream post-scoring crash shape on an exact-id case."""
@@ -837,6 +890,8 @@ def parse_bfcl_instance_outcome(
     benchmark_version: str | None = None,
     num_threads: int | None = None,
     test_category: str | None = None,
+    generation_record: bytes | None = None,
+    generation_record_path: str | None = None,
 ) -> BfclInstanceOutcome:
     """Score one instance from the official ``bfcl evaluate`` artifact only.
 
@@ -934,6 +989,22 @@ def parse_bfcl_instance_outcome(
             failure_class = "harness_failure"
             native.pop("post_score_summary_failure", None)
 
+    generation_row = (
+        _exact_generation_row(generation_record) if generation_record is not None else None
+    )
+    if generation_row is not None:
+        usage = generation_usage(generation_row)
+        if usage is not None:
+            native["generation_usage"] = usage
+        inference_error = generation_inference_error(generation_row)
+        if inference_error is not None:
+            native["generation_error"] = inference_error
+            # The official verdict stands (the scorer saw an error string), but
+            # the attempt never reached a model answer: a failed score with no
+            # other cause is a serving-path failure, never a wrong solution.
+            if not primary_pass and failure_class is None:
+                failure_class = INFERENCE_FAILURE_CLASS
+
     if not primary_pass and failure_class is None:
         failure_class = "model_wrong_solution"
 
@@ -965,6 +1036,9 @@ def parse_bfcl_instance_outcome(
         stderr_path=_rel_path(stderr_rel, repo_root),
         verifier_log_path=_rel_path(verifier_path, repo_root) if verifier_path else None,
         adapter_metadata=metadata,
+        generation_record_path=(
+            _rel_path(generation_record_path, repo_root) if generation_record_path else None
+        ),
     )
 
 
@@ -1528,9 +1602,10 @@ def run_bfcl_instance(
                 metadata=binding_metadata,
             )
         exact_result_bytes: bytes | None = None
+        exact_result_path: Path | None = None
         if exact_case:
             result_root_fd = next(fd for fd, path, _role in pins if path == result_root)
-            exact_result_bytes = _read_exact_result_bytes(
+            exact_result_bytes, exact_result_path = _read_exact_result_bytes(
                 result_root_fd=result_root_fd,
                 result_dir=result_root,
                 model_id=registry_id,
@@ -1571,7 +1646,7 @@ def run_bfcl_instance(
         _reverify_staging(staging, derived)
         _reverify_derived_overlay(derived, derived_source)
         if exact_result_bytes is not None:
-            current_result_bytes = _read_exact_result_bytes(
+            current_result_bytes, _current_result_path = _read_exact_result_bytes(
                 result_root_fd=result_root_fd,
                 result_dir=result_root,
                 model_id=registry_id,
@@ -1596,6 +1671,10 @@ def run_bfcl_instance(
                 benchmark_version=benchmark_version,
                 num_threads=effective_num_threads,
                 test_category=test_category,
+                generation_record=exact_result_bytes,
+                generation_record_path=(
+                    str(exact_result_path.resolve()) if exact_result_path is not None else None
+                ),
             ),
             study_paths=study_paths,
             metadata=binding_metadata,
