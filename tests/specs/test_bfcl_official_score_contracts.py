@@ -535,6 +535,7 @@ def test_inference_error_in_the_generation_record_is_a_serving_path_failure(
     assert out.primary_pass is False
     assert out.partial_score == 0.0
     assert out.native_score["accuracy"] == 0.0  # the official verdict is retained
+    assert out.native_score["official_pass"] is False
     assert out.failure_class == "remote_infra_failure"
     assert out.failure_class in INFRASTRUCTURE_FAILURE_CLASSES
     assert out.native_score["generation_error"] == {
@@ -542,6 +543,23 @@ def test_inference_error_in_the_generation_record_is_a_serving_path_failure(
         "exception": _TIMEOUT_EXCEPTION,
     }
     assert "generation_usage" not in out.native_score
+
+    # A non-call category (irrelevance) scores the error string as correct: the
+    # official pass is retained as data, but the attempt never reached a model
+    # answer, so the row can neither pass nor enter a native population.
+    scored_pass = _parse_exact(
+        tmp_path / "irrelevance",
+        generation_row={**_TIMEOUT_GENERATION_ROW, "id": "irrelevance_0"},
+        score_rows=[{"accuracy": 1.0, "correct_count": 1, "total_count": 1}],
+        instance_id="irrelevance_0",
+        category="irrelevance",
+    )
+    assert scored_pass.primary_pass is False
+    assert scored_pass.partial_score == 0.0
+    assert scored_pass.native_score["accuracy"] == 1.0
+    assert scored_pass.native_score["official_pass"] is True
+    assert scored_pass.failure_class == "remote_infra_failure"
+    assert scored_pass.native_score["generation_error"]["exception"] == _TIMEOUT_EXCEPTION
     assert out.generation_record_path is not None
     assert out.generation_record_path.endswith("BFCL_v4_multiple_result.json")
     assert out.verifier_log_path is not None

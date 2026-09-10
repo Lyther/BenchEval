@@ -997,13 +997,20 @@ def parse_bfcl_instance_outcome(
         if usage is not None:
             native["generation_usage"] = usage
         inference_error = generation_inference_error(generation_row)
-        if inference_error is not None:
+        if inference_error is not None and failure_class is None:
+            # The official verdict is retained as data (``accuracy`` and
+            # ``official_pass``; a non-call category may even score the error
+            # string as correct), but the attempt never reached a model answer:
+            # it is a serving-path failure, never a pass and never a wrong
+            # solution. Stronger classes already assigned (corrupt, unparseable,
+            # harness) keep precedence.
             native["generation_error"] = inference_error
-            # The official verdict stands (the scorer saw an error string), but
-            # the attempt never reached a model answer: a failed score with no
-            # other cause is a serving-path failure, never a wrong solution.
-            if not primary_pass and failure_class is None:
-                failure_class = INFERENCE_FAILURE_CLASS
+            native["official_pass"] = primary_pass
+            primary_pass = False
+            partial_score = 0.0
+            failure_class = INFERENCE_FAILURE_CLASS
+        elif inference_error is not None:
+            native["generation_error"] = inference_error
 
     if not primary_pass and failure_class is None:
         failure_class = "model_wrong_solution"
