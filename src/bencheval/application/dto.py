@@ -57,7 +57,8 @@ class PlanRequestDTO(BaseModel):
     model_id: str = Field(min_length=1)
     runtime_id: str | None = None
     agent_id: str | None = None
-    provider_id: str = "bytellm"
+    # None defers to the model's declared provider_route (planner rule).
+    provider_id: str | None = None
     diagnostic: bool = False
     output_path: str | None = Field(default=None, min_length=1)
     artifacts_dir: str | None = Field(default=None, min_length=1)
@@ -94,6 +95,10 @@ class DoctorViewDTO(ViewDTO):
     backend: str
     ok: bool
     checks: tuple[DoctorCheckDTO, ...]
+    # Plan-aware preflight only (CF3.1): resolved selection, recipe, host roots.
+    selection: dict[str, object] | None = None
+    recipe: dict[str, object] | None = None
+    host: dict[str, object] | None = None
 
 
 class RunSummaryDTO(ViewDTO):

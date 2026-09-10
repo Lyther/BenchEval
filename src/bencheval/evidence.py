@@ -12,10 +12,14 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, f
 
 from bencheval.backends import LOCAL_BACKEND, ExecutionBackend
 from bencheval.domain import (
+    AccessControlSource,
     ContaminationLabel,
+    EgressControl,
     ExecutionProfile,
     FailureLabel,
     InterpretationLabel,
+    RepositoryHistory,
+    RetrievalAudit,
     RewardHackRiskLabel,
     RuntimeKind,
     VerifierIntegrityLabel,
@@ -96,6 +100,12 @@ class EvidenceRecord(BaseModel):
     physical_launch_id: str | None = None
     logical_attempt_number: int | None = Field(default=None, ge=1)
     runtime_output_cap: int | None = Field(default=None, ge=1)
+    # Concrete effective-access facts. Absence preserves historical evidence;
+    # these must never be inferred from RunPlan.network_policy.
+    access_control_source: AccessControlSource | None = None
+    egress_control: EgressControl | None = None
+    repository_history: RepositoryHistory | None = None
+    retrieval_audit: RetrievalAudit | None = None
 
 
 # Failure classes that prove the attempt never produced a native harness/scorer
@@ -171,6 +181,16 @@ def _parse_line(line: str, source: str, line_no: int) -> EvidenceRecord:
         raise EvidenceValidationError(f"{source}:line {line_no}: {e}") from e
 
 
+def parse_evidence_jsonl(text: str, *, source: str) -> list[EvidenceRecord]:
+    """Parse already-loaded JSONL text; ``source`` labels errors."""
+    rows: list[EvidenceRecord] = []
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        rows.append(_parse_line(line, source, line_no))
+    return rows
+
+
 def read_evidence_jsonl(path: Path | str) -> list[EvidenceRecord]:
     p = Path(path)
     try:
@@ -179,13 +199,7 @@ def read_evidence_jsonl(path: Path | str) -> list[EvidenceRecord]:
         raise BenchEvalError(f"cannot decode evidence jsonl {p} as UTF-8: {e}") from e
     except OSError as e:
         raise BenchEvalError(f"cannot read evidence jsonl {p}: {e}") from e
-
-    rows: list[EvidenceRecord] = []
-    for line_no, line in enumerate(text.splitlines(), start=1):
-        if not line.strip():
-            continue
-        rows.append(_parse_line(line, p.name, line_no))
-    return rows
+    return parse_evidence_jsonl(text, source=p.name)
 
 
 class JsonlEvidenceSink:

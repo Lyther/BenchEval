@@ -6,7 +6,7 @@ Evidence-based evaluation control plane. Product spine:
 benchmark  →  (runtime | agent)?  →  model via provider  →  evidence
 ```
 
-Tier-0 executable software entries: **4** (`terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4` — BFCL admitted 2026-08-24 on the diagnostic-labeled dev-box lifecycle demonstration `run-20260824-040631-228703-4756f857` plus the registered `passed` run `run-20260824-045622-854659-a46ae44d`). `swe-bench-verified` stays cataloged but non-executable. A diagnostic lifecycle is wired (`--diagnostic` only): official eval scores the run-owned pinned row, and an executed per-instance `report.json` is retained only when schema-v2 actually executed the instance. That does not admit or promote the row. Catalog also keeps `swe-bench-pro`, `cybergym`, and `exploitgym` as `adapter_pending`. Runtimes `claude-code` / `codex-cli`; no agent is admitted (`momo` is a discoverable scaffold); providers `bytellm` / `ollama-cloud`. Runtime XOR admitted agent; omit both for model-only (GPQA / HLE / BFCL). Bare `run <benchmark>` uses each executable row’s `default_slice` (smoke). Ops: [`docs/ops/benchmarks/`](docs/ops/benchmarks/README.md).
+Tier-0 executable software entries: **4** (`terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4`). The catalog has **9** rows: `bfcl-v4-live` and `swe-bench-verified` are explicit diagnostic-only identities, while `swe-bench-pro`, `cybergym`, and `exploitgym` remain pending. Diagnostic evidence never inherits admission or registers `passed`. Runtimes are `claude-code` / `codex-cli`, each launched from its closed `launch.harbor` binding; `terminus-2` is the one admitted `kind: harbor` native agent (admitted 2026-09-09 for exactly Terminus-2 2.0.0 × `ollama-qwen3.5-397b-fc` on Terminal-Bench `fix-git`; other combinations are not live-proven), `momo` is a discoverable scaffold; providers are `bytellm` / `ollama-cloud` (both `openai_compatible`; a model row's `api_model` and `backend_bindings.bfcl` make a new model on either route configuration work, see architecture §23). Runtime XOR admitted agent; omit both for model-only benchmarks. Bare `run <benchmark>` uses each executable row’s default smoke slice. Current proof details belong in [`docs/roadmap.md`](docs/roadmap.md); operator commands live in [`docs/ops/benchmarks/`](docs/ops/benchmarks/README.md).
 
 Current concept HLD: [`docs/context/concept-zero.md`](docs/context/concept-zero.md). Historical v0.3 ledger: [`docs/context/concept-hld.md`](docs/context/concept-hld.md). Architecture: [`docs/architecture.md`](docs/architecture.md). Diagrams: [`docs/diagrams/`](docs/diagrams/README.md).
 
@@ -48,7 +48,8 @@ Unknown benchmark/runtime/agent/provider ids fail before subprocess. Datasets/im
 
 ## Layout
 
-- `config/benchmarks.yaml` — product catalog (**8** rows; **4** Tier-0 executables)
+- `config/benchmarks.yaml` — product catalog (**9** rows; **4** Tier-0 executables)
+- `config/studies/` — closed benchmark-exposure study intent; no executable callbacks
 - `config/runtimes/` · `config/agents/` · `config/providers/` · `config/slices/` · `config/models.yaml`
 - Wheel install is self-contained: public config ships as `bencheval/_bundled/config/`; `BENCHEVAL_HOME` is an optional override
 - `src/bencheval/` — library + CLI
@@ -63,7 +64,7 @@ uv sync
 uv run bencheval list --format json
 ```
 
-Before the full contributor gate, install its real export, harness, and console dependencies with `uv sync --dev --extra eval --extra analytics --extra ui`. Use `uv sync --extra eval` for live Inspect / Harbor runs that do not need the analytics or UI gates, and `uv sync --group bfcl` for the pinned BFCL CLI plus its required audio import dependency. BFCL is a repository-owned group because its model-handler graph is large and its audited dependency overrides must travel with the checkout; it can be combined with `eval` when one host needs both harness families. The SWE diagnostic path keeps exact `swebench==5.0.1` in a separate `swe` group because its Docker/evaluator graph is not part of the core or generic Inspect installation; the catalog row stays `executable: false`. Pilot gates: [`docs/context/production-v1-pilot.md`](docs/context/production-v1-pilot.md) (`make check-production-v1`).
+Before the full contributor gate, install its real export, harness, and console dependencies with `uv sync --dev --extra eval --extra analytics --extra ui`. Use `uv sync --extra eval` for live Inspect / Harbor runs that do not need the analytics or UI gates, and `uv sync --group bfcl` for the pinned BFCL CLI plus its required audio import dependency. BFCL is a repository-owned group because its model-handler graph is large and its audited dependency overrides must travel with the checkout; it can be combined with `eval` when one host needs both harness families. The SWE diagnostic path keeps exact `swebench==5.0.1` in a separate `swe` group because its Docker/evaluator graph is not part of the core or generic Inspect installation; the catalog row stays `executable: false`. Preparation recipes run in a checkout at its `uv.lock` on CPython 3.12 (`.python-version` makes `uv sync` select it even when newer managed interpreters exist; the locked harness wheels have no 3.14 build); an installed wheel or a `BENCHEVAL_HOME` bundle can plan and preflight but cannot `uv sync`, and `bencheval doctor` says so. Readiness gates: [`docs/context/production-readiness.md`](docs/context/production-readiness.md); live procedure: [`docs/ops/dev-box-pilot.md`](docs/ops/dev-box-pilot.md).
 
 ## CLI overview
 
@@ -71,7 +72,8 @@ Before the full contributor gate, install its real export, harness, and console 
 | --- | --- | --- |
 | **Product** | `list`, `run`, `benchmark` (compat), `catalog …` | Defined benchmarks → (runtime XOR agent)? → model via provider → evidence |
 | **Evidence** | `report`, `compare`, `export`, `export-run`, `evidence register`, `evidence list --current`, `proof export` / `verify` / `import` | Reports, deltas, warehouse, bundles, runs manifest, current-state projection, private proofs |
-| **Preflight** | `doctor` | Backend/runtime/provider checks (never prints secrets) |
+| **Exposure** | `study validate` / `select` / `report` / `verify` | Read-only benchmark-exposure study validation, deterministic seeded population selection into exact-id slices, deterministic report, and proof-backed lock reproduction; never launches or scores |
+| **Preflight** | `doctor` | `doctor <benchmark>[/<slice>] --model … [--runtime\|--agent]` preflights exactly the selection `run` would plan: harness checks, actor binding, credentials (candidate and, for HLE, the pinned judge), the harness's preparation recipe, and the host's config/results roots; `--backend`/`--profile` is the legacy host form. Never prints secrets |
 
 `run` is two-phase: print envelope → confirm (`-y` skips) → execute. `--dry-run` stops after phase 1. There is no separate `plan` command.
 

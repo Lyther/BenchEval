@@ -55,6 +55,7 @@ class RunPlanner(Protocol):
         model_id: str,
         agent_id: str | None = None,
         provider_id: str | None = None,
+        diagnostic: bool = False,
     ) -> RunPlan:
         """Return a frozen ``RunPlan`` DTO.
 

@@ -7,7 +7,6 @@ Brain dumps and supporting specs. Product concept source of truth: [`concept-zer
 | [`concept-zero.md`](concept-zero.md) | Current concept-level HLD, evidence, and product boundary |
 | [`concept-hld.md`](concept-hld.md) | Historical intent/HLD ledger (v0.3) |
 | [`runtime-invocation-contracts.md`](runtime-invocation-contracts.md) | Per-runtime launch/monitor contracts |
-| [`production-v1-pilot.md`](production-v1-pilot.md) | Phase A/B gates, live matrix |
 | [`production-readiness.md`](production-readiness.md) | Tier 0/1/2 definitions |
 | [`external-benchmark-catalog.md`](external-benchmark-catalog.md) | External benchmark research catalog |
 

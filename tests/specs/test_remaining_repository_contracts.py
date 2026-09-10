@@ -116,7 +116,7 @@ def test_bfcl_executable_has_a_pinned_installable_runtime_group() -> None:
     assert any(requirement.startswith("soundfile>=") for requirement in bfcl_group)
     assert set(project["tool"]["uv"]["override-dependencies"]) >= {
         "datamodel-code-generator==0.64.0",
-        "filelock==3.32.4",
+        "filelock==3.32.5",
     }
 
 

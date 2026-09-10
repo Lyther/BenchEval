@@ -1,28 +1,22 @@
 # BenchEval Concept Zero
 
-Status: ACCEPTED current control plane and local operator console; PROPOSED
-benchmark-exposure extension. Implementation and live-evidence status remain
+Status: ACCEPTED product intent, including the 2026-09-08 config-first correction;
+capability recovery and broader exposure validation remain PROPOSED. Implementation and live-evidence status remain
 tracked in [`../roadmap.md`](../roadmap.md).
 
-Last updated: 2026-09-03
+Last updated: 2026-09-08
 
 ## Executive decision
 
-BenchEval is a local-first, operator-run Python control plane for producing
-comparable, auditable benchmark evidence from official or native benchmark
-harnesses. Its next differentiating capability is not another benchmark launcher:
-it is a narrow evidence layer that measures how strongly a canonical score
-depends on benchmark-specific information by comparing it with source-bound
-fresh or representation-equivalent populations under an explicitly captured
-access regime and verifier-quality boundary. The existing CLI remains stable
-automation; the implemented loopback-only browser console projects the same
-typed operations. The production path remains one checkout, one Python process,
-operator-provisioned official harnesses and credentials, append-only evidence,
-and permanent local content-addressed proof bundles. BenchEval does not claim to
-prove a model clean, compute a universal "decontaminated score," fork runtimes or
-official scorers, maintain a custom egress allow-list, train contaminated model
-pairs, or become a hosted service, scheduler, billing system, general agent
-platform, or offensive execution platform.
+BenchEval is a local-first, operator-run Python control plane for producing comparable, auditable benchmark evidence from official or native benchmark harnesses. Its next differentiating capability is not another benchmark launcher: it is a narrow evidence layer that measures how strongly a canonical score depends on benchmark-specific information by comparing it with source-bound fresh or representation-equivalent populations under an explicitly captured access regime and verifier-quality boundary. The existing CLI remains stable automation; the implemented loopback-only browser console projects the same typed operations. The production path remains one checkout, one Python process, operator-provisioned official harnesses and credentials, append-only evidence, and permanent local content-addressed proof bundles. BenchEval does not claim to prove a model clean, compute a universal "decontaminated score," fork runtimes or official scorers, maintain a custom egress allow-list, train contaminated model pairs, or become a hosted service, scheduler, billing system, general agent platform, or offensive execution platform.
+
+### Accepted capability correction — 2026-09-08
+
+The product has three obligations: make defined benchmark combinations easy to prepare and run; make models/providers and agents/runtimes on an existing driver configurable without user-authored BenchEval patches; and build evidence about whether benchmark transformations reduce benchmark-specific advantage. Registry entries, completed hardening tasks, and portable bytes do not by themselves close these obligations. The first BFCL freshness and tool-order experiments are real progress, not a general contamination-removal capability.
+
+Config-first means that a new endpoint/model on a supported protocol, or a new profile on a supported native agent interface, is configuration work. Supporting an entirely new protocol or harness can require one adapter implementation; it must not require another source patch for each subsequent model/profile. The adapter owns translation to native registration and launch configuration.
+
+The no-fork rule protects task, handler, runtime, generator, and scorer behavior. It does not forbid a declared model-registration record generated from typed configuration in a run-owned package copy. C-10 below narrowly permits that metadata extension, with unchanged installed bytes and shared, content-bound registration on every experimental arm. It permits neither arbitrary Python configuration nor hidden model aliases. General console U3/U4 hardening remains lower priority than closing these product capabilities.
 
 ## Problem and evidence
 
@@ -50,6 +44,9 @@ platform, or offensive execution platform.
 | E-20 | Current `network_policy` values encode plan/runtime intent rather than proven model-visible access: model-only paths need provider egress, Inspect SWE defaults to a network-disabled sandbox, and Harbor cannot enforce `deny`. | `domain.py`, `benchmark_plan.py`, pinned Inspect Evals `0.8.0`, `terminal_bench_harbor.py` | high | Preserve historical `network_policy` semantics and add separately captured effective-access evidence. |
 | E-21 | The pinned BFCL commit contains six Live question files and four answer files, while the admitted identity covers only nine non-live files; the official CLI resolves category data from package `data/` and exposes no arbitrary question-file argument. | [`gorilla@6ea57973`](https://github.com/ShishirPatil/gorilla/tree/6ea57973c7a6097fd7c5915698c54c17c5b1b6c8/berkeley-function-call-leaderboard/bfcl_eval), local source inspection | high | Live needs a distinct identity. A derived tool-order study needs a run-scoped package-data overlay rather than mutating the installed distribution. |
 | E-22 | Locked Inspect Evals GPQA already shuffles answer choices by default. | `inspect_evals 0.8.0` `gpqa.get_gpqa_diamond_dataset(shuffle_choices=True)` | high | GPQA choice permutation is not a new first implementation candidate. |
+| E-23 | Config registries exist, but config-first execution is incomplete: GPQA special-cases ByteLLM, Harbor maps runtime IDs in Python, and the external CLI agent path has no official verifier. | `provider_registry.py`, `gpqa_adapter.py`, `terminal_bench_harbor.py`, `external_agent_adapter.py`; read-only capability audit, 2026-09-08 | high | Recover the configuration-to-execution boundary; do not count catalog presence as support. |
+| E-24 | Pinned BFCL generation and evaluation require a registered model; direct handler construction bypasses that gate. | Installed `bfcl-eval==2026.3.23` mapping/CLI inspection; [pinned upstream integration guide](https://github.com/ShishirPatil/gorilla/blob/6ea57973c7a6097fd7c5915698c54c17c5b1b6c8/berkeley-function-call-leaderboard/CONTRIBUTING.md) | high | A typed, retained registration bridge is needed for config-defined models; handler connectivity is not CLI acceptance. |
+| E-25 | Native agent integration need not reimplement a verifier: Harbor exposes agent-name and `BaseAgent` import-path selection. | [Harbor agent contract](https://www.harborframework.com/docs/agents); installed Harbor 0.17.1 `AgentFactory` inspection, 2026-09-08 | high for interface, unproven for new BenchEval lane | Select the existing Harbor interface for the first scored agent-profile path; do not invent another agent protocol or score file. |
 
 ## Users and stakeholders
 
@@ -62,9 +59,7 @@ platform, or offensive execution platform.
 | Maintainer | Add or admit adapters without weakening existing claims. | Catalog presence is not execution admission. | Typed gates fail before charge and admission is backed by a live official attempt. |
 | Interactive operator | Discover capabilities, plan and monitor runs, inspect evidence, and manage proofs without reconstructing CLI arguments. | Local machine only; credentials remain environment-owned; long-running harnesses may outlive a browser page. | Every UI action maps to the same validated operation and produces the same durable files as the CLI. |
 
-MOMO users, offensive benchmark operators, hosted-service tenants, and external
-proof consumers are not v1 user groups. MOMO remains a discoverable scaffold;
-CyberGym and ExploitGym remain catalog-only.
+MOMO users, offensive benchmark operators, hosted-service tenants, and external proof consumers are not v1 user groups. MOMO remains a discoverable scaffold; CyberGym and ExploitGym remain catalog-only.
 
 ## Goals, non-goals, and constraints
 
@@ -82,6 +77,9 @@ CyberGym and ExploitGym remain catalog-only.
 | G-10 | goal | Capture the effective model-visible access and repository-history conditions separately from requested network policy, plus optional retrieval-audit evidence. | E-13 and E-20 |
 | G-11 | goal | Establish one frontier-relevant freshness contrast with official BFCL non-live versus Live data, followed by one paired BFCL tool-order study only if the Live spike is viable. | User decision and E-19–E-21 |
 | G-12 | goal | Make exposure reports state what the evidence can and cannot support instead of producing a clean/contaminated verdict or adjusted universal score. | E-12–E-18 |
+| G-13 | goal | Add models/providers on a supported protocol and runtime/agent profiles on an existing driver through typed configuration, without per-profile BenchEval source edits. | User correction, 2026-09-08; E-23/E-24 |
+| G-14 | goal | Complete at least one configuration-selected agent path through a benchmark-owned official verifier, with honest agent identity and no inference from agent exit status. | User correction; E-23/E-25 |
+| G-15 | goal | Prepare and run supported benchmark combinations on a clean supported host using reproducible dependency recipes and plan-aware preflight, not undocumented dev-box state. | User correction; E-03/E-23 |
 | N-01 | non-goal | Provider-enforced hard-dollar termination. Cost may be measured or estimated; wall limits remain enforceable. | User decision |
 | N-02 | non-goal | MOMO admission in v1. | User decision |
 | N-03 | non-goal | CyberGym, ExploitGym, or other official exploit/PoC execution in v1. | User decision |
@@ -90,7 +88,7 @@ CyberGym and ExploitGym remain catalog-only.
 | N-06 | non-goal | SWE promotion as part of the diagnostic implementation. | User decision |
 | N-07 | non-goal | Proving that a closed model is uncontaminated, attributing intent or cheating, or certifying that a transformation is unrecognizable to a model. | Closed-model observability limits; E-12 and E-16 |
 | N-08 | non-goal | A generic transform DSL/plugin platform, benchmark-wide automatic rewrite service, reference-panel-corrected score, or controlled-contamination training laboratory in the first exposure release. | Proportionality and E-14–E-18 |
-| N-09 | non-goal | A BenchEval-maintained egress allow-list, patched agent runtime, forked official harness/scorer, or hidden tool/prompt modification. | User decision and official-runner boundary |
+| N-09 | non-goal | A BenchEval-maintained egress allow-list, patched agent runtime, forked official execution/scoring logic, or hidden tool/prompt modification. The registration-only exception is limited by C-10. | User decision and official-runner boundary |
 | N-10 | non-goal | Treating BFCL Live/non-live or any unpaired distribution shift as a direct contamination estimate. | E-19 |
 | C-01 | constraint | Python 3.12+, `uv`, repository-owned typed configuration, stable CLI automation, and an optional Python-authored local browser console. | Live repository and user decision |
 | C-02 | constraint | Runtime XOR admitted agent; omit both for model-only harnesses. | Product spine |
@@ -101,10 +99,11 @@ CyberGym and ExploitGym remain catalog-only.
 | C-07 | constraint | The console binds to loopback only and exposes no remote-bind mode until an explicit authentication/authorization product decision exists. | Local-first trust boundary |
 | C-08 | constraint | UI state and view DTOs are projections, never systems of record; no browser storage may hold credentials, evidence authority, run lifecycle state, or proof identity. | One-source-of-truth rule |
 | C-09 | constraint | `network_policy` remains the plan-time intent/runtime-requirement field for backward compatibility; effective egress/history evidence is additive and cannot be inferred from it. | E-20 |
-| C-10 | constraint | Official benchmark code and scorer bytes remain pinned and unchanged. Official access knobs may be selected and recorded; derived benchmark data receives a distinct identity and stays diagnostic until separately admitted. | User decision and E-13/E-21 |
+| C-10 | constraint | Installed benchmark bytes and official handler/runtime/generator/scorer logic remain pinned and unchanged. A typed model-registration-only delta may be generated in an exclusive run-owned copy, bound by base/modified-file and registration digests, retained in proof, and applied identically to canonical/variant/repeat arms. All other copied bytes remain pinned except separately declared derived data. Such a run identifies the registration extension, not an unmodified upstream distribution. | User correction, 2026-09-08; E-24 |
 | C-11 | constraint | Relation class, behavioral fidelity, task freshness, verifier integrity, access conditions, and retrieval audit remain orthogonal evidence; no field silently upgrades another. | E-12–E-20 |
 | C-12 | constraint | The primary study population is newly released frontier API models already reachable through admitted providers; a benchmark must retain headroom for that population before integration. | User brief and current model/provider scope |
 | C-13 | constraint | Smoke runs prove plumbing only. Inferential claims require a declared population, comparable settings, uncertainty, and an effective sample large enough for the chosen analysis. | N-05 and E-14/E-19 |
+| C-14 | constraint | Existing proof/report bytes and legacy config reading remain compatible. New configured bindings may not reconstruct historical identities, auto-admit an agent/model, or turn unknown provider/model identity into a verified claim. | G-02/G-04/G-13 |
 
 ## Unacceptable outcomes
 
@@ -163,7 +162,7 @@ CyberGym and ExploitGym remain catalog-only.
 | Analyze and preserve | Reports, comparisons, exports, registrations, and proofs are separate commands. | Run detail exposes report/compare/export/register/proof actions only when their canonical preconditions pass; generated files remain operator-selected and local. | Golden CLI-versus-UI operation parity tests plus real browser export/import rehearsal. |
 | Qualify access evidence | `network_policy` does not reveal whether an agent could reach the public web or future repository history. | The adapter records the official access-control source, effective egress state, repository-history state, and optional retrieval audit without changing the runtime. | Real Inspect/Harbor/model-only probes and retained effective configuration. |
 | Contrast BFCL freshness | The admitted BFCL identity covers only non-live data, so a canonical score cannot show whether it transfers to fresher functions and queries. | Verify the exact pinned Live bytes, run official generation/evaluation under a distinct research identity, and report a stratified non-live/Live contrast. | Wheel-versus-upstream digest proof, official score artifacts, declared counts, and no contamination claim. |
-| Measure tool-order dependence | Canonical BFCL tool ordering may reward positional familiarity or bias. | Materialize one balanced, deterministic order permutation in a run-scoped data overlay, run the unchanged official code/scorer, and compare the same source instances pairwise. | Source/derived manifests, unchanged producer digest, native scores, directional flips, fidelity/caveats, and diagnostic-only registration state. |
+| Measure tool-order dependence | Canonical BFCL tool ordering may reward positional familiarity or bias. | Materialize one balanced, deterministic order permutation in a run-scoped data overlay, preserve official execution/scoring logic, and compare the same source instances pairwise. | Source/derived manifests, captured producer identity, identical registration across arms when C-10 applies, native scores, directional flips, fidelity/caveats, and diagnostic-only registration state. |
 | Review an exposure report | A scalar gap hides task quality, access, population mismatch, and alternative explanations. | Show native canonical/candidate scores, population relationship, uncertainty, verifier stratum, access evidence, retrieval audit, and explicit unsupported claims. | Report-schema contracts plus independent review against retained private proofs. |
 
 ## Quality scenarios
@@ -185,9 +184,13 @@ CyberGym and ExploitGym remain catalog-only.
 | Q-13 | Harbor cannot prove container egress restriction. | The attempt remains valid for its official native result but records effective egress as `uncontrolled` or `unknown`; no retrieval-hardened claim appears. | Real Harbor plan/launch evidence and report negative assertion. |
 | Q-14 | A retrieval auditor finds a known patch or answer in a transcript. | Native pass/fail is preserved, `retrieval_observed` is retained, and stronger novelty/exposure interpretations are disallowed. | Retained transcript/audit artifact with a discriminating report test; auditor result is never scoring authority. |
 | Q-15 | BFCL Live files in the wheel differ from the pinned upstream commit or are incomplete. | No Live study launch occurs and no identity is emitted. | Exact ten-file digest and category-command compatibility spike. |
-| Q-16 | A BFCL tool-order variant is materialized. | Installed package bytes remain untouched; run-scoped code/scorer bytes match the pin; only declared data bytes differ and every derived row maps to one source row. | Real filesystem/package-overlay proof plus manifest replay. |
+| Q-16 | A BFCL tool-order variant is materialized. | Installed bytes remain untouched; copied code/scorer bytes match the pin except the separately declared C-10 registration metadata, identical across all arms. Only declared question data differs between arms and every derived row maps to one source row. | Real filesystem/package-overlay proof plus registration and variant manifest replay. |
 | Q-17 | Canonical and tool-order evidence have missing, duplicate, asymmetric, or differently configured instances. | The paired exposure report is invalid and exits nonzero; no headline gap is shown. | Hostile paired-population contracts and exact-axis checks. |
 | Q-18 | A smoke or unpaired Live contrast completes successfully. | The report says plumbing or freshness/generalization only and emits no significance, clean-model, cheating, or contamination estimate. | Report golden/negative contracts and reviewer inspection. |
+| Q-19 | An operator adds a second model/provider on the same supported protocol using config only. | Actual CLI generation and official scoring use the configured API model/endpoint; no vendor-ID branch or manual package edit is needed. | Two config-defined model cases, typed unsupported-route failures, and retained binding identity. |
+| Q-20 | A BFCL registration extension differs between experimental arms or after preflight. | Launch/report rejects the mismatch; historical unextended proofs still reproduce byte-identically. | Actual CLI registration/score proof plus registration-digest and old-lock regression gates. |
+| Q-21 | A configured agent exits successfully without an official benchmark result. | It cannot pass; a real native-agent attempt is scored only by the benchmark-owned verifier. | Harbor agent-profile lifecycle proof and missing-verifier failure case. |
+| Q-22 | A clean supported checkout lacks one declared harness dependency or route. | Preflight identifies the exact missing prerequisite before a provider call; the documented locked recipe prepares the selected lane. | Clean-host installation and one real supported-lane run, separately from wheel/core-import checks. |
 
 ## Research landscape and selected concept
 
@@ -204,99 +207,45 @@ CyberGym and ExploitGym remain catalog-only.
 
 ### Selected base: local control plane with CLI and optional operator console
 
-Adopt official/native harnesses for benchmark semantics; build only the narrow
-control plane, evidence normalization, qualification, comparison, proof
-integrity, and operator presentation that upstream harnesses do not provide.
-The CLI remains the stable automation boundary. The implemented console is a
-loopback-only NiceGUI surface inside the same Python process and calls shared
-typed application operations directly. This keeps one deployable unit, one
-permanent local proof store, no public API, and no database while making the
-full product navigable. Scoring authority remains outside BenchEval.
+Adopt official/native harnesses for benchmark semantics; build only the narrow control plane, evidence normalization, qualification, comparison, proof integrity, and operator presentation that upstream harnesses do not provide. The CLI remains the stable automation boundary. The implemented console is a loopback-only NiceGUI surface inside the same Python process and calls shared typed application operations directly. This keeps one deployable unit, one permanent local proof store, no public API, and no database while making the full product navigable. Scoring authority remains outside BenchEval.
 
-For SWE, adapt the already locked Inspect Evals `0.8.0` + Inspect SWE `0.2.47`
-generation path so it runs the selected exact Codex or Claude Code binary, then
-score only with exact-pinned `swebench==5.0.1`. Both phases receive deterministic
-run-owned inputs derived from the same official Verified parquet row. The Inspect
-representation canonically JSON-encodes the two list fields required by the old
-task loader; the official-evaluator representation preserves the official row
-shape and binds the resolved platform image digest. A transformation record and
-hashes make the adaptation auditable.
+For SWE, adapt the already locked Inspect Evals `0.8.0` + Inspect SWE `0.2.47` generation path so it runs the selected exact Codex or Claude Code binary, then score only with exact-pinned `swebench==5.0.1`. The implemented diagnostic is Codex-only; Claude remains unproven on that path. Both phases receive deterministic run-owned inputs derived from the same official Verified parquet row. The Inspect representation canonically JSON-encodes the two list fields required by the old task loader; the official-evaluator representation preserves the official row shape and binds the resolved platform image digest. A transformation record and hashes make the adaptation auditable.
 
 ### Front-end route decision
 
-- **NiceGUI, selected for spike/adoption:** Python-native and backend-first,
-  runs in a browser or native window, supports long-running async work, tables,
-  downloads, and real-browser tests. It preserves the single-process local
-  shape and lets domain DTOs stay in Python.
-- **Reflex, rejected for this slice:** maintained and Apache-2.0, but its
-  [documented self-hosted topology](https://reflex.dev/docs/hosting/self-hosting/)
-  separates frontend and backend with an API URL. That is a credible future
-  route if frontend independence becomes a goal, but it adds a runtime boundary
-  BenchEval does not currently need.
-- **React/Vite plus FastAPI, rejected now:** strongest independent frontend
-  ecosystem, but requires a Node build, a stable HTTP API, duplicated contract
-  generation, and two runtime units before a multi-user or remote requirement
-  exists.
-- **Textual TUI, rejected for the requested prototype:** useful for terminal-
-  only operation, but it does not satisfy the requested browser-grade visual
-  dashboard and artifact/report workflows.
+- **NiceGUI, selected for spike/adoption:** Python-native and backend-first, runs in a browser or native window, supports long-running async work, tables, downloads, and real-browser tests. It preserves the single-process local shape and lets domain DTOs stay in Python.
+- **Reflex, rejected for this slice:** maintained and Apache-2.0, but its [documented self-hosted topology](https://reflex.dev/docs/hosting/self-hosting/) separates frontend and backend with an API URL. That is a credible future route if frontend independence becomes a goal, but it adds a runtime boundary BenchEval does not currently need.
+- **React/Vite plus FastAPI, rejected now:** strongest independent frontend ecosystem, but requires a Node build, a stable HTTP API, duplicated contract generation, and two runtime units before a multi-user or remote requirement exists.
+- **Textual TUI, rejected for the requested prototype:** useful for terminal-only operation, but it does not satisfy the requested browser-grade visual dashboard and artifact/report workflows.
 
 ### Rejected alternatives
 
-- **Hosted service or orchestration plane:** adds auth, database, scheduling,
-  retention, and operational ownership without a current user need.
-- **BenchEval-authored scoring:** duplicates upstream semantics and weakens the
-  official-authority boundary.
-- **mini-SWE under a runtime label:** mini-SWE is a distinct scaffold; using it
-  while claiming the selected Codex/Claude runtime would make the axis false.
-- **Harbor as the first SWE official proof:** useful for a later adapted-runtime
-  comparison, but not identical to the direct official evaluator lifecycle.
-- **Two separately sourced SWE snapshots:** creates avoidable identity drift;
-  the compatibility probe proved both inputs can be derived from one official
+- **Hosted service or orchestration plane:** adds auth, database, scheduling, retention, and operational ownership without a current user need.
+- **BenchEval-authored scoring:** duplicates upstream semantics and weakens the official-authority boundary.
+- **mini-SWE under a runtime label:** mini-SWE is a distinct scaffold; using it while claiming the selected Codex/Claude runtime would make the axis false.
+- **Harbor as the first SWE official proof:** useful for a later adapted-runtime comparison, but not identical to the direct official evaluator lifecycle.
+- **Two separately sourced SWE snapshots:** creates avoidable identity drift; the compatibility probe proved both inputs can be derived from one official
   pinned parquet.
-- **Remote proof store or signatures now:** local content integrity and offline
-  portability satisfy v1. Creator authenticity and shared discovery are separate
-  future requirements, not present blockers.
-- **UI shelling out to `bencheval`:** would make stdout parsing and process
-  arguments a second internal API. Extract and share typed application
-  operations instead.
+- **Remote proof store or signatures now:** local content integrity and offline portability satisfy v1. Creator authenticity and shared discovery are separate future requirements, not present blockers.
+- **UI shelling out to `bencheval`:** would make stdout parsing and process arguments a second internal API. Extract and share typed application operations instead.
 
 ### Exposure extension candidates
 
 #### Candidate A: labels and research notes only
 
-Keep running canonical benchmarks and add caveat prose. This has almost no
-engineering cost, but cannot reproduce a source/candidate population, enforce
-identity or population symmetry, retain effective access evidence, or compute a
-reviewable gap. It does not deliver the requested product value and is rejected.
+Keep running canonical benchmarks and add caveat prose. This has almost no engineering cost, but cannot reproduce a source/candidate population, enforce identity or population symmetry, retain effective access evidence, or compute a reviewable gap. It does not deliver the requested product value and is rejected.
 
 #### Candidate B: narrow evidence-bound studies over official runners — selected
 
-Keep every canonical run and official scorer unchanged. Add a small study
-contract that binds source/candidate identities, relation class, population,
-access evidence, and permitted interpretation. First consume official BFCL Live
-as an unpaired freshness contrast; then materialize exactly one run-scoped,
-balanced BFCL tool-order variant and score it with byte-identical official code.
-Runs remain ordinary evidence/proofs; a read-only study report validates and
-compares them. This adds no service, scheduler, database, runtime fork, custom
-network plane, universal score, or general transform framework.
+Keep every canonical run and official scorer unchanged. Add a small study contract that binds source/candidate identities, relation class, population, access evidence, and permitted interpretation. First consume official BFCL Live as an unpaired freshness contrast; then materialize exactly one run-scoped, balanced BFCL tool-order variant and preserve official execution/scoring logic. Any configured model-registration extension follows C-10; it is shared execution metadata, not part of the candidate's data transformation. Runs remain ordinary evidence/proofs; a read-only study report validates and compares them. This adds no service, scheduler, database, runtime fork, custom network plane, universal score, or general transform framework.
 
 #### Candidate C: generic benchmark morphism platform
 
-Define a transform DSL, plugin registry, inverse-output mappings, automatic
-multi-seed orchestration, reference-panel correction, and adapters for several
-benchmarks. This could become useful after two independent transform families
-prove the same abstraction, but it is premature and creates exactly the hidden
-benchmark reimplementation boundary the product currently avoids. Rejected for
-the first release; revisit only on measured second-family demand.
+Define a transform DSL, plugin registry, inverse-output mappings, automatic multi-seed orchestration, reference-panel correction, and adapters for several benchmarks. This could become useful after two independent transform families prove the same abstraction, but it is premature and creates exactly the hidden benchmark reimplementation boundary the product currently avoids. Rejected for the first release; revisit only on measured second-family demand.
 
 #### Candidate D: controlled runtime/training laboratory
 
-Patch or wrap runtimes to restrict tools/network and fine-tune controlled model
-pairs on canonical/variant data. This offers stronger causal research but changes
-the evaluated runtime, requires new training/compute operations, and does not
-match the current closed-frontier model pool. Rejected as a BenchEval product
-responsibility; external studies may be retained as supporting evidence.
+Patch or wrap runtimes to restrict tools/network and fine-tune controlled model pairs on canonical/variant data. This offers stronger causal research but changes the evaluated runtime, requires new training/compute operations, and does not match the current closed-frontier model pool. Rejected as a BenchEval product responsibility; external studies may be retained as supporting evidence.
 
 ### Adversarial review of the selected extension
 
@@ -308,97 +257,49 @@ responsibility; external studies may be retained as supporting evidence.
 | `network_policy` already exists and could be overloaded. | Preserve it as plan intent; capture effective access separately because current adapters demonstrably disagree with the requested value. |
 | BFCL Live is harder and differently distributed. | Report only a stratified freshness/generalization contrast; do not call it paired or decontaminated. |
 | Random order seeds can create seed lottery and provider cost. | Use one deterministic balanced permutation first; add seeds only if measured variance earns them. |
-| BFCL CLI has no custom question-file flag. | Use a verified run-owned package-data overlay, never mutate the installed package or patch official code/scorer. |
+| BFCL CLI has no custom question-file flag or dynamic model-registration hook. | Use run-owned data staging and, only when needed, the separately bound C-10 registration delta. Never mutate the installed package or patch official execution/scoring logic. |
 | Frontier models may saturate old math variants. | Select the current frontier API pool first and start with BFCL; keep MATH()/DyVal diagnostic and deferred. |
 | A small successful slice invites a contamination headline. | Smoke is plumbing-only by contract; inferential output requires declared population, uncertainty, and non-claims. |
 
 ## Production path and remaining uncertainty
 
-The current control-plane path is established: four executable benchmarks hold
-Tier-1 evidence, portable private proof exists, the local console is implemented,
-and SWE has a retained demoted diagnostic. No benchmark is claimed Tier-2. The
-next product path is the selected exposure extension: prove effective-access
-capture, run the BFCL Live freshness contrast, then decide whether the BFCL
-tool-order study earns a production-shaped implementation. The codebase has no
-current product-decision blocker and no standing HITL blocker. Host provisioning,
-artifact transfer, dependency installation, credential-presence checks, and
-uncharged probes are automatable. Pause only if a runtime presents a literal
-human-only action covered by C-05.
+The current control-plane path is established: four executable benchmarks hold Tier-1 evidence, portable private proof exists, the local console is implemented, and SWE has a retained demoted diagnostic. No benchmark is claimed Tier-2. The next product path is config-first capability recovery (G-13–G-15), followed by broader exposure validation. X0–X3 retain the completed first-model BFCL work; they do not prove arbitrary model/agent onboarding or decontaminated scoring. The correction selects a narrow registration bridge and a native Harbor agent interface; implementation and real acceptance remain pending, not HITL blockers. Host provisioning, artifact transfer, dependency installation, credential-presence checks, and uncharged probes are automatable. Pause only if a runtime presents a literal human-only action covered by C-05.
 
 Open evidence and console work is intentionally narrow:
 
-1. GPQA exact-byte retention and legacy private-bundle fail-closed export are
-   implemented; historical Aug 25 GPQA remains a valid Tier-1 object.
-2. Proof transfer is implemented; imported `private_proof_v1` objects verify
-   structurally. HLE post-fix smoke `sha256:4be3b7cd…f4b62b` stamps
-   `hle@5a81a4c7271a2a2a+data-6d0ee0602e8aea6b` after ambient-copy removal.
-3. SWE remains demoted. Retention-bound diagnostic `sha256:5f7f79ce…373e52`
-   scores the run-owned official-dataset row, stamps the verified identity,
-   retains source/transform/Inspect-log bytes, and stamps
-   `runtime_version=0.148.0`. Schema-v2 `error_ids` means no executed
-   `report.json`; `cleanup_result=skipped`.
-4. Complete benchmark-specific Tier-2 ledgers without claiming Tier-2. BFCL
-   cleanup replay is `not-applicable`: `results/` and `scores/` are retained
-   official evidence, not named transients.
-5. Maintain the console as the `ui` optional extra. Its complete operation
-   surface shares canonical domain functions with the CLI; the core import stays
-   NiceGUI-free. Cross-browser accessibility, bounded-scale measurement, and a
-   charged console launch remain hardening evidence rather than implied readiness.
+1. GPQA exact-byte retention and legacy private-bundle fail-closed export are implemented; historical Aug 25 GPQA remains a valid Tier-1 object.
+2. Proof transfer is implemented; imported `private_proof_v1` objects verify structurally. HLE post-fix smoke `sha256:4be3b7cd…f4b62b` stamps `hle@5a81a4c7271a2a2a+data-6d0ee0602e8aea6b` after ambient-copy removal.
+3. SWE remains demoted. Retention-bound diagnostic `sha256:5f7f79ce…373e52` scores the run-owned official-dataset row, stamps the verified identity, retains source/transform/Inspect-log bytes, and stamps `runtime_version=0.148.0`. Schema-v2 `error_ids` means no executed `report.json`; `cleanup_result=skipped`.
+4. Complete benchmark-specific Tier-2 ledgers without claiming Tier-2. BFCL cleanup replay is `not-applicable`: `results/` and `scores/` are retained official evidence, not named transients.
+5. Maintain the console as the `ui` optional extra. Its complete operation surface shares canonical domain functions with the CLI; the core import stays NiceGUI-free. Cross-browser accessibility, bounded-scale measurement, and a charged console launch remain hardening evidence rather than implied readiness.
 
 ### Selected exposure HLD
 
-The extension remains inside the current single-process control plane. Canonical,
-Live, and derived BFCL executions use the same provider route and official BFCL
-code/scorer. An additive evidence projection records effective access separately
-from `network_policy`. A small versioned study manifest binds the expected
-source/candidate populations and relation class. A BFCL-owned materializer may
-create a run-scoped data overlay, but no generic transform runtime exists. A
-read-only report validates both evidence sets before calculating native-score
-contrasts, directional flips, uncertainty, and explicit interpretation limits.
-Private proof retains the study manifest and exact source/derived bytes; it does
-not authenticate provider training data or transform a diagnostic into native
-benchmark admission.
+The extension remains inside the current single-process control plane. Canonical, Live, and derived BFCL executions use the same provider route and official BFCL code/scorer. An additive evidence projection records effective access separately from `network_policy`. A small versioned study manifest binds the expected source/candidate populations and relation class. A BFCL-owned materializer may create a run-scoped data overlay, but no generic transform runtime exists. A read-only report validates both evidence sets before calculating native-score contrasts, directional flips, uncertainty, and explicit interpretation limits. Run proofs retain exact source/derived bytes; the separate study lock retains the selected study definition and binds both proofs to the report. This portable set does not authenticate provider training data or transform a diagnostic into native benchmark admission.
 
-### First production slice
+### Initial exposure slice (historical sequence; evidence now recorded in X0–X3)
 
-1. Verify the exact `bfcl-eval==2026.3.23` wheel against the ten pinned Live
-   files from upstream commit `6ea57973…`; prove official generate/evaluate can
-   score a tiny Live sample. This is a compatibility/plumbing spike only.
-2. Capture effective access evidence for one model-only run, pinned Inspect SWE,
-   and Harbor without changing any runtime or launch profile. The three paths
-   must respectively demonstrate `not_applicable`, official network-disabled,
-   and uncontrolled/unknown agent egress rather than inheriting `network_policy`.
-3. Run an unregistered BFCL Live research population with a distinct identity
-   and produce a stratified non-live/Live report. It may claim freshness and
-   generalization evidence, never a contamination estimate.
-4. If the Live path and report are useful, materialize one balanced BFCL
-   `multiple`/`parallel_multiple` tool-order variant in a run-owned overlay,
-   preserve the official code/scorer digest, run the same frontier model/settings,
-   and produce a paired diagnostic report. Smoke proves plumbing; a declared
-   larger population is required before inferential language.
+1. Verify the exact `bfcl-eval==2026.3.23` wheel against the ten pinned Live files from upstream commit `6ea57973…`; prove official generate/evaluate can score a tiny Live sample. This is a compatibility/plumbing spike only.
+2. Capture effective access evidence for one model-only run, pinned Inspect SWE, and Harbor without changing any runtime or launch profile. The three paths must respectively demonstrate `not_applicable`, official network-disabled, and uncontrolled/unknown agent egress rather than inheriting `network_policy`.
+3. Run an unregistered BFCL Live research population with a distinct identity and produce a stratified non-live/Live report. It may claim freshness and generalization evidence, never a contamination estimate.
+4. If the Live path and report are useful, materialize one balanced BFCL `multiple`/`parallel_multiple` tool-order variant in a run-owned overlay, preserve the official code/scorer digest, run the same frontier model/settings, and produce a paired diagnostic report. Smoke proves plumbing; a declared larger population is required before inferential language.
 
-### Open questions and spikes
+### Exposure research questions (execution status belongs to the roadmap)
 
 | Question | Why it matters | Resolution |
 |---|---|---|
-| Does the PyPI wheel contain byte-identical pinned Live data and accept the required categories? | Without this, a Live identity or launch would be invented. | Dev-box compatibility spike; no HITL unless provider/runtime presents a literal human action. |
-| Can a run-scoped BFCL package overlay preserve every official code/scorer byte while loading only the derived data? | This is the minimum no-fork route for tool-order variants. | Uncharged package-overlay spike with before/after digests and official CLI invocation. |
-| What full or stratified population retains headroom for the current frontier model pool within a reasonable budget? | Smoke is statistically meaningless; an unnecessarily saturated or huge run wastes spend. | Use official category counts plus a small unregistered pilot, then record a power/precision target before the charged study. |
-| Does one balanced order variant produce interpretable directional flips beyond ordinary provider variance? | A generic framework is unjustified if the first transform adds no information. | Repeat only enough canonical attempts to estimate run variance; compare against the paired variant before any abstraction. |
+| Does the PyPI wheel contain byte-identical pinned Live data and accept the required categories? | Without this, a Live identity or launch would be invented. | Resolved for the pinned first-model route in X2; repeat compatibility proof only when that route changes. |
+| Can a run-scoped BFCL package overlay preserve every official code/scorer byte while loading only the derived data? | This is the minimum no-fork route for tool-order variants. | Resolved for data-only overlays in X0.2/X3; CF1 must separately prove the registration-only composition. |
+| What full or stratified population retains headroom for the current frontier model pool within a reasonable budget? | Smoke is statistically meaningless; an unnecessarily saturated or huge run wastes spend. | X2.4/X3 fixed the first study populations. Reuse those cohorts for CF4; predeclare any later population change. |
+| Does one balanced order variant produce interpretable directional flips beyond ordinary provider variance? | A generic framework is unjustified if the first transform adds no information. | X3 retained one model and an unchanged repeat. It did not establish a clear directional effect; CF4 adds a second model with its own repeat before broader claims or abstractions. |
 | Is an LLM-assisted retrieval audit useful enough to retain? | It can add positive evidence but may be costly and unreliable. | Defer until a real transcript corpus exists; version the auditor and keep it diagnostic if adopted. |
 
-### Handoff to architecture and roadmap
+### Next capability slice and handoff
 
-`arch-roadmap` must preserve the single-process/local proof architecture, the
-official-runner and no-custom-egress decisions, additive evidence compatibility,
-relation/fidelity separation, diagnostic-only derived identities, and the
-Live-before-variant order. It must define source ownership for the study contract,
-effective-access capture, BFCL materializer/overlay, report validation, CLI/UI
-projection, private-proof roles, and discriminating real-run gates without
-creating a generic transform plugin system.
+First close model/provider binding and the BFCL registration bridge, retaining the exact CLI and scorer. Use direct Ollama Cloud as the next OpenAI-compatible route; Qwen's successful direct-handler probe is compatibility evidence only. Then expose configuration-driven native runtime/agent selection through Harbor; Terminus-2 is the first native-agent candidate, not an already admitted profile. MOMO stays scaffold and arbitrary external CLI scoring stays unavailable until a benchmark-owned verifier interface is implemented and proven. Prepare a clean supported-host rehearsal without a new environment-management service. Broader model studies may start after their own route proof and need not wait for U3.
 
-Reopen the selected local/single-user concept only if operators need multi-host
-coordination, remote or concurrent users, shared proof discovery, creator
-authenticity, automated retention/deletion, a new admitted agent, a dual-use
-execution lane, a second proven transform family, or a new class of statistical
-benchmark claim.
+Architecture/roadmap must give G-13–G-15 concrete config fields, resolution and file ownership, compatibility rules, and separate software/live exit gates. Do not turn the BFCL registration bridge into a one-off Qwen source patch or create a generic plugin/transform engine. Do not add tests of documentation wording or checklist counts.
+
+`arch-roadmap` must preserve the single-process/local proof architecture, the official-runner and no-custom-egress decisions, additive evidence compatibility, relation/fidelity separation, diagnostic-only derived identities, and the Live-before-variant order. It must define source ownership for the study contract, effective-access capture, BFCL materializer/overlay, report validation, CLI/UI projection, private-proof roles, and discriminating real-run gates without creating a generic transform plugin system. Its unmodified-code wording is subject to the explicit C-10 registration-only clarification, never a general runtime/scorer exception.
+
+Reopen the selected local/single-user concept only if operators need multi-host coordination, remote or concurrent users, shared proof discovery, creator authenticity, automated retention/deletion, a new agent protocol beyond G-14's selected native interface, a dual-use execution lane, a second proven transform family, or a new class of statistical benchmark claim.

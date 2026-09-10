@@ -13,18 +13,27 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal, cast, get_args
 
-from bencheval.agent_registry import require_admitted_agent
+from bencheval.actor_binding import ActorBinding, actor_binding_for_agent, actor_binding_for_runtime
+from bencheval.agent_registry import AgentCatalog, load_agent_catalog, resolve_launchable_agent
 from bencheval.benchmark_registry import (
     BenchmarkEntry,
     execution_support_label,
     load_benchmark_catalog,
 )
 from bencheval.budget_defaults import BUDGET_CLASS_DEFAULTS
-from bencheval.domain import BudgetClass, HarnessKindLiteral, RunPlan, RunPlanInstance, SlicePurpose
+from bencheval.domain import (
+    BudgetClass,
+    HarnessKindLiteral,
+    RunPlan,
+    RunPlanInstance,
+    RuntimeCatalog,
+    SlicePurpose,
+)
 from bencheval.exceptions import BenchEvalError
 from bencheval.lifecycle import CleanupPolicy
-from bencheval.model_registry import load_model_registry
-from bencheval.provider_registry import DEFAULT_PROVIDER_ID, load_provider_catalog
+from bencheval.model_binding import resolve_model_binding
+from bencheval.model_registry import ModelRegistry, load_model_registry
+from bencheval.provider_registry import DEFAULT_PROVIDER_ID, ProviderCatalog, load_provider_catalog
 from bencheval.runtime_registry import load_runtime_catalog
 from bencheval.slice_manifest import (
     default_slices_dir,
@@ -185,6 +194,11 @@ def _harness_for_benchmark(benchmark: BenchmarkEntry) -> HarnessKindLiteral:
     return _as_harness_kind(raw)
 
 
+def official_harness_kind(benchmark: BenchmarkEntry) -> HarnessKindLiteral:
+    """The adapter-declared official runner kind a plan for ``benchmark`` stamps."""
+    return _harness_for_benchmark(benchmark)
+
+
 def _adapter_for_benchmark(benchmark: BenchmarkEntry) -> str:
     if benchmark.adapter_id is not None:
         return benchmark.adapter_id
@@ -253,8 +267,17 @@ def plan_control_plane(
     provider_id: str | None = None,
     cleanup_policy: CleanupPolicy = "always",
     diagnostic: bool = False,
+    model_registry: ModelRegistry | None = None,
+    provider_catalog: ProviderCatalog | None = None,
+    agent_catalog: AgentCatalog | None = None,
+    runtime_catalog: RuntimeCatalog | None = None,
 ) -> RunPlan:
-    """Build a frozen :class:`~bencheval.domain.RunPlan` for ``run`` phase 1."""
+    """Build a frozen :class:`~bencheval.domain.RunPlan` for ``run`` phase 1.
+
+    ``model_registry`` / ``provider_catalog`` / ``agent_catalog`` /
+    ``runtime_catalog`` inject the declarative inputs (tests and tooling); the
+    CLI uses the shipped config.
+    """
     runtime_arg = runtime_id.strip() if runtime_id and runtime_id.strip() else None
     agent_arg = agent_id.strip() if agent_id and agent_id.strip() else None
     if runtime_arg is not None and agent_arg is not None:
@@ -267,15 +290,21 @@ def plan_control_plane(
     model_key = model_id.strip()
     if not model_key:
         raise BenchEvalError("--model is required")
-    model_registry = load_model_registry()
+    model_registry = model_registry if model_registry is not None else load_model_registry()
+    provider_catalog = provider_catalog if provider_catalog is not None else load_provider_catalog()
     try:
         model_entry = model_registry.by_id(model_key)
     except KeyError as e:
         raise BenchEvalError(f"unknown model {model_key!r}") from e
 
-    resolved_provider = (provider_id or DEFAULT_PROVIDER_ID).strip() or DEFAULT_PROVIDER_ID
+    # The model's declared route is its default provider; --provider may only
+    # confirm it (a mismatch fails below), and unrouted rows fall back to the
+    # shipped default.
+    resolved_provider = (
+        provider_id or model_entry.provider_route or DEFAULT_PROVIDER_ID
+    ).strip() or DEFAULT_PROVIDER_ID
     try:
-        load_provider_catalog().by_id(resolved_provider)
+        provider_catalog.by_id(resolved_provider)
     except KeyError as e:
         raise BenchEvalError(f"unknown provider {resolved_provider!r}") from e
     if model_entry.provider_route is not None and model_entry.provider_route != resolved_provider:
@@ -289,15 +318,26 @@ def plan_control_plane(
     model_binding: Literal["runtime_configured", "bencheval_injected", "not_applicable"]
     network: Literal["deny", "allow", "benchmark_required"] = "deny"
 
+    agent_profile = None
+    runtime = None
     if agent_arg is not None:
         try:
-            agent_profile = require_admitted_agent(agent_arg)
+            agent_profile = resolve_launchable_agent(
+                agent_arg, catalog=agent_catalog, diagnostic=diagnostic
+            )
         except KeyError as e:
             raise BenchEvalError(f"unknown agent {agent_arg!r}") from e
         if harness_kind not in agent_profile.agent.supported_harnesses:
             raise BenchEvalError(
                 f"agent {agent_arg!r} does not support harness {harness_kind!r}; "
                 f"supported: {list(agent_profile.agent.supported_harnesses)}",
+            )
+        if harness_kind in _MODEL_ONLY_HARNESSES:
+            # A profile may claim any harness; model-only harnesses call the
+            # provider directly and never dispatch an agent (§23.6).
+            raise BenchEvalError(
+                f"harness {harness_kind!r} is model-only; agent {agent_arg!r} cannot be "
+                "dispatched there whatever its profile declares",
             )
         model_binding = "bencheval_injected"
         # External agents typically need provider egress; Harbor proxy forward
@@ -309,8 +349,9 @@ def plan_control_plane(
             runtime_id=runtime_arg,
         )
         if resolved_runtime_id is not None:
+            runtimes = runtime_catalog if runtime_catalog is not None else load_runtime_catalog()
             try:
-                runtime = load_runtime_catalog().by_id(resolved_runtime_id)
+                runtime = runtimes.by_id(resolved_runtime_id)
             except KeyError as e:
                 raise BenchEvalError(f"unknown runtime {resolved_runtime_id!r}") from e
             if harness_kind not in runtime.runtime.supported_harnesses:
@@ -338,9 +379,35 @@ def plan_control_plane(
             network = "allow"
 
     adapter_id = _adapter_for_benchmark(benchmark)
+    # Model-only harnesses launch the provider from the host; snapshot the
+    # resolved, non-secret binding now so confirmation covers it (§23.3).
+    # Scaffolded runs keep their runtime/agent-owned model configuration; a
+    # native Harbor agent runs its LLM host-side on the confirmed binding, so
+    # it snapshots both the model and the actor (§23.6).
+    model_snapshot = None
+    actor_snapshot: ActorBinding | None = None
+    if resolved_runtime_id is None and agent_arg is None:
+        model_snapshot = resolve_model_binding(
+            model_key, resolved_provider, models=model_registry, providers=provider_catalog
+        )
+    elif agent_profile is not None and agent_profile.agent.kind == "harbor":
+        model_snapshot = resolve_model_binding(
+            model_key, resolved_provider, models=model_registry, providers=provider_catalog
+        )
+        actor_snapshot = actor_binding_for_agent(agent_profile)
+    elif runtime is not None and harness_kind == "harbor":
+        actor_snapshot = actor_binding_for_runtime(runtime)
+    if adapter_id == "bfcl" and model_snapshot is not None:
+        bfcl_binding = model_snapshot.bfcl
+        if bfcl_binding is not None and bfcl_binding.mode == "configured" and not diagnostic:
+            raise BenchEvalError(
+                f"model {model_key!r} reaches BFCL through a configured registration; "
+                "such runs are diagnostic only until separately qualified (pass --diagnostic)",
+            )
     slice_path = _resolve_slice_yaml(slice_id, benchmark.id)
     slice_manifest = load_slice_manifest(slice_path)
     judge_model_id = slice_manifest.slice.judge_model_id
+    judge_snapshot = None
     if adapter_id == "hle":
         if judge_model_id is None:
             raise BenchEvalError(f"HLE slice {slice_id!r} must pin judge_model_id")
@@ -350,11 +417,14 @@ def plan_control_plane(
             raise BenchEvalError(
                 f"HLE slice {slice_id!r} references unknown judge model {judge_model_id!r}",
             ) from e
-        if judge_entry.provider_route != resolved_provider:
-            raise BenchEvalError(
-                f"HLE judge model {judge_model_id!r} is routed to provider "
-                f"{judge_entry.provider_route!r}, not {resolved_provider!r}",
-            )
+        # The judge resolves its own route; it is never silently sent to the
+        # candidate's provider.
+        judge_snapshot = resolve_model_binding(
+            judge_model_id,
+            judge_entry.provider_route or resolved_provider,
+            models=model_registry,
+            providers=provider_catalog,
+        )
     elif judge_model_id is not None:
         raise BenchEvalError(
             f"slice {slice_id!r} sets judge_model_id but adapter {adapter_id!r} has no judge",
@@ -404,6 +474,16 @@ def plan_control_plane(
         caveats.append("max_cost_usd_unenforced_estimate")
 
     validity = _comparison_validity(slice_manifest.slice.purpose)
+    if agent_profile is not None and agent_profile.admission == "draft":
+        # A draft native agent is diagnostic evidence until its own proof
+        # admits exactly this profile/combination (roadmap CF2.3).
+        validity = "diagnostic_only"
+    if adapter_id == "bfcl" and model_snapshot is not None and model_snapshot.bfcl is not None:
+        if model_snapshot.bfcl.mode == "configured":
+            # A configured registration identifies an extension of the pinned
+            # harness, never plain upstream support: diagnostic only. The BFCL
+            # binding says nothing about other adapters' classification.
+            validity = "diagnostic_only"
 
     return RunPlan(
         schema_version="0.3",
@@ -419,6 +499,9 @@ def plan_control_plane(
         model_id=model_key,
         judge_model_id=judge_model_id,
         model_binding=model_binding,
+        model_binding_snapshot=model_snapshot,
+        judge_binding_snapshot=judge_snapshot,
+        actor_binding_snapshot=actor_snapshot,
         instances=tuple(RunPlanInstance(instance_id=i) for i in instance_ids),
         budget_class=budget_class,
         max_cost_usd=round(max_cost, 6),
@@ -446,6 +529,7 @@ class ControlPlanePlanner:
         model_id: str,
         agent_id: str | None = None,
         provider_id: str | None = None,
+        diagnostic: bool = False,
     ) -> RunPlan:
         return plan_control_plane(
             benchmark_id=benchmark_id,
@@ -454,7 +538,19 @@ class ControlPlanePlanner:
             model_id=model_id,
             agent_id=agent_id,
             provider_id=provider_id,
+            diagnostic=diagnostic,
         )
+
+
+def draft_native_agent(agent_id: str | None) -> bool:
+    """True when ``agent_id`` is a draft ``kind: harbor`` profile (diagnostic-only launch)."""
+    if not agent_id or not agent_id.strip():
+        return False
+    try:
+        profile = load_agent_catalog().by_id(agent_id.strip())
+    except KeyError:
+        return False
+    return profile.admission == "draft" and profile.agent.kind == "harbor"
 
 
 def run_plan_to_dry_run_dict(
@@ -511,6 +607,7 @@ def dry_run_slice_resolution(
 __all__ = [
     "AdapterDescriptor",
     "ControlPlanePlanner",
+    "draft_native_agent",
     "dry_run_slice_resolution",
     "list_adapter_descriptors",
     "plan_control_plane",

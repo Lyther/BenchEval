@@ -14,6 +14,12 @@ launch:
   env_vars_required: ["OPENAI_API_KEY"]
   env_vars_optional: []
   timeout_sec_default: 300
+  # Closed Harbor driver binding (architecture §23.6): the upstream agent this
+  # profile runs and the code-owned install recipe; the profile id selects nothing.
+  harbor:
+    agent: "codex"
+    install_recipe: "codex_npm"
+    setup_timeout_multiplier: 8
 capabilities:
   reads_files: true
   edits_files: true

@@ -1,0 +1,84 @@
+{
+  "analysis": "raw_only",
+  "candidate": {
+    "evidence_path": "evidence.jsonl",
+    "evidence_sha256": "sha256:2cd20a2668e751b1f329986a0dda9886a0bdec51db6b68979353da87234c26fb",
+    "proof_id": "sha256:9198c33294fdee4d8bfcbe0878397ede161c92058363ab7bd2d467a987527aa9"
+  },
+  "canonical": {
+    "evidence_path": "evidence.jsonl",
+    "evidence_sha256": "sha256:a4a2dd03c829a23c44b3247506ba4d67ff6ec6d1770a1e61aaf644b908328409",
+    "proof_id": "sha256:602213953276091d9e82ce881ae8a5c207d134b8aebd12fc8ef8cdf2ea648ee3"
+  },
+  "report_contract_version": "exposure-report-v1",
+  "report_sha256": "sha256:505b4afe4bbf6cac8283f27c0f6b3f4cc9591d62599a05acd2c94dda21dcf430",
+  "schema_version": "exposure-study-lock-v1",
+  "study": {
+    "analysis": {
+      "difference_interval": "newcombe_95",
+      "interval": "wilson_95",
+      "paired_test": "not_applicable",
+      "smoke_mode": "raw_only"
+    },
+    "candidate": {
+      "benchmark_id": "bfcl-v4-live",
+      "slice_id": "exposure-live-v1",
+      "smoke_slice_id": "plumbing-6"
+    },
+    "canonical": {
+      "benchmark_id": "bfcl-v4",
+      "slice_id": "exposure-non-live-v1",
+      "smoke_slice_id": "exposure-plumbing-5"
+    },
+    "comparison_mode": "stratified_unpaired",
+    "eligible_population": "native_eligible_only",
+    "forbidden_claims": [
+      "clean",
+      "contaminated",
+      "cheating",
+      "decontaminated_score",
+      "novelty",
+      "superiority",
+      "universal_adjusted_score"
+    ],
+    "id": "bfcl-v4-live-vs-non-live",
+    "kind": "freshness_contrast",
+    "permitted_interpretation": "benchmark_specific_dependence",
+    "population": {
+      "candidate_counts": {
+        "live_irrelevance": 100,
+        "live_multiple": 100,
+        "live_parallel": 16,
+        "live_parallel_multiple": 24,
+        "live_relevance": 16,
+        "live_simple": 100
+      },
+      "canonical_counts": {
+        "irrelevance": 100,
+        "multiple": 100,
+        "parallel": 16,
+        "parallel_multiple": 24,
+        "simple_python": 100
+      },
+      "seed": "bencheval-bfcl-live-v1",
+      "selection_algorithm": "sha256_rank_v1",
+      "smoke_per_stratum": 1
+    },
+    "relation": "fresh_parallel",
+    "required_constant_axes": [
+      "model_id",
+      "provider_id",
+      "provider_config_hash",
+      "harness_kind",
+      "harness_version",
+      "runtime_id",
+      "access_control_source",
+      "egress_control",
+      "repository_history"
+    ],
+    "schema_version": "0.1",
+    "variant": null
+  },
+  "study_id": "bfcl-v4-live-vs-non-live",
+  "study_sha256": "sha256:e1d7d6b2c01f273e943cd29c377d49fceb38814b88c213d0f928763a08474a77"
+}

@@ -162,16 +162,18 @@ def test_gpqa_runner_receives_provider_bound_openai_environment(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # The endpoint override is part of the confirmed binding: it must be in
+    # place when the plan is made (a later change is refused at launch).
+    monkeypatch.setenv("BYTELLM_API_KEY", "review-provider-key")
+    monkeypatch.setenv("BYTELLM_BASE_URL", "http://127.0.0.1:4400")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     plan = plan_control_plane(
         benchmark_id="gpqa-diamond",
         slice_id="smoke",
         runtime_id=None,
         model_id="kimi-k2.7-code",
     )
-    monkeypatch.setenv("BYTELLM_API_KEY", "review-provider-key")
-    monkeypatch.setenv("BYTELLM_BASE_URL", "http://127.0.0.1:4400")
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     captured: dict[str, str] = {}
 
     def capture_env_runner(

@@ -82,6 +82,16 @@ models:
     family: openai
     display_name: GPT 5.2 2025-12-11
     provider_route: bytellm
+  - id: gpt-5.2-2025-12-11-FC
+    family: openai
+    display_name: GPT 5.2 2025-12-11 BFCL Native Function Calling
+    provider_route: bytellm
+    # Pinned upstream BFCL key; its ModelConfig.model_name (the vendor API
+    # name) is gpt-5.2-2025-12-11 (bfcl_eval/constants/model_config.py@2026.3.23).
+    api_model: gpt-5.2-2025-12-11
+    backend_bindings:
+      bfcl:
+        mode: upstream
   - id: gpt-5.3-chat-2026-03-03
     family: openai
     display_name: GPT 5.3 Chat 2026-03-03
@@ -118,6 +128,35 @@ models:
     family: mistral
     display_name: Ministral 8B
     provider_route: bytellm
+  - id: ollama-qwen3.5-397b-fc
+    family: qwen
+    display_name: Qwen3.5 397B via Ollama Cloud (FC)
+    # Direct Ollama Cloud route (config/providers/ollama-cloud.yaml). BFCL reaches
+    # it through a configured registration generated in the run-owned package
+    # copy (architecture §23.4): diagnostic only until separately qualified.
+    provider_route: ollama-cloud
+    api_model: qwen3.5:397b
+    backend_bindings:
+      bfcl:
+        mode: configured
+        handler: openai_completions_fc
+        underscore_to_dot: true
+  - id: ollama-gpt-oss-120b-fc
+    family: openai
+    display_name: gpt-oss 120B via Ollama Cloud (FC)
+    # Second config-only entry on the same direct Ollama Cloud route (CF1.3):
+    # `gpt-oss:120b` is listed by the provider's /v1/models; provenance below
+    # is OpenAI's open-weight release as published on the Ollama library.
+    provider_route: ollama-cloud
+    api_model: gpt-oss:120b
+    reference_url: https://ollama.com/library/gpt-oss
+    organization: OpenAI
+    license: Apache-2.0
+    backend_bindings:
+      bfcl:
+        mode: configured
+        handler: openai_completions_fc
+        underscore_to_dot: true
   - id: openai_qwen3-max-preview
     family: qwen
     display_name: OpenAI Qwen3 Max Preview

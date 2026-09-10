@@ -8,8 +8,14 @@ schema_version: "0.1"
 # refuses it. BenchEval therefore refuses to launch any model not listed here.
 upstream_commit: "6ea57973c7a6097fd7c5915698c54c17c5b1b6c8"
 bfcl_eval_version: "2026.3.23"
+# Reviewed digest of the pristine registry file inside the installed
+# distribution. A configured registration (architecture §23.4) is appended to a
+# run-owned copy of exactly these bytes; drift here refuses to stage.
+registry_file: "constants/model_config.py"
+registry_sha256: "sha256:ec72b8499f140c9d870cebc909c895facb3cb26febc2d9146c8f1dfdea7bdcbc"
 # Intersection of the pinned upstream MODEL_CONFIG_MAPPING with
 # config/models.yaml (currently a single entry; gpt-5.2-2025-12-11 is at
 # model_config.py:180 upstream and config/models.yaml:81 here).
 models:
   - gpt-5.2-2025-12-11
+  - gpt-5.2-2025-12-11-FC

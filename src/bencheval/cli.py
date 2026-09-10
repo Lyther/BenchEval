@@ -8,10 +8,11 @@ import socket
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast, get_args
+from typing import TYPE_CHECKING, cast, get_args
 
 from bencheval.agent_registry import load_agent_catalog
 from bencheval.benchmark_plan import (
+    draft_native_agent,
     dry_run_slice_resolution,
     plan_control_plane,
     run_plan_to_dry_run_dict,
@@ -30,7 +31,7 @@ from bencheval.control_plane_executor import (
     diagnostic_capable_benchmark,
     execute_control_plane_run,
 )
-from bencheval.doctor import run_doctor, run_pilot_doctor
+from bencheval.doctor import run_doctor, run_pilot_doctor, run_plan_doctor
 from bencheval.domain import RunPlan
 from bencheval.evidence import read_evidence_jsonl
 from bencheval.exceptions import BenchEvalError
@@ -55,6 +56,9 @@ from bencheval.swebench_adapter import (
     SWEBENCH_ADAPTER_ID,
     default_swebench_process_runner,
 )
+
+if TYPE_CHECKING:
+    from bencheval.exposure_selection import ExposureSelection
 
 
 def _benchmark_payload(benchmark: BenchmarkEntry) -> dict[str, object]:
@@ -123,6 +127,42 @@ def _build_plan(args: argparse.Namespace) -> RunPlan:
     )
 
 
+def _diagnostic_gate_error(
+    plan: RunPlan, resolution: dict[str, object], *, diagnostic: bool
+) -> str | None:
+    """The run/doctor rule for ``--diagnostic`` against the row's execution support."""
+    support = resolution.get("execution_support")
+    snapshot = plan.model_binding_snapshot
+    configured_registration = (
+        plan.adapter_id == "bfcl"
+        and snapshot is not None
+        and snapshot.bfcl is not None
+        and snapshot.bfcl.mode == "configured"
+    )
+    if support == "executable_adapter":
+        # A configured BFCL registration is an extension of the pinned harness
+        # and a draft native agent is an unadmitted candidate: both run on the
+        # executable row only as explicit diagnostic evidence.
+        if diagnostic and not (configured_registration or draft_native_agent(plan.agent_id)):
+            return (
+                "--diagnostic is only valid for demoted benchmarks; "
+                f"{plan.benchmark_id!r} has execution_support='executable_adapter'"
+            )
+        return None
+    benchmark = load_benchmark_catalog().by_id_or_alias(plan.benchmark_id)
+    if diagnostic and diagnostic_capable_benchmark(benchmark):
+        return None
+    hint = (
+        "; opt in with --diagnostic for a labeled, non-registering run"
+        if diagnostic_capable_benchmark(benchmark)
+        else ""
+    )
+    return (
+        f"benchmark {plan.benchmark_id!r} has execution_support={support!r}; "
+        f"requires executable_adapter{hint}"
+    )
+
+
 def _print_plan_envelope(plan: RunPlan, *, slice_resolution: dict[str, object]) -> None:
     payload = run_plan_to_dry_run_dict(plan, slice_resolution=slice_resolution)
     sys.stdout.write(json.dumps(payload, indent=2) + "\n")
@@ -156,28 +196,11 @@ def _run_command(args: argparse.Namespace) -> int:
     except BenchEvalError as e:
         sys.stderr.write(f"error: {e}\n")
         return 1
-    support = resolution.get("execution_support")
     diagnostic = bool(getattr(args, "diagnostic", False))
-    if support == "executable_adapter":
-        if diagnostic:
-            sys.stderr.write(
-                "error: --diagnostic is only valid for demoted benchmarks; "
-                f"{plan.benchmark_id!r} has execution_support='executable_adapter'\n",
-            )
-            return 1
-    else:
-        benchmark = load_benchmark_catalog().by_id_or_alias(plan.benchmark_id)
-        if not (diagnostic and diagnostic_capable_benchmark(benchmark)):
-            hint = (
-                "; opt in with --diagnostic for a labeled, non-registering run"
-                if diagnostic_capable_benchmark(benchmark)
-                else ""
-            )
-            sys.stderr.write(
-                f"error: benchmark {plan.benchmark_id!r} has execution_support={support!r}; "
-                f"requires executable_adapter{hint}\n",
-            )
-            return 1
+    gate_error = _diagnostic_gate_error(plan, resolution, diagnostic=diagnostic)
+    if gate_error is not None:
+        sys.stderr.write(f"error: {gate_error}\n")
+        return 1
 
     _print_plan_envelope(plan, slice_resolution=resolution)
     if args.dry_run:
@@ -215,7 +238,28 @@ def _run_command(args: argparse.Namespace) -> int:
 
 
 def _doctor_run(args: argparse.Namespace) -> int:
-    if args.profile == "pilot":
+    if args.target:
+        if not args.model:
+            sys.stderr.write("error: --model is required with a <benchmark>[/<slice>] target\n")
+            return 2
+        if args.backend is not None or args.profile is not None:
+            sys.stderr.write(
+                "error: --backend/--profile belong to the legacy host form; "
+                "a <benchmark>[/<slice>] target resolves the backend itself\n",
+            )
+            return 2
+        # Plan-aware form: resolve exactly what `run` would (admission,
+        # model-only, provider, binding, diagnostic rules), then preflight it.
+        plan = _build_plan(args)
+        resolution = dry_run_slice_resolution(
+            benchmark_id=plan.benchmark_id,
+            slice_id=plan.slice_id,
+        )
+        gate_error = _diagnostic_gate_error(plan, resolution, diagnostic=args.diagnostic)
+        if gate_error is not None:
+            raise BenchEvalError(gate_error)
+        report = run_plan_doctor(plan)
+    elif args.profile == "pilot":
         report = run_pilot_doctor(model_id=args.model)
     else:
         if args.backend is None:
@@ -776,6 +820,154 @@ def _evidence_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def _study_validate(args: argparse.Namespace) -> int:
+    from bencheval.exposure_report import resolve_study_reference, validate_exposure_study
+
+    payload = validate_exposure_study(resolve_study_reference(args.study))
+    sys.stdout.write(json.dumps(payload, indent=2) + "\n")
+    return 0
+
+
+def _study_report(args: argparse.Namespace) -> int:
+    from bencheval.exposure_report import (
+        build_exposure_report,
+        render_exposure,
+        resolve_study_reference,
+        write_exposure_report,
+        write_proof_backed_exposure_report,
+    )
+    from bencheval.exposure_study import load_exposure_study
+
+    evidence_inputs = (args.canonical_evidence, args.candidate_evidence)
+    proof_inputs = (args.canonical_proof, args.candidate_proof)
+    use_evidence = all(value is not None for value in evidence_inputs)
+    use_proof = all(value is not None for value in proof_inputs)
+    if use_evidence == use_proof or (any(evidence_inputs) and any(proof_inputs)):
+        raise BenchEvalError(
+            "study report needs exactly one input pair: "
+            "--canonical-evidence/--candidate-evidence or --canonical-proof/--candidate-proof",
+        )
+    analysis = "declared" if args.analysis == "declared" else "raw_only"
+    fmt = "json" if args.format == "json" else "markdown"
+    study = load_exposure_study(resolve_study_reference(args.study))
+    selection = _optional_selection(args)
+    if use_proof:
+        if args.output is None or args.lock_output is None:
+            raise BenchEvalError("proof-backed study report requires --output and --lock-output")
+        built = write_proof_backed_exposure_report(
+            study,
+            canonical_proof=Path(args.canonical_proof),
+            candidate_proof=Path(args.candidate_proof),
+            analysis=analysis,
+            output=Path(args.output),
+            lock_output=Path(args.lock_output),
+            fmt=fmt,
+            selection=selection,
+        )
+        payload = {
+            "study_id": study.id,
+            "analysis_mode": built.report.payload["analysis_mode"],
+            "report_sha256": built.report_sha256,
+            "lock_sha256": built.lock_sha256,
+            "output": str(Path(args.output).resolve()),
+            "lock_output": str(Path(args.lock_output).resolve()),
+        }
+        sys.stdout.write(json.dumps(payload, indent=2) + "\n")
+        return 0
+    if args.lock_output is not None:
+        raise BenchEvalError("--lock-output requires proof-backed inputs")
+    report = build_exposure_report(
+        study,
+        canonical=read_evidence_jsonl(Path(args.canonical_evidence)),
+        candidate=read_evidence_jsonl(Path(args.candidate_evidence)),
+        analysis=analysis,
+        selection=selection,
+    )
+    if args.output is None:
+        sys.stdout.write(render_exposure(report, fmt))
+        return 0
+    write_exposure_report(report, output=Path(args.output), fmt=fmt)
+    payload = {
+        "study_id": study.id,
+        "analysis_mode": report.payload["analysis_mode"],
+        "report_sha256": report.sha256,
+        "output": str(Path(args.output).resolve()),
+    }
+    sys.stdout.write(json.dumps(payload, indent=2) + "\n")
+    return 0
+
+
+def _study_verify(args: argparse.Namespace) -> int:
+    from bencheval.exposure_report import resolve_study_reference, verify_exposure_study_lock
+    from bencheval.exposure_study import load_exposure_study
+
+    study = (
+        load_exposure_study(resolve_study_reference(args.study)) if args.study is not None else None
+    )
+    payload = verify_exposure_study_lock(
+        study,
+        lock_path=Path(args.lock),
+        canonical_proof=Path(args.canonical_proof),
+        candidate_proof=Path(args.candidate_proof),
+        output=Path(args.output) if args.output is not None else None,
+        fmt="json" if args.format == "json" else "markdown",
+        selection=_optional_selection(args),
+    )
+    sys.stdout.write(json.dumps(payload, indent=2) + "\n")
+    return 0
+
+
+def _optional_selection(args: argparse.Namespace) -> ExposureSelection | None:
+    from bencheval.exposure_selection import load_exposure_selection
+
+    value = getattr(args, "selection", None)
+    return load_exposure_selection(Path(value)) if value is not None else None
+
+
+def _study_select(args: argparse.Namespace) -> int:
+    from bencheval.exposure_report import resolve_study_reference
+    from bencheval.exposure_selection import (
+        exposure_selection_sha256,
+        materialize_exposure_selection,
+        write_selection_outputs,
+    )
+    from bencheval.exposure_study import default_studies_dir, load_exposure_study
+    from bencheval.slice_manifest import default_slices_dir
+
+    study = load_exposure_study(resolve_study_reference(args.study))
+    selection = materialize_exposure_selection(study)
+    slices_dir = Path(args.slices_dir) if args.slices_dir is not None else default_slices_dir()
+    record = (
+        Path(args.record)
+        if args.record is not None
+        else default_studies_dir() / f"{study.id}.selection.json"
+    )
+    written = write_selection_outputs(
+        selection,
+        slices_dir=slices_dir,
+        record_path=record,
+        max_total_cost_usd=args.max_total_cost_usd,
+    )
+    payload = {
+        "study_id": study.id,
+        "selection_sha256": exposure_selection_sha256(selection),
+        "seed": selection.seed,
+        "canonical": {
+            "slice_id": selection.canonical.slice_id,
+            "benchmark_version": selection.canonical.benchmark_version,
+            "counts": {k: v.count for k, v in selection.canonical.strata.items()},
+        },
+        "candidate": {
+            "slice_id": selection.candidate.slice_id,
+            "benchmark_version": selection.candidate.benchmark_version,
+            "counts": {k: v.count for k, v in selection.candidate.strata.items()},
+        },
+        "written": [str(path) for path in written],
+    }
+    sys.stdout.write(json.dumps(payload, indent=2) + "\n")
+    return 0
+
+
 def _ui_run(args: argparse.Namespace) -> int:
     from bencheval.ui.app import run_console
 
@@ -828,7 +1020,14 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument("--model", required=True)
     run.add_argument("--runtime", default=None)
     run.add_argument("--agent", default=None)
-    run.add_argument("--provider", default=DEFAULT_PROVIDER_ID)
+    run.add_argument(
+        "--provider",
+        default=None,
+        help=(
+            "Provider route; defaults to the model's declared provider_route "
+            f"(or {DEFAULT_PROVIDER_ID!r} for unrouted rows) and must match it"
+        ),
+    )
     run.add_argument("--dry-run", action="store_true")
     run.add_argument(
         "--diagnostic",
@@ -845,9 +1044,19 @@ def _build_parser() -> argparse.ArgumentParser:
     run.set_defaults(handler=_run_command)
 
     doctor = sub.add_parser("doctor", help="Preflight checks")
+    doctor.add_argument(
+        "target",
+        nargs="?",
+        default=None,
+        help="<benchmark>[/<slice>]: preflight the same resolved selection `run` plans",
+    )
     doctor.add_argument("--backend", choices=("inspect", "harbor"), default=None)
     doctor.add_argument("--profile", choices=("E0", "E1", "E2", "E3", "E4", "pilot"), default=None)
     doctor.add_argument("--model", default=None)
+    doctor.add_argument("--runtime", default=None)
+    doctor.add_argument("--agent", default=None)
+    doctor.add_argument("--provider", default=None)
+    doctor.add_argument("--diagnostic", action="store_true")
     doctor.set_defaults(handler=_doctor_run)
 
     catalog = sub.add_parser("catalog", help="Discover benchmarks/runtimes/agents/models/providers")
@@ -973,6 +1182,69 @@ def _build_parser() -> argparse.ArgumentParser:
     evidence_list.add_argument("--current", action="store_true")
     evidence_list.add_argument("--manifest-path", default=None)
     evidence_list.set_defaults(handler=_evidence_list)
+
+    study = sub.add_parser("study", help="Validate or report a read-only exposure study")
+    study_sub = study.add_subparsers(dest="study_command", required=True)
+    study_validate = study_sub.add_parser("validate", help="Validate a study manifest")
+    study_validate.add_argument("study", help="study id under config/studies or a YAML path")
+    study_validate.set_defaults(handler=_study_validate)
+    study_report = study_sub.add_parser(
+        "report",
+        help="Validate two native evidence populations and render the study report",
+    )
+    study_report.add_argument("study", help="study id under config/studies or a YAML path")
+    study_report.add_argument("--canonical-evidence", default=None)
+    study_report.add_argument("--candidate-evidence", default=None)
+    study_report.add_argument("--canonical-proof", default=None)
+    study_report.add_argument("--candidate-proof", default=None)
+    study_report.add_argument("--analysis", choices=("raw-only", "declared"), default="raw-only")
+    study_report.add_argument(
+        "--selection",
+        default=None,
+        help="exposure-selection-v1 record; required for declared analysis",
+    )
+    study_report.add_argument("--format", choices=("json", "markdown"), default="json")
+    study_report.add_argument("--output", default=None, help="exclusive output path")
+    study_report.add_argument(
+        "--lock-output",
+        default=None,
+        help="exclusive exposure-study-lock-v1 path (proof-backed inputs only)",
+    )
+    study_report.set_defaults(handler=_study_report)
+    study_verify = study_sub.add_parser(
+        "verify",
+        help="Reproduce a locked study report from copied private proofs",
+    )
+    study_verify.add_argument(
+        "study",
+        nargs="?",
+        default=None,
+        help="optional study id or YAML path; must match the definition retained in the lock",
+    )
+    study_verify.add_argument("--canonical-proof", required=True)
+    study_verify.add_argument("--candidate-proof", required=True)
+    study_verify.add_argument("--lock", required=True)
+    study_verify.add_argument("--format", choices=("json", "markdown"), default="json")
+    study_verify.add_argument(
+        "--selection",
+        default=None,
+        help="optional exposure-selection-v1 record; must match the one retained in the lock",
+    )
+    study_verify.add_argument(
+        "--output", default=None, help="exclusive path for the reproduced report"
+    )
+    study_verify.set_defaults(handler=_study_verify)
+    study_select = study_sub.add_parser(
+        "select",
+        help="Materialize the study's sha256_rank_v1 population into exact-id slices",
+    )
+    study_select.add_argument("study", help="study id under config/studies or a YAML path")
+    study_select.add_argument("--slices-dir", default=None, help="defaults to config/slices")
+    study_select.add_argument(
+        "--record", default=None, help="defaults to config/studies/<study>.selection.json"
+    )
+    study_select.add_argument("--max-total-cost-usd", type=int, default=10)
+    study_select.set_defaults(handler=_study_select)
 
     console = sub.add_parser("ui", help="Start the loopback-only operator console")
     console.add_argument("--port", type=int, default=8090)

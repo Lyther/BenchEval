@@ -1,0 +1,23 @@
+schema_version: "0.1"
+slice:
+  id: plumbing-6
+  benchmark_id: bfcl-v4-live
+  purpose: adapter_smoke
+  selection_policy: fixed_instance_ids
+  instances:
+    - live_simple_0-0-0
+    - live_multiple_0-0-0
+    - live_parallel_0-0-0
+    - live_parallel_multiple_0-0-0
+    - live_irrelevance_0-0-0
+    - live_relevance_0-0-0
+  valid_for: [adapter_smoke, rough_regression]
+  invalid_for: [benchmark_native_claim, model_comparison]
+budget:
+  max_instances: 6
+  max_wall_clock_sec_per_instance: 300
+  max_total_cost_usd: 2
+labels:
+  contamination_warning: true
+  public_benchmark: true
+  full_suite_required_for_public_claim: true

@@ -11,10 +11,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import get_args
+from typing import TYPE_CHECKING, get_args
 from urllib.parse import urlsplit
 
-from bencheval.agent_registry import require_admitted_agent
+from bencheval.access_evidence import EffectiveAccessEvidence
+from bencheval.actor_binding import actor_binding_for_agent
+from bencheval.agent_registry import AgentCatalog, AgentProfile, resolve_launchable_agent
 from bencheval.backends import (
     HARBOR_BACKEND,
     INSPECT_BACKEND,
@@ -32,7 +34,7 @@ from bencheval.bfcl_native_adapter import (
     bfcl_pinned_harness_version,
     run_bfcl_instance,
 )
-from bencheval.doctor import require_doctor_ok, run_doctor
+from bencheval.doctor import require_doctor_ok, run_plan_doctor
 from bencheval.domain import (
     CleanupResult,
     ExecutionProfile,
@@ -84,11 +86,15 @@ from bencheval.terminal_bench_harbor import (
     TERMINAL_BENCH_RELEASE_VERSION,
     HarborProcessRunner,
     TerminalBenchInstanceOutcome,
+    preflight_harbor_launch,
     run_terminal_bench_instance,
 )
 
 _FAILURE_LABELS = frozenset(get_args(FailureLabel))
 _VERSION_COMMAND_TIMEOUT_SEC = 15
+
+if TYPE_CHECKING:
+    from bencheval.bfcl_study import DerivedSource
 
 
 @dataclass(frozen=True, slots=True)
@@ -264,7 +270,17 @@ def _capture_runtime_provenance(
     result's ``agent_info`` (see :func:`_evidence_from_outcome`).
     """
     if plan.runtime_id is None:
-        return None
+        if plan.agent_id is None or plan.actor_binding_snapshot is None:
+            return None
+        # A native agent has no host runtime to probe; its effective launch
+        # inputs are the confirmed actor binding plus the same env/proxy
+        # identity a runtime row folds into its config hash.
+        env_hash = _hash_effective_runtime_options(plan=plan)
+        actor_part = f"actor_binding_sha256={plan.actor_binding_snapshot.sha256}"
+        return _RuntimeProvenance(
+            runtime_version=None,
+            runtime_config_hash=_combine_config_hashes(env_hash, actor_part),
+        )
     if profile is None:
         try:
             profile = load_runtime_catalog().by_id(plan.runtime_id)
@@ -534,6 +550,7 @@ def _evidence_from_outcome(
     outcome: TerminalBenchInstanceOutcome,
     execution_profile: ExecutionProfile,
     cleanup_result: CleanupResult | None = None,
+    extra_artifact_paths: Sequence[str] = (),
 ) -> EvidenceRecord:
     artifact_paths: list[str] = []
     if outcome.raw_result_path:
@@ -542,6 +559,7 @@ def _evidence_from_outcome(
         artifact_paths.append(outcome.stdout_path)
     if outcome.stderr_path:
         artifact_paths.append(outcome.stderr_path)
+    artifact_paths.extend(extra_artifact_paths)
 
     failure_labels: list[str] = []
     if not outcome.primary_pass and outcome.failure_class:
@@ -587,6 +605,22 @@ def _evidence_from_outcome(
         failure_class=outcome.failure_class,
         cleanup_result=cleanup_result,
         verifier_integrity_label=verifier_label,
+        access_control_source=(
+            outcome.access_evidence.access_control_source
+            if outcome.access_evidence is not None
+            else None
+        ),
+        egress_control=(
+            outcome.access_evidence.egress_control if outcome.access_evidence is not None else None
+        ),
+        repository_history=(
+            outcome.access_evidence.repository_history
+            if outcome.access_evidence is not None
+            else None
+        ),
+        retrieval_audit=(
+            outcome.access_evidence.retrieval_audit if outcome.access_evidence is not None else None
+        ),
     )
 
 
@@ -691,6 +725,7 @@ def _record_instance_failure(
     error: AdapterFailureError,
     artifacts_dir: Path,
     cleanup_result: CleanupResult | None = None,
+    extra_artifact_paths: Sequence[str] = (),
 ) -> EvidenceRecord:
     failure_log = artifacts_dir / "adapter_failure.json"
     # open_owned_dir_fd creates the parent when missing and converts OSError
@@ -739,7 +774,7 @@ def _record_instance_failure(
         cost_usd=error.cost_usd,
         latency_sec=error.latency_sec,
         failure_labels=[error.failure_label],
-        artifact_paths=[],
+        artifact_paths=list(extra_artifact_paths),
         verifier_log_path=rel_log,
         adapter_metadata=metadata,
         created_at=datetime.now(tz=UTC),
@@ -782,6 +817,8 @@ def _evidence_from_scored_instance(
     counts_toward_pass_at_k: bool | None = None,
     cleanup_result: CleanupResult | None = None,
     runtime_version: str | None = None,
+    access_evidence: EffectiveAccessEvidence | None = None,
+    token_usage: dict[str, int] | None = None,
 ) -> EvidenceRecord:
     artifact_paths = [p for p in paths if p]
     failure_labels: list[str] = []
@@ -825,6 +862,15 @@ def _evidence_from_scored_instance(
         cleanup_result=cleanup_result,
         counts_toward_pass_at_k=counts_toward_pass_at_k,
         verifier_integrity_label=verifier_label,
+        access_control_source=(
+            access_evidence.access_control_source if access_evidence is not None else None
+        ),
+        egress_control=access_evidence.egress_control if access_evidence is not None else None,
+        repository_history=(
+            access_evidence.repository_history if access_evidence is not None else None
+        ),
+        retrieval_audit=access_evidence.retrieval_audit if access_evidence is not None else None,
+        token_usage=token_usage,
     )
 
 
@@ -853,6 +899,7 @@ def _evidence_from_gpqa_outcome(
         verifier_log_path=outcome.verifier_log_path,
         counts_toward_pass_at_k=outcome.counts_toward_pass_at_k,
         cleanup_result=cleanup_result,
+        access_evidence=outcome.access_evidence,
     )
 
 
@@ -881,7 +928,24 @@ def _evidence_from_hle_outcome(
         verifier_log_path=outcome.verifier_log_path,
         counts_toward_pass_at_k=outcome.counts_toward_pass_at_k,
         cleanup_result=cleanup_result,
+        access_evidence=outcome.access_evidence,
     )
+
+
+def _bfcl_token_usage(outcome: BfclInstanceOutcome) -> dict[str, int] | None:
+    """Token accounting from the retained official generation record, when it holds an answer."""
+    usage = outcome.native_score.get("generation_usage")
+    if not isinstance(usage, dict):
+        return None
+    counts = {}
+    for key, field_name in (
+        ("input_token_count", "input_tokens"),
+        ("output_token_count", "output_tokens"),
+    ):
+        value = usage.get(key)
+        if isinstance(value, int) and not isinstance(value, bool):
+            counts[field_name] = value
+    return counts or None
 
 
 def _evidence_from_bfcl_outcome(
@@ -905,9 +969,17 @@ def _evidence_from_bfcl_outcome(
         failure_class=outcome.failure_class,
         native_score=outcome.native_score,
         adapter_metadata=outcome.adapter_metadata,
-        paths=(outcome.verifier_log_path, outcome.stdout_path, outcome.stderr_path),
+        paths=(
+            outcome.verifier_log_path,
+            outcome.generation_record_path,
+            outcome.stdout_path,
+            outcome.stderr_path,
+            *outcome.study_artifact_paths,
+        ),
         verifier_log_path=outcome.verifier_log_path,
         cleanup_result=cleanup_result,
+        access_evidence=outcome.access_evidence,
+        token_usage=_bfcl_token_usage(outcome),
     )
 
 
@@ -944,6 +1016,7 @@ def _evidence_from_swebench_outcome(
         verifier_log_path=outcome.verifier_log_path,
         cleanup_result=cleanup_result,
         runtime_version=outcome.adapter_metadata.get("inspect_runtime_version"),
+        access_evidence=outcome.access_evidence,
     )
 
 
@@ -1038,15 +1111,23 @@ def execute_control_plane_run(
     gpqa_benchmark_identity: str | None = None,
     hle_benchmark_identity: str | None = None,
     bfcl_benchmark_identity: str | None = None,
+    bfcl_derived_source: DerivedSource | None = None,
     run_id: str | None = None,
+    agent_catalog: AgentCatalog | None = None,
 ) -> ControlPlaneRunSummary:
     """Dispatch a ``RunPlan`` to the matching adapter and append evidence rows."""
-    if plan.agent_id is not None:
-        try:
-            require_admitted_agent(plan.agent_id)
-        except KeyError as e:
-            raise BenchEvalError(f"unknown agent {plan.agent_id!r}") from e
+    native_agent = _launchable_native_agent(plan, agent_catalog)
     _require_executable_benchmark(plan)
+    if plan.agent_id is not None and plan.adapter_id in (
+        GPQA_ADAPTER_ID,
+        HLE_ADAPTER_ID,
+        BFCL_ADAPTER_ID,
+        SWEBENCH_ADAPTER_ID,
+    ):
+        raise BenchEvalError(
+            f"adapter {plan.adapter_id!r} is model-only; agent {plan.agent_id!r} "
+            "cannot be dispatched there",
+        )
     if plan.adapter_id == GPQA_ADAPTER_ID:
         return _execute_gpqa(
             plan=plan,
@@ -1072,6 +1153,7 @@ def execute_control_plane_run(
             artifacts_dir=artifacts_dir,
             bfcl_process_runner=bfcl_process_runner,
             bfcl_benchmark_identity=bfcl_benchmark_identity,
+            bfcl_derived_source=bfcl_derived_source,
             run_id=run_id,
         )
     if plan.adapter_id == SWEBENCH_ADAPTER_ID:
@@ -1082,7 +1164,8 @@ def execute_control_plane_run(
             swebench_process_runner=swebench_process_runner,
             run_id=run_id,
         )
-    if plan.agent_id is not None:
+    if plan.agent_id is not None and native_agent is None:
+        # Legacy admitted external-CLI scaffold: non-authoritative capture only.
         runner = agent_process_runner or momo_process_runner
         summary = execute_external_agent_run(
             plan=plan,
@@ -1113,6 +1196,63 @@ def execute_control_plane_run(
     )
 
 
+def _launchable_native_agent(
+    plan: RunPlan, agent_catalog: AgentCatalog | None
+) -> AgentProfile | None:
+    """Gate a plan's agent before any output reservation.
+
+    Returns the ``kind: harbor`` profile the benchmark adapter dispatches, or
+    None for model-only plans and legacy admitted external-CLI scaffolds. The
+    confirmed actor binding must still equal the profile's current binding: a
+    profile edited after planning is refused, never re-read silently.
+    """
+    if plan.agent_id is None:
+        return None
+    try:
+        profile = resolve_launchable_agent(
+            plan.agent_id, catalog=agent_catalog, diagnostic=plan.diagnostic
+        )
+    except KeyError as e:
+        raise BenchEvalError(f"unknown agent {plan.agent_id!r}") from e
+    if profile.agent.kind != "harbor":
+        return None
+    snapshot = plan.actor_binding_snapshot
+    if snapshot is None:
+        raise BenchEvalError(
+            f"agent {plan.agent_id!r} plan carries no confirmed actor binding; "
+            "re-plan before launching",
+        )
+    current = actor_binding_for_agent(profile)
+    if current.sha256 != snapshot.sha256:
+        raise BenchEvalError(
+            f"agent {plan.agent_id!r} binding changed since planning "
+            f"({snapshot.sha256} -> {current.sha256}); re-plan before launching",
+        )
+    return profile
+
+
+_EXECUTION_ARTIFACT_DIR = "execution"
+_ACTOR_BINDING_NAME = "actor-binding.json"
+
+
+def _retain_actor_binding(run_artifacts: Path, plan: RunPlan, *, root: Path) -> str | None:
+    """Retain the confirmed actor binding as ``execution/actor-binding.json``."""
+    snapshot = plan.actor_binding_snapshot
+    if snapshot is None:
+        return None
+    execution_dir = run_artifacts / _EXECUTION_ARTIFACT_DIR
+    fd = open_owned_dir_fd(execution_dir, role="control-plane execution artifacts directory")
+    try:
+        write_text_at_exclusive(fd, _ACTOR_BINDING_NAME, snapshot.model_dump_json(indent=2) + "\n")
+    finally:
+        os.close(fd)
+    path = (execution_dir / _ACTOR_BINDING_NAME).resolve()
+    try:
+        return str(path.relative_to(root))
+    except ValueError:
+        return str(path)
+
+
 def _execute_terminal_bench_harbor(
     *,
     plan: RunPlan,
@@ -1123,6 +1263,15 @@ def _execute_terminal_bench_harbor(
 ) -> ControlPlaneRunSummary:
     root = _repo_root()
     rid = run_id or new_run_id()
+    # Binding drift, an uninstalled selector, a missing credential, or endpoint
+    # drift stop the run before any output is reserved. The real runner gets
+    # the whole plan doctor (host prerequisites plus the same launch-identity
+    # resolution, reported together); an injected runner keeps the direct
+    # identity check against its injected selector list.
+    if harbor_process_runner is None:
+        require_doctor_ok(run_plan_doctor(plan))
+    else:
+        preflight_harbor_launch(plan, real_runner=False)
     run_artifacts = _claim_control_plane_outputs(
         output_path=output_path,
         artifacts_dir=artifacts_dir,
@@ -1131,8 +1280,7 @@ def _execute_terminal_bench_harbor(
         plan=plan,
     )
     try:
-        if harbor_process_runner is None:
-            require_doctor_ok(run_doctor(HARBOR_BACKEND, model_id=plan.model_id))
+        actor_manifest = _retain_actor_binding(run_artifacts, plan, root=root)
         sink = _evidence_sink(plan)
         execution_profile = _execution_profile_for_plan(plan)
 
@@ -1176,6 +1324,7 @@ def _execute_terminal_bench_harbor(
                     outcome=outcome,
                     execution_profile=execution_profile,
                     cleanup_result=cleanup_result,
+                    extra_artifact_paths=(actor_manifest,) if actor_manifest else (),
                 )
             except AdapterFailureError as e:
                 cleanup_result = _apply_cleanup(
@@ -1191,6 +1340,7 @@ def _execute_terminal_bench_harbor(
                     error=e,
                     artifacts_dir=instance_artifacts,
                     cleanup_result=cleanup_result,
+                    extra_artifact_paths=(actor_manifest,) if actor_manifest else (),
                 )
             spent_cost_usd += record.cost_usd
             spent_wall_sec += record.latency_sec
@@ -1222,7 +1372,7 @@ def _execute_gpqa(
     root = _repo_root()
     rid = run_id or new_run_id()
     if gpqa_process_runner is None:
-        require_doctor_ok(run_doctor(INSPECT_BACKEND, model_id=plan.model_id))
+        require_doctor_ok(run_plan_doctor(plan))
     run_artifacts = _claim_control_plane_outputs(
         output_path=output_path,
         artifacts_dir=artifacts_dir,
@@ -1306,6 +1456,10 @@ def _execute_hle(
 ) -> ControlPlaneRunSummary:
     root = _repo_root()
     rid = run_id or new_run_id()
+    if hle_process_runner is None:
+        # Missing checkout, dataset token, or candidate/judge credential stops
+        # the run before any output is reserved.
+        require_doctor_ok(run_plan_doctor(plan))
     run_artifacts = _claim_control_plane_outputs(
         output_path=output_path,
         artifacts_dir=artifacts_dir,
@@ -1386,10 +1540,16 @@ def _execute_bfcl(
     artifacts_dir: Path | None,
     bfcl_process_runner: BfclProcessRunner | None,
     bfcl_benchmark_identity: str | None = None,
+    bfcl_derived_source: DerivedSource | None = None,
     run_id: str | None,
 ) -> ControlPlaneRunSummary:
     root = _repo_root()
     rid = run_id or new_run_id()
+    if bfcl_process_runner is None:
+        # Missing pinned package/data, unsupported binding, or credential stops
+        # the run before any output is reserved; the adapter still re-verifies
+        # the installed identity immediately before launch.
+        require_doctor_ok(run_plan_doctor(plan))
     run_artifacts = _claim_control_plane_outputs(
         output_path=output_path,
         artifacts_dir=artifacts_dir,
@@ -1436,6 +1596,7 @@ def _execute_bfcl(
                     process_runner=bfcl_process_runner,
                     harness_version=harness_version,
                     benchmark_identity=bfcl_benchmark_identity,
+                    derived_source=bfcl_derived_source,
                 )
                 cleanup_result = _apply_cleanup(
                     plan=plan,

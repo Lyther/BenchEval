@@ -103,15 +103,6 @@ def test_pilot_doctor_ignores_bfcl_dependency(
     assert report.ok is True
 
 
-def test_pilot_doctor_ignores_broken_bfcl_cli(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_pilot_host(monkeypatch, present={"harbor"})
-    report = run_pilot_doctor()
-    assert all(c.name != "bfcl_eval" for c in report.checks)
-    assert report.ok is True
-
-
 def test_pilot_doctor_ignores_demoted_swe_dependency(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -185,6 +176,9 @@ def test_pilot_doctor_model_credentials_fail(monkeypatch: pytest.MonkeyPatch) ->
 
 def test_pilot_doctor_requires_provider_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_pilot_host(monkeypatch)
+    # kimi-k2.7-code routes to bytellm: its credential must be absent too, or a
+    # credentialed operator shell turns this negative case into a pass.
+    monkeypatch.delenv("BYTELLM_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)

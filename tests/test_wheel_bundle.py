@@ -15,7 +15,7 @@ from bencheval.paths import repo_root, validate_config_bundle
 
 
 def _copy_control_plane_bundle(src_repo: Path, dest: Path) -> None:
-    for sub in ("runtimes", "providers", "agents", "slices"):
+    for sub in ("runtimes", "providers", "agents", "slices", "studies"):
         shutil.copytree(src_repo / "config" / sub, dest / "config" / sub, dirs_exist_ok=True)
     for name in ("benchmarks.yaml", "models.yaml", "bfcl-v4-supported-models.yaml"):
         src = src_repo / "config" / name
@@ -86,7 +86,10 @@ def test_exported_config_bundle_contains_bfcl_supported_models(tmp_path: Path) -
     validate_config_bundle(bundle)
     command = (
         "from bencheval.bfcl_native_adapter import bfcl_supported_models; "
-        "assert 'gpt-5.2-2025-12-11' in bfcl_supported_models()"
+        "from bencheval.exposure_study import load_exposure_study; "
+        "assert 'gpt-5.2-2025-12-11-FC' in bfcl_supported_models(); "
+        "assert load_exposure_study('bfcl-v4-live-vs-non-live').kind "
+        "== 'freshness_contrast'"
     )
     run = subprocess.run(
         [sys.executable, "-c", command],
@@ -158,7 +161,10 @@ def test_wheel_install_is_self_contained_without_bencheval_home(tmp_path: Path) 
             "python",
             "-c",
             "from bencheval.bfcl_native_adapter import bfcl_supported_models; "
-            "assert 'gpt-5.2-2025-12-11' in bfcl_supported_models()",
+            "from bencheval.exposure_study import load_exposure_study; "
+            "assert 'gpt-5.2-2025-12-11-FC' in bfcl_supported_models(); "
+            "assert load_exposure_study('bfcl-v4-live-vs-non-live').kind "
+            "== 'freshness_contrast'",
         ],
         cwd=str(workdir),
         env=env,

@@ -1,7 +1,7 @@
 # Phase B on dev-box-cpu — live pilot runbook
 
 Operational runbook for executing the Phase B live control-plane pilot on a **dev-box-cpu** (or equivalent operator VPS). Tier definitions: [`docs/context/production-readiness.md`](../context/production-readiness.md).
-Scope summary: [`docs/context/production-v1-pilot.md`](../context/production-v1-pilot.md).
+Readiness scope and tier definitions: [`docs/context/production-readiness.md`](../context/production-readiness.md).
 Design: [`docs/context/concept-zero.md`](../context/concept-zero.md).
 
 Phase B = live matrix with real credentials and **native harness runtimes**. It is gated and non-fatal to blockers: blocked steps produce **negative preflight evidence** (`results/preflight/*.json`), never fake passes.
@@ -21,10 +21,11 @@ The minimum live proof this runbook targets (matches `scripts/run-live-pilot-mat
 
 | Dependency | Why | Check |
 |---|---|---|
-| Python 3.12+, `uv` | control plane | `uv --version` |
+| CPython 3.12 (pinned by `.python-version`; the lock is exercised on 3.12 only), `uv` | control plane | `uv python find 3.12`, `uv --version` |
 | Docker daemon | Harbor TB harness | `docker info` |
 | `harbor` CLI | TB runtime | `harbor --version` (or `uv sync --extra eval`) |
 | Provider env vars | live model calls | `verify_auth.sh` (below) |
+| Egress to `huggingface.co` (HLE only) | pinned dataset snapshot | on this host export `HTTPS_PROXY`/`NO_PROXY` for the HLE lane (the relay Docker uses); without it the adapter times out and fails closed before charge |
 
 ```bash
 uv sync --dev --extra eval --extra analytics  # Tier-0 gate + live harness dependencies
@@ -92,6 +93,17 @@ Runs `verify_auth.sh` (unless `--no-auth`), then `uv run bencheval doctor --prof
 ```bash
 uv run bencheval doctor --profile pilot --model "${BENCHEVAL_PILOT_MODEL}"
 ```
+
+### 2d. Plan-aware preflight per lane
+
+Preflight the exact selection a lane will run; the JSON carries the resolved selection (binding digests included), the harness's preparation recipe, and the host roots, and every real run repeats the same checks before it reserves outputs:
+
+```bash
+uv run bencheval doctor terminal-bench/tier1-one --runtime claude-code --model "${BENCHEVAL_PILOT_CLAUDE_MODEL}"
+uv run bencheval doctor terminal-bench/tier1-one --agent terminus-2 --model ollama-qwen3.5-397b-fc
+```
+
+The matrix script keeps the legacy `--backend harbor --profile E2` form. Recipes (`uv sync --extra eval`, `uv sync --group bfcl`) run in a checkout at its `uv.lock`; a clean host is a fresh checkout plus a fresh venv and results root, never a borrowed developer environment.
 
 ## 3. Running Phase B
 

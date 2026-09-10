@@ -115,15 +115,25 @@ It maps to the existing planner and returns:
   over canonical plan bytes plus normalized operator-selected evidence/artifact
   paths. The nested request retains the original path selections;
 - `DoctorViewDTO`: selected backend/native harness, overall state, and ordered
-  `DoctorCheckDTO{name,status,message}` values;
+  `DoctorCheckDTO{name,status,message}` values; from `run.preflight` it also
+  carries the resolved `selection` (benchmark/slice/harness/runtime/agent/
+  provider/model/judge axes and binding digests), the harness `recipe`
+  (install command, its execution context, external prerequisites), and the
+  `host` roots (config source, results root, whether preparation can run
+  here);
 - actions for Dry run and Start. Start requires the same plan fingerprint and
   expires if config/source revision changes.
 
 The UI cannot post a serialized `RunPlan` as authority. The operation replans
 from request axes, rebinds the output selections, and compares the fingerprint
-before charge. Native BFCL, HLE, and SWE plans run adapter-specific package,
-checkout/dataset-token, or Docker/evaluator preflight rather than the generic
-Inspect doctor.
+before charge. The plan page's preflight is `run.preflight`: it resolves the
+request exactly as `run.plan` (same admission, model-only, provider, and
+diagnostic refusals) and runs the plan doctor for the resolved harness —
+Harbor (CLI, Docker, actor binding, launch identity), Inspect (`inspect_ai`,
+`inspect_evals`, Docker by profile), BFCL (pinned package/data, registration),
+HLE (pinned checkout, dataset token, candidate and judge credentials), each
+plus the provider credential check — the same function every real run
+executes before it reserves outputs.
 
 When output selections are omitted, the default evidence/artifact paths are
 rooted under the process working directory and receive the same lexical
@@ -183,6 +193,7 @@ the UI never upgrades a tier by inference.
 | `catalog.list/show` | kind/filter/page or kind/id → catalog DTO/page | registries + application projection | Read-only; repeatable |
 | `run.plan` | `PlanRequestDTO` → `PlanPreviewDTO` | planner/domain | Pure; repeatable |
 | `doctor.run` | backend or native harness/profile/model → `DoctorViewDTO` | doctor | Read-only probe; explicit repeat |
+| `run.preflight` | `PlanRequestDTO` → `DoctorViewDTO` with selection/recipe/host | planner gates + plan doctor | Read-only probe; same refusals as `run.plan` |
 | `run.start` | plan request + fingerprint + confirmation → `RunSessionView` | replan, executor, output claim | Never auto-retry; duplicate/session conflict typed |
 | `run.session` | none/run ID → current session view | session owner + durable projection | Read-only |
 | `run.cancel` | session/run ID → cancellation result | session owner + adapter/process lifecycle | Explicit once; repeated terminal cancel is no-op result, not relaunch |

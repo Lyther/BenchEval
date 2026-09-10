@@ -71,12 +71,12 @@ def test_build_bfcl_run_command() -> None:
     )
     cmd = build_bfcl_run_command(
         plan=plan,
-        instance_id="simple",
+        instance_id="simple_python",
         artifacts_dir=Path("/tmp/out"),
     )
     assert cmd[:2] == ("bfcl", "generate")
     assert "--test-category" in cmd
-    assert "simple" in cmd
+    assert "simple_python" in cmd
     assert "--result-dir" in cmd
 
 
@@ -160,6 +160,128 @@ def test_parse_scores_only_the_official_evaluate_artifact(tmp_path: Path) -> Non
     assert out.verifier_log_path is not None
     assert out.verifier_log_path.endswith("BFCL_v4_simple_python_score.json")
     assert out.adapter_metadata["adapter_id"] == BFCL_ADAPTER_ID
+
+
+_STDEV_CRASH_STDERR = (
+    Path(__file__).parent / "fixtures" / "bfcl" / "evaluate-leaderboard-stdev-crash.stderr.log"
+).read_text(encoding="utf-8")
+_PASS_SCORE = json.dumps({"accuracy": 1.0, "correct_count": 1, "total_count": 1}) + "\n"
+_FAIL_SCORE = (
+    json.dumps({"accuracy": 0.0, "correct_count": 0, "total_count": 1})
+    + "\n"
+    + json.dumps({"id": "irrelevance_0", "valid": False, "error": ["x"]})
+    + "\n"
+)
+
+
+def _exact_id_outcome(
+    tmp_path: Path,
+    *,
+    stderr: str,
+    score_text: str | None,
+    returncode: int = 1,
+    test_category: str | None = "irrelevance",
+    instance_id: str = "irrelevance_0",
+) -> bfcl_adapter.BfclInstanceOutcome:
+    art = tmp_path / "inst"
+    score_dir = art / "scores"
+    score_dir.mkdir(parents=True)
+    if score_text is not None:
+        category = test_category or instance_id
+        score_file = (
+            score_dir / "gpt-5.2-2025-12-11" / "non_live" / f"BFCL_v4_{category}_score.json"
+        )
+        score_file.parent.mkdir(parents=True)
+        score_file.write_text(score_text, encoding="utf-8")
+    cli = BfclCliResult(returncode, "", stderr, 0.2, ("bfcl", "evaluate", "--partial-eval"))
+    return parse_bfcl_instance_outcome(
+        instance_id=instance_id,
+        cli=cli,
+        artifacts_dir=art,
+        repo_root=tmp_path,
+        harness_version="bfcl-eval@2026.3.23",
+        score_dir=score_dir,
+        model_id="gpt-5.2-2025-12-11",
+        test_category=test_category,
+    )
+
+
+def test_exact_id_leaderboard_stdev_crash_after_score_keeps_official_verdict(
+    tmp_path: Path,
+) -> None:
+    # Real bytes from run-20260905-045036-296405-f1ac18dd (dev-box-cpu): bfcl-eval
+    # 2026.3.23 wrote the official per-category score, then crashed computing the
+    # leaderboard CSV latency stdev over one sample. The score artifact is still the
+    # only verdict authority; the crash is retained, not hidden.
+    out = _exact_id_outcome(tmp_path, stderr=_STDEV_CRASH_STDERR, score_text=_PASS_SCORE)
+    assert out.primary_pass is True
+    assert out.partial_score == 1.0
+    assert out.failure_class is None
+    assert out.verifier_log_path is not None and out.verifier_log_path.endswith(
+        "BFCL_v4_irrelevance_score.json"
+    )
+    assert out.native_score["returncode"] == 1
+    assert out.native_score["post_score_summary_failure"] == (
+        bfcl_adapter.POST_SCORE_SUMMARY_FAILURE
+    )
+    assert out.adapter_metadata["bfcl_post_score_summary_failure"] == (
+        bfcl_adapter.POST_SCORE_SUMMARY_FAILURE
+    )
+
+    failed = _exact_id_outcome(tmp_path / "f", stderr=_STDEV_CRASH_STDERR, score_text=_FAIL_SCORE)
+    assert failed.primary_pass is False
+    assert failed.failure_class == "model_wrong_solution"
+    assert failed.native_score["post_score_summary_failure"] == (
+        bfcl_adapter.POST_SCORE_SUMMARY_FAILURE
+    )
+
+
+@pytest.mark.parametrize(
+    ("label", "kwargs"),
+    [
+        ("missing score", {"stderr": _STDEV_CRASH_STDERR, "score_text": None}),
+        (
+            "two samples",
+            {
+                "stderr": _STDEV_CRASH_STDERR,
+                "score_text": json.dumps({"accuracy": 1.0, "correct_count": 2, "total_count": 2})
+                + "\n",
+            },
+        ),
+        (
+            "different crash",
+            {
+                "stderr": _STDEV_CRASH_STDERR.rsplit("\n", 2)[0] + "\nKeyError: 'latency'\n",
+                "score_text": _PASS_SCORE,
+            },
+        ),
+        (
+            "final line only",
+            {
+                "stderr": "StatisticsError: stdev requires at least two data points\n",
+                "score_text": _PASS_SCORE,
+            },
+        ),
+        (
+            "whole category",
+            {
+                "stderr": _STDEV_CRASH_STDERR,
+                "score_text": _PASS_SCORE,
+                "test_category": None,
+                "instance_id": "irrelevance",
+            },
+        ),
+    ],
+)
+def test_evaluate_crash_without_the_exact_post_score_shape_stays_harness_failure(
+    tmp_path: Path, label: str, kwargs: dict[str, object]
+) -> None:
+    out = _exact_id_outcome(tmp_path, **kwargs)  # type: ignore[arg-type]
+    assert out.primary_pass is False, label
+    assert out.partial_score == 0.0, label
+    assert out.failure_class == "harness_failure", label
+    assert "post_score_summary_failure" not in out.native_score, label
+    assert "bfcl_post_score_summary_failure" not in out.adapter_metadata, label
 
 
 def test_run_generate_failure_skips_evaluate(tmp_path: Path) -> None:

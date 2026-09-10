@@ -1,0 +1,25 @@
+{
+  "base": {
+    "bfcl_eval_version": "2026.3.23",
+    "registry_file": "constants/model_config.py",
+    "registry_sha256": "sha256:ec72b8499f140c9d870cebc909c895facb3cb26febc2d9146c8f1dfdea7bdcbc"
+  },
+  "harness_version": "bfcl-eval@2026.3.23+registration-05b2da6384a295799278ec9efae6a52dde655f7fbd3ab61bd5a3364f1c25a151",
+  "registration": {
+    "api_model": "qwen3.5:397b",
+    "display_name": "Qwen3.5 397B via Ollama Cloud (FC)",
+    "handler": "openai_completions_fc",
+    "license": "unknown",
+    "organization": "unknown",
+    "reference_url": "https://ollama.com/v1",
+    "registry_id": "ollama-qwen3.5-397b-fc",
+    "underscore_to_dot": true
+  },
+  "registration_sha256": "sha256:05b2da6384a295799278ec9efae6a52dde655f7fbd3ab61bd5a3364f1c25a151",
+  "schema_version": "bfcl-registration-v1",
+  "staged": {
+    "package_dir": "overlay/pkg/bfcl_eval",
+    "pythonpath": "overlay/pkg",
+    "registry_sha256": "sha256:dd8019b4da5d9c4834445e7685e063e4dc10e4f522cf447c8159af2552a0ecfe"
+  }
+}

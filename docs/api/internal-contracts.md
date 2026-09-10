@@ -23,7 +23,7 @@ Product spine: `benchmark → (runtime | agent)? → model via provider → evid
 | [`benchmark_plan.py`](../../src/bencheval/benchmark_plan.py) | Phase-1 planner (`RunPlanner`) |
 | [`control_plane_executor.py`](../../src/bencheval/control_plane_executor.py) | Adapter dispatch (`AdapterDispatcher`) |
 | [`external_agent_adapter.py`](../../src/bencheval/external_agent_adapter.py) | Generic agent CLI runner from agent YAML |
-| [`doctor.py`](../../src/bencheval/doctor.py) | Preflight; credentials via model → provider route |
+| [`doctor.py`](../../src/bencheval/doctor.py) | Preflight; the plan form (`run_plan_doctor`) checks the route the plan selected (model binding snapshot, else `provider_id`; the HLE judge through its judge binding) with the launch resolver itself; the legacy `--backend`/`--profile` form checks the model's declared route |
 | [`exceptions.py`](../../src/bencheval/exceptions.py) | `BenchEvalError`, `AdapterFailureError`, … |
 
 ## CLI surface
@@ -32,7 +32,9 @@ Product spine: `benchmark → (runtime | agent)? → model via provider → evid
 bencheval list [--format json]                          # runnable benchmarks (default: 4)
 bencheval benchmark list|show|slices …                  # compat catalog
 bencheval catalog runtime|provider|agent|model list|show
-bencheval doctor --backend … | --profile pilot --model <id>
+bencheval doctor <benchmark>[/<slice>] --model <id> [--runtime <id> | --agent <id>]
+            [--provider <id>] [--diagnostic]        # plan-aware preflight (same refusals as run)
+bencheval doctor --backend … | --profile pilot --model <id>   # legacy host form
 bencheval run <benchmark>/<slice> --model <id>
             [--runtime <id> | --agent <id>] [--provider <id>]
             [--dry-run | -y] [--output …] [--artifacts-dir …]

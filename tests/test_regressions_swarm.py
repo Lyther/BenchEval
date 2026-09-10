@@ -15,7 +15,7 @@ from bencheval.control_plane_executor import (
 from bencheval.domain import RunPlan
 from bencheval.evidence import read_evidence_jsonl
 from bencheval.exceptions import BenchEvalError
-from bencheval.gpqa_adapter import GpqaCliResult, build_gpqa_run_command
+from bencheval.gpqa_adapter import GpqaCliResult
 from bencheval.path_safety import ensure_resolved_under_root
 from bencheval.terminal_bench_harbor import build_harbor_run_command
 
@@ -203,21 +203,6 @@ def test_build_harbor_run_command_rejects_unsafe_instance_id(tmp_path: Path) -> 
             plan=plan,
             instance_id="../evil",
             artifacts_dir=tmp_path / "art",
-        )
-
-
-def test_build_gpqa_run_command_rejects_unsafe_instance_id() -> None:
-    plan = plan_control_plane(
-        benchmark_id="gpqa-diamond",
-        slice_id="smoke",
-        runtime_id=None,
-        model_id="kimi-k2.7-code",
-    )
-    with pytest.raises(BenchEvalError, match="model-only"):
-        build_gpqa_run_command(
-            plan=plan.model_copy(update={"runtime_id": "claude-code"}),
-            sample_limit=1,
-            log_dir=Path("/tmp/logs"),
         )
 
 

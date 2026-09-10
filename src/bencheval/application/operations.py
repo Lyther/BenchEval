@@ -13,7 +13,7 @@ from typing import Literal
 
 from pydantic import ValidationError
 
-from bencheval.agent_registry import load_agent_catalog
+from bencheval.agent_registry import load_agent_catalog, resolve_launchable_agent
 from bencheval.application.dto import (
     ActionDTO,
     ArtifactResultDTO,
@@ -32,10 +32,14 @@ from bencheval.application.dto import (
     RunExecutionDTO,
     RunSummaryDTO,
 )
-from bencheval.benchmark_plan import plan_control_plane
-from bencheval.benchmark_registry import execution_support_label, load_benchmark_catalog
+from bencheval.benchmark_plan import draft_native_agent, plan_control_plane
+from bencheval.benchmark_registry import (
+    BenchmarkEntry,
+    execution_support_label,
+    load_benchmark_catalog,
+)
 from bencheval.control_plane_executor import diagnostic_capable_benchmark, execute_control_plane_run
-from bencheval.doctor import run_doctor, run_native_doctor, run_pilot_doctor
+from bencheval.doctor import run_doctor, run_native_doctor, run_pilot_doctor, run_plan_doctor
 from bencheval.domain import RunPlan
 from bencheval.evidence import read_evidence_jsonl
 from bencheval.evidence_compare import (
@@ -175,6 +179,17 @@ def _symlink_component(path: Path) -> Path | None:
     return None
 
 
+def _configured_bfcl_registration(model_id: str) -> bool:
+    """True when the model's BFCL binding is a configured registration (diagnostic-only)."""
+    from bencheval.model_binding import resolve_model_binding
+
+    try:
+        binding = resolve_model_binding(model_id)
+    except BenchEvalError:
+        return False
+    return binding.bfcl is not None and binding.bfcl.mode == "configured"
+
+
 class OperatorOperations:
     """Small application facade; it owns composition, never benchmark semantics."""
 
@@ -289,9 +304,50 @@ class OperatorOperations:
         return CatalogPageDTO(items=page, source_revision=source, next_cursor=next_cursor)
 
     def plan(self, request: PlanRequestDTO) -> PlanPreviewDTO:
+        benchmark, plan = self._resolve_plan(request)
+        fingerprint = _plan_fingerprint(plan, request)
+        executable = benchmark.executable
+        return PlanPreviewDTO(
+            request=request,
+            fingerprint=fingerprint,
+            benchmark_version=plan.benchmark_version,
+            adapter_id=plan.adapter_id,
+            harness_kind=plan.harness_kind,
+            backend=("inspect" if plan.harness_kind == "inspect-evals" else plan.harness_kind),
+            execution_profile=load_benchmark_catalog()
+            .by_id_or_alias(plan.benchmark_id)
+            .recommended_profile,
+            instance_count=len(plan.instances),
+            runtime_id=plan.runtime_id,
+            agent_id=plan.agent_id,
+            provider_id=plan.provider_id,
+            model_id=plan.model_id,
+            max_cost_usd=plan.max_cost_usd,
+            max_wall_clock_sec=plan.max_wall_clock_sec,
+            network_policy=plan.network_policy,
+            diagnostic=plan.diagnostic,
+            executable=executable,
+            caveats=plan.caveats,
+        )
+
+    def _resolve_plan(self, request: PlanRequestDTO) -> tuple[BenchmarkEntry, RunPlan]:
+        """The admission/diagnostic gates and the planner, shared by plan and preflight."""
         benchmark = load_benchmark_catalog().by_id_or_alias(request.benchmark_id)
+        if request.agent_id:
+            # Admission first, so a scaffold or unadmitted draft is reported as
+            # such rather than as a diagnostic-mode rule violation.
+            try:
+                resolve_launchable_agent(request.agent_id, diagnostic=request.diagnostic)
+            except KeyError as e:
+                raise BenchEvalError(f"unknown agent {request.agent_id!r}") from e
         if request.diagnostic:
-            if benchmark.executable:
+            if benchmark.executable and not (
+                (benchmark.adapter_id == "bfcl" and _configured_bfcl_registration(request.model_id))
+                or draft_native_agent(request.agent_id)
+            ):
+                # Same rule as the CLI: an executable row accepts diagnostic
+                # execution only for a configured BFCL registration or a draft
+                # native agent.
                 raise BenchEvalError(
                     "diagnostic mode is only valid for a demoted benchmark",
                 )
@@ -317,29 +373,22 @@ class OperatorOperations:
             model_id=request.model_id,
             diagnostic=request.diagnostic,
         )
-        fingerprint = _plan_fingerprint(plan, request)
-        executable = benchmark.executable
-        return PlanPreviewDTO(
-            request=request,
-            fingerprint=fingerprint,
-            benchmark_version=plan.benchmark_version,
-            adapter_id=plan.adapter_id,
-            harness_kind=plan.harness_kind,
-            backend=("inspect" if plan.harness_kind == "inspect-evals" else plan.harness_kind),
-            execution_profile=load_benchmark_catalog()
-            .by_id_or_alias(plan.benchmark_id)
-            .recommended_profile,
-            instance_count=len(plan.instances),
-            runtime_id=plan.runtime_id,
-            agent_id=plan.agent_id,
-            provider_id=plan.provider_id,
-            model_id=plan.model_id,
-            max_cost_usd=plan.max_cost_usd,
-            max_wall_clock_sec=plan.max_wall_clock_sec,
-            network_policy=plan.network_policy,
-            diagnostic=plan.diagnostic,
-            executable=executable,
-            caveats=plan.caveats,
+        return benchmark, plan
+
+    def preflight(self, request: PlanRequestDTO) -> DoctorViewDTO:
+        """Preflight exactly the plan `plan` resolves for this request."""
+        _, plan = self._resolve_plan(request)
+        report = run_plan_doctor(plan)
+        return DoctorViewDTO(
+            backend=report.backend,
+            ok=report.ok,
+            checks=tuple(
+                DoctorCheckDTO(name=row.name, status=row.status, message=row.message)
+                for row in report.checks
+            ),
+            selection=dict(report.selection) if report.selection is not None else None,
+            recipe=report.recipe.to_dict() if report.recipe is not None else None,
+            host=dict(report.host) if report.host is not None else None,
         )
 
     def doctor(

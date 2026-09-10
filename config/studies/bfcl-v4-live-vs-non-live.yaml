@@ -1,0 +1,56 @@
+schema_version: "0.1"
+id: bfcl-v4-live-vs-non-live
+kind: freshness_contrast
+relation: fresh_parallel
+comparison_mode: stratified_unpaired
+canonical:
+  benchmark_id: bfcl-v4
+  slice_id: exposure-non-live-v1
+  smoke_slice_id: exposure-plumbing-5
+candidate:
+  benchmark_id: bfcl-v4-live
+  slice_id: exposure-live-v1
+  smoke_slice_id: plumbing-6
+required_constant_axes:
+  - model_id
+  - provider_id
+  - provider_config_hash
+  - harness_kind
+  - harness_version
+  - runtime_id
+  - access_control_source
+  - egress_control
+  - repository_history
+eligible_population: native_eligible_only
+population:
+  selection_algorithm: sha256_rank_v1
+  seed: bencheval-bfcl-live-v1
+  smoke_per_stratum: 1
+  canonical_counts:
+    simple_python: 100
+    multiple: 100
+    parallel: 16
+    parallel_multiple: 24
+    irrelevance: 100
+  candidate_counts:
+    live_simple: 100
+    live_multiple: 100
+    live_parallel: 16
+    live_parallel_multiple: 24
+    live_irrelevance: 100
+    live_relevance: 16
+analysis:
+  smoke_mode: raw_only
+  interval: wilson_95
+  difference_interval: newcombe_95
+  paired_test: not_applicable
+permitted_interpretation: benchmark_specific_dependence
+forbidden_claims:
+  - clean
+  - contaminated
+  - cheating
+  - decontaminated_score
+  - novelty
+  - superiority
+  - universal_adjusted_score
+variant: null

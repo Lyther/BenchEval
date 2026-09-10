@@ -1,0 +1,25 @@
+{
+  "adapter_id": "bfcl",
+  "benchmark_id": "bfcl-v4-live",
+  "benchmark_version": "bfcl-v4-live@bfcl-eval-2026.3.23+data-939b6ed93f816d9b",
+  "harness_kind": "bfcl-native",
+  "harness_version": "bfcl-eval@2026.3.23",
+  "identity": {
+    "bfcl_eval_version": "2026.3.23",
+    "files": {
+      "data/BFCL_v4_live_irrelevance.json": "sha256:6559fda2beaceb609a2cd2e504c65b4a56cb448e1ef88fddfd199e163d163349",
+      "data/BFCL_v4_live_multiple.json": "sha256:fd8ccfad4d911420d0e3341dbe2fff77d1d341da934248b9bb2bda24ab3a10c8",
+      "data/BFCL_v4_live_parallel.json": "sha256:6c26e9fdc3350cf596e6d1ea9c179cbff834761bccf562f4141ed29a839ca421",
+      "data/BFCL_v4_live_parallel_multiple.json": "sha256:21d4b9319c1faac431e22757b367ea28917fe467364c3a4b17f16ec06d4f6e79",
+      "data/BFCL_v4_live_relevance.json": "sha256:e03f9e241657a137cba48a89ee12f47bf3fcb7e4f6274263e9c699a0c974203a",
+      "data/BFCL_v4_live_simple.json": "sha256:1af2ac87dca47556db7b7e37e51e28b459a38b594e3c7b3c792b4903598ca0c4",
+      "data/possible_answer/BFCL_v4_live_multiple.json": "sha256:97e90d59c5bd76c55a2920ce93e5566e9046307d3f558578f085f9d3a56c3084",
+      "data/possible_answer/BFCL_v4_live_parallel.json": "sha256:8a9f189ff0e832ebbbbdade1fd95a7dbcc67406e9177df3f0aad76f59ab00350",
+      "data/possible_answer/BFCL_v4_live_parallel_multiple.json": "sha256:f5b5f360556c5feb51db46fb9f56ee4b304f4b45b161599bbb14161c98a2873f",
+      "data/possible_answer/BFCL_v4_live_simple.json": "sha256:fec9cfa9744a936f9126981e85a2023da1e63e273eafebc81923a1162fad70ce"
+    },
+    "kind": "bfcl-package-data",
+    "upstream_commit": "6ea57973c7a6097fd7c5915698c54c17c5b1b6c8"
+  },
+  "schema_version": "bfcl-study-identity-v1"
+}

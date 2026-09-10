@@ -2,9 +2,9 @@ schema_version: "0.1"
 provider:
   id: ollama-cloud
   display_name: Ollama Cloud
-  kind: ollama
-  base_url_env: OLLAMA_HOST
-  default_base_url: http://127.0.0.1:11434
+  kind: openai_compatible
+  base_url_env: OLLAMA_CLOUD_BASE_URL
+  default_base_url: https://ollama.com/v1
   api_key_env: OLLAMA_API_KEY
-  notes: Ollama host; secrets stay in .env.
+  notes: Direct Ollama Cloud OpenAI-compatible API; independent of the local daemon's OLLAMA_HOST. Secrets stay in .env.
 admission: admitted

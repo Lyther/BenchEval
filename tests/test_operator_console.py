@@ -63,7 +63,7 @@ def test_core_import_does_not_load_nicegui() -> None:
 def test_catalog_and_plan_use_real_registries() -> None:
     operations = OperatorOperations()
     catalog = operations.catalog()
-    assert catalog.benchmark_count == 8
+    assert catalog.benchmark_count == 10
     assert catalog.executable_count == 4
     assert any(item.id == "momo" and item.status == "scaffold" for item in catalog.items)
 

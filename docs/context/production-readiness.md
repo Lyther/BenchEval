@@ -1,7 +1,7 @@
 # Production Readiness Tiers (vNext v0.3)
 
 > **Role:** Canonical definition of what "production-ready" means for BenchEval and how a benchmark adapter graduates from *software* to *live evidence* to *Production v1*.
-> **Source of truth:** [`docs/context/concept-zero.md`](concept-zero.md), [`docs/architecture.md`](../architecture.md) §13 (verification gates), this readiness checklist, and [`docs/context/production-v1-pilot.md`](production-v1-pilot.md). [`docs/context/concept-hld.md`](concept-hld.md) is a historical design ledger only.
+> **Source of truth:** [`docs/context/concept-zero.md`](concept-zero.md), [`docs/architecture.md`](../architecture.md) §13 (verification gates), this readiness checklist, and the [`dev-box pilot runbook`](../ops/dev-box-pilot.md). [`docs/context/concept-hld.md`](concept-hld.md) is a historical design ledger only.
 
 BenchEval is an evaluation **control plane**, not a benchmark author. "Production-ready" therefore has three tiers. A benchmark may sit at Tier 0 (software only) indefinitely; it is never promoted to Tier 2 (Production v1) without real live evidence. There is no partial credit.
 
@@ -30,7 +30,7 @@ make check-production-v1        # → ./scripts/check-production-v1.sh
 3. `uv run --no-sync ruff check src tests scripts/` and `ruff format --check` — lint + format clean.
 4. `shellcheck scripts/*.sh` and `bash -n scripts/*.sh` — shell hygiene.
 5. `uv lock --check` — lockfile in sync with `pyproject.toml`.
-6. **Executable-adapter count = 4.** `bencheval benchmark list --execution-support executable_adapter --format json` must report exactly: `terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4`. Catalog still has **8** YAML rows (`swe-bench-verified` stays demoted/`executable: false` with a diagnostic-only official-eval path; `bfcl-v4` was admitted 2026-08-24 on the diagnostic-labeled dev-box lifecycle demonstration `run-20260824-040631-228703-4756f857` plus the registered `passed` run `run-20260824-045622-854659-a46ae44d`; `swe-bench-pro`, `cybergym`, and `exploitgym` remain `adapter_pending`). Executability is config-declared in [`config/benchmarks.yaml`](../../config/benchmarks.yaml) (`executable: true` + `adapter_id`). `harness_kind` is derived from adapter code, not YAML, so config cannot introduce a behavior-changing harness. Adding a benchmark on an **existing** adapter family can be config-only; a **new** harness family needs a Python adapter, executor wiring, and official score ingestion — not just a YAML flip.
+6. **Executable-adapter count = 4.** `bencheval benchmark list --execution-support executable_adapter --format json` must report exactly: `terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4`. The catalog has **9** YAML rows; `bfcl-v4-live` and `swe-bench-verified` remain diagnostic-only, and `swe-bench-pro`, `cybergym`, and `exploitgym` remain pending. Executability is config-declared in [`config/benchmarks.yaml`](../../config/benchmarks.yaml) (`executable: true` + `adapter_id`). `harness_kind` is derived from adapter code, not YAML, so config cannot introduce a behavior-changing harness. Adding a benchmark on an **existing** adapter family can be config-only; a **new** harness family needs a Python adapter, executor wiring, and official score ingestion — not just a YAML flip.
 7. **Negative-evidence gate:** `bencheval run no-such-benchmark/smoke-5 ...` must **fail** before subprocess dispatch with a benchmark-not-found error. Research candidates live in docs, not as undeclared YAML executables.
 
 **Passing Tier 0 means:** the configured local software gates passed. It does **not** prove every behavior is correct or that any benchmark result is real. Non-executable benchmarks stay `metadata_only` / `manifest_only`; reports produced without live deps must carry the `adapter_smoke` interpretation label, never `benchmark_native_claim` (architecture §13.1, §15 risk "Harbor unavailable / Docker absent").
@@ -45,7 +45,7 @@ Phase B lifts the Tier 0 live blockers. **Expected operator environment:** dev-b
 
 BenchEval does **not** implement a separate Docker orchestration plane. When Terminal-Bench (Harbor) or similar adapters need containers, that isolation is provided by the **official harness/runtime**, not by BenchEval core.
 
-External agents are admitted via `config/agents/*.yaml` and dispatched through `external_agent_adapter` using the selected profile's `command` contract. They do **not** by themselves promote a cataloged benchmark to Production v1; promotion still requires the native-harness evidence and checklist below.
+Native agents (`kind: harbor` profiles in `config/agents/*.yaml`) are admitted per demonstrated profile/combination and dispatched through the benchmark adapter and Harbor's official verifier; legacy `external_cli` profiles are scaffold and never launch. An admitted agent does **not** by itself promote a cataloged benchmark to Production v1; promotion still requires the native-harness evidence and checklist below.
 
 Outputs live under `results/` (gitignored): evidence, reports, bundles (`--redaction private` default), and `preflight/*.json` when a step is blocked — **negative evidence**, not a fake pass.
 

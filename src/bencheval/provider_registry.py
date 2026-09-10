@@ -135,16 +135,28 @@ def _normalize_openai_base_url(raw: str, *, env_name: str) -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
 
 
+def public_base_url(profile: ProviderProfile, environ: Mapping[str, str] | None = None) -> str:
+    """Non-secret endpoint identity: the declared env override, else the profile default."""
+    source = os.environ if environ is None else environ
+    provider = profile.provider
+    return _normalize_openai_base_url(
+        source.get(provider.base_url_env, provider.default_base_url),
+        env_name=provider.base_url_env,
+    )
+
+
 def resolve_openai_compatible_launch(
     provider_id: str,
     *,
     environ: Mapping[str, str] | None = None,
     require_api_key: bool = True,
+    providers: ProviderCatalog | None = None,
 ) -> OpenAICompatibleLaunch:
     """Bind a provider profile to the exact environment used by OpenAI clients."""
 
+    catalog = providers if providers is not None else load_provider_catalog()
     try:
-        profile = load_provider_catalog().by_id(provider_id)
+        profile = catalog.by_id(provider_id)
     except KeyError as e:
         raise BenchEvalError(f"unknown provider {provider_id!r}") from e
     provider = profile.provider
@@ -159,10 +171,7 @@ def resolve_openai_compatible_launch(
         raise BenchEvalError(
             f"missing provider credential env {provider.api_key_env!r} for {provider_id!r}",
         )
-    base_url = _normalize_openai_base_url(
-        source.get(provider.base_url_env, provider.default_base_url),
-        env_name=provider.base_url_env,
-    )
+    base_url = public_base_url(profile, source)
     child_env = dict(source)
     if api_key:
         child_env["OPENAI_API_KEY"] = api_key
@@ -197,5 +206,6 @@ __all__ = [
     "default_providers_dir",
     "load_provider_catalog",
     "load_provider_profile",
+    "public_base_url",
     "resolve_openai_compatible_launch",
 ]

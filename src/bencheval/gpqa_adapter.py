@@ -10,15 +10,17 @@ import stat
 import subprocess
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as distribution_version
 from pathlib import Path
 from typing import Protocol
 
+from bencheval.access_evidence import EffectiveAccessEvidence, model_only_access
 from bencheval.benchmark_registry import InspectEvalsCsvIdentity
 from bencheval.domain import FailureLabel, RunPlan
 from bencheval.exceptions import AdapterFailureError, BenchEvalError
+from bencheval.model_binding import require_snapshot_endpoint
 from bencheval.path_safety import validate_control_plane_instance_id
 from bencheval.provider_registry import resolve_openai_compatible_launch
 from bencheval.run_isolation import (
@@ -75,6 +77,7 @@ class GpqaInstanceOutcome:
     verifier_log_path: str | None
     adapter_metadata: dict[str, str]
     counts_toward_pass_at_k: bool
+    access_evidence: EffectiveAccessEvidence = field(default_factory=model_only_access)
 
 
 class GpqaProcessRunner(Protocol):
@@ -89,11 +92,28 @@ class GpqaProcessRunner(Protocol):
 
 
 def _inspect_model_string(plan: RunPlan) -> str:
-    expected = (
-        f"openai/{plan.model_id}"
-        if plan.provider_id == "bytellm"
-        else f"{plan.provider_id}/{plan.model_id}"
-    )
+    """Inspect model selector derived from the transport protocol, never the route name.
+
+    An OpenAI-compatible provider is Inspect's ``openai/`` namespace with the exact
+    API model name; the client endpoint/key come from the resolved launch env.
+    Legacy plans without a snapshot keep sending the logical id verbatim.
+    """
+    snapshot = plan.model_binding_snapshot
+    if snapshot is not None:
+        kind, api_model = snapshot.provider_kind, snapshot.api_model
+    else:
+        from bencheval.provider_registry import load_provider_catalog
+
+        try:
+            kind = load_provider_catalog().by_id(plan.provider_id).provider.kind
+        except KeyError as e:
+            raise BenchEvalError(f"unknown provider {plan.provider_id!r}") from e
+        api_model = plan.model_id
+    if kind != "openai_compatible":
+        raise BenchEvalError(
+            f"provider {plan.provider_id!r} kind {kind!r} has no supported Inspect binding",
+        )
+    expected = f"openai/{api_model}"
     override = os.environ.get("BENCHEVAL_INSPECT_MODEL")
     if override is not None and override.strip() != expected:
         raise BenchEvalError(
@@ -902,6 +922,7 @@ def run_gpqa_slice(
             plan.provider_id,
             require_api_key=process_runner is None,
         )
+        require_snapshot_endpoint(plan.model_binding_snapshot, base_url=launch.base_url)
         # Identity gate BEFORE any launch: verify the pinned dist/eval/CSV bytes
         # (or validate a test-boundary-supplied identity); drift aborts here.
         # Default runner writes the CSV into a run-owned cache that the Inspect

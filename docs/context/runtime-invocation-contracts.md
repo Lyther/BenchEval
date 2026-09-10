@@ -9,7 +9,7 @@
 |-------|----------|
 | Binary | `harbor` on PATH |
 | Version | `harbor --version` |
-| Command shape | `harbor run` with dataset/slice, `--agent <runtime>`, `--model <model-id>` (exact flags in adapter) |
+| Command shape | `harbor run` with dataset/slice, `--agent` from the profile's `launch.harbor` binding (recipe import path or upstream agent name), `--model <model-id>`; a `kind: harbor` agent profile launches `--agent <harbor_agent> --model <litellm namespace>/<api_model> --agent-kwarg api_base=<confirmed endpoint>` (exact flags in adapter) |
 | Docker | **Required** (official TB 2.0 harness) |
 | Network | `benchmark_required` (Harbor rejects `network_policy=deny`; proxy forwarding is opt-in) |
 | Env (names only) | Provider keys per agent (e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`)—never commit values |
@@ -18,7 +18,7 @@
 | Parser | Harbor exit code + structured agent output → `EvidenceRecord` |
 | Failure | `failure_class` from harness/verifier; invalid attempts excluded from Pass@k when capped |
 
-Runtimes using Harbor agents: `claude-code`, `codex-cli` (`config/runtimes/claude-code.yaml`, `codex-cli.yaml`).
+Runtimes using Harbor agents: `claude-code`, `codex-cli` (`config/runtimes/claude-code.yaml`, `codex-cli.yaml`), each through its closed `launch.harbor` binding. Native agent profiles (`config/agents/*.yaml`, `kind: harbor`) are dispatched by the same adapter with null `runtime_id`; a draft profile runs only with `--diagnostic`.
 
 ## Diagnostic only: Inspect Evals + official SWE-bench
 

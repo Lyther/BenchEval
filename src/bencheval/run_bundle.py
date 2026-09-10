@@ -318,6 +318,10 @@ def _run_axes(records: list[EvidenceRecord]) -> dict[str, str | None]:
         "adapter_id",
         "harness_kind",
         "harness_version",
+        "access_control_source",
+        "egress_control",
+        "repository_history",
+        "retrieval_audit",
     )
 
     def axis(name: str) -> str | None:
