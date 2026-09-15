@@ -37,6 +37,7 @@ from bencheval.swebench_adapter import (
     parse_swebench_instance_outcome,
     run_swebench_instance,
 )
+from tests.factories import write_swe_generation_log_for_plan
 
 
 def _plant_official_dataset(instance_dir: Path) -> None:
@@ -139,6 +140,7 @@ def test_run_instance_single(tmp_path: Path) -> None:
         instance_dir = tmp_path / "a" / "django__django-11099"
         instance_dir.mkdir(parents=True, exist_ok=True)
         if argv[:2] == ("inspect", "eval"):
+            write_swe_generation_log_for_plan(instance_dir, plan)
             (instance_dir / "predictions.jsonl").write_text(
                 json.dumps(
                     {
@@ -187,6 +189,7 @@ def test_official_empty_patch_is_a_valid_model_failure(tmp_path: Path) -> None:
         instance_dir = tmp_path / "a" / "django__django-11099"
         instance_dir.mkdir(parents=True, exist_ok=True)
         if argv[:2] == ("inspect", "eval"):
+            write_swe_generation_log_for_plan(instance_dir, plan)
             (instance_dir / "predictions.jsonl").write_text(
                 json.dumps(
                     {
@@ -242,6 +245,7 @@ def test_official_empty_patch_uses_slash_sanitized_summary_name(tmp_path: Path) 
         instance_dir = tmp_path / "a" / "django__django-11099"
         instance_dir.mkdir(parents=True, exist_ok=True)
         if argv[:2] == ("inspect", "eval"):
+            write_swe_generation_log_for_plan(instance_dir, plan)
             (instance_dir / "predictions.jsonl").write_text(
                 json.dumps(
                     {
@@ -333,6 +337,7 @@ def test_run_instance_clears_stale_workspace_diff(tmp_path: Path) -> None:
         instance_dir = tmp_path / "a" / "django__django-11099"
         instance_dir.mkdir(parents=True, exist_ok=True)
         if argv[:2] == ("inspect", "eval"):
+            write_swe_generation_log_for_plan(instance_dir, plan)
             (instance_dir / "predictions.jsonl").write_text(
                 json.dumps(
                     {
@@ -400,6 +405,9 @@ def test_parse_missing_official_report_on_success_rc_fails(tmp_path: Path) -> No
 def test_inspect_compat_row_encodes_list_fields_as_canonical_json() -> None:
     row = {
         "instance_id": "django__django-11099",
+        # The generation row is also where the preparation script is derived
+        # from, so the source row must carry its base commit.
+        "base_commit": "d26b2424437dabeeca94d7900b37d2df4410da0c",
         "PASS_TO_PASS": ["z", "a"],
         "FAIL_TO_PASS": '["b"]',
     }

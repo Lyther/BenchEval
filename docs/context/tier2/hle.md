@@ -25,6 +25,13 @@ fallback is absent; pre-warm fail-closes unless `load_dataset` materializes the
 pinned revision into a fresh run-owned cache. Remote producer git identity is
 `unknown` because that checkout has no `.git`.
 
+
+**Clean-host qualified-lane registration (CF3.1, 2026-09-09, host `n37-089-091`, fresh
+checkout and venv, plan doctor green before launch):** `run-20260909-073706-188201-02ec6d7d` on slice `smoke` with
+`gpt-5.2-2025-12-11`, registered `passed`. This is the row's current Tier-1 anchor and supersedes the
+August citations above as *most recent* live evidence; it does not widen the population
+scope recorded in the table.
+
 | Item | Status | Evidence | Proof boundary | Remaining action | Portability |
 | --- | --- | --- | --- | --- | --- |
 | A. `execution_support=executable_adapter` | proven | `config/benchmarks.yaml` HLE row; Tier-0 gate count=4 | Software catalog only | None | local-only |
@@ -46,5 +53,11 @@ pinned revision into a fresh run-owned cache. Remote producer git identity is
 | E. No smoke statistical claim | proven | Two-sample smoke is not treated as significance | — | None | local-only |
 | E. No calibration mix-in | not-applicable | HLE smoke is official CAIS items only | — | None | not-applicable |
 
-**Tier-2 decision:** not claimed. The post-fix proof replaces `b3260e8b…` as the
-current identity-bound smoke; this ledger still does not promote the row.
+**Tier-2 decision:** pending, not refused. The post-fix proof replaces `b3260e8b…` as the current
+identity-bound smoke. Every §A–§E item is `proven` or `not-applicable` at the
+boundary recorded above, and no contract criterion is unmet. What is missing is a decision about
+**which public claim this row should license** and the population that claim would require — not
+an engineering artifact, a repair, or a prerequisite this ledger can discharge on its own.
+
+Scope of the retained evidence: every live run is the 2-item `smoke` slice, official 0/2, and a
+same-day `kimi-k2.7-code` attempt timed out in the pinned script and is retained unregistered.

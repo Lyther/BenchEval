@@ -606,6 +606,19 @@ def _harbor_launch_identity_check(plan: RunPlan) -> DoctorCheck:
     return DoctorCheck(name, "pass", f"launch identity confirmed ({described})")
 
 
+def _swebench_launch_identity_check(plan: RunPlan) -> DoctorCheck:
+    """Resolve the SWE launch identity the executor would bind, without launching."""
+    from bencheval.swebench_adapter import preflight_swebench_launch
+
+    name = "swe_launch_identity"
+    try:
+        metadata = preflight_swebench_launch(plan, real_runner=True)
+    except BenchEvalError as e:
+        return DoctorCheck(name, "fail", str(e))
+    described = ", ".join(f"{key}={metadata[key]}" for key in sorted(metadata))
+    return DoctorCheck(name, "pass", f"launch identity confirmed ({described})")
+
+
 def plan_selection(plan: RunPlan) -> dict[str, object]:
     """The non-secret identity the plan resolved; what doctor and evidence share."""
     return {
@@ -712,6 +725,7 @@ def run_plan_doctor(plan: RunPlan) -> DoctorReport:
         checks = _hle_native_checks()
     else:
         checks = _swebench_native_checks()
+        checks.append(_swebench_launch_identity_check(plan))
     checks.append(_plan_credentials_check(plan))
     if harness == "hle-native":
         checks.append(_judge_credentials_check(plan))

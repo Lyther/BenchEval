@@ -12,6 +12,9 @@ from bencheval.application import (
     OperatorOperations,
     PlanPreviewDTO,
     PlanRequestDTO,
+    StudyLockVerificationDTO,
+    StudyReportDTO,
+    StudyValidationDTO,
     proof_inventory_counts,
 )
 from bencheval.doctor import OPERATOR_DOCTOR_BACKENDS
@@ -475,6 +478,111 @@ def compare_page() -> None:
                 _notify_error(exc)
 
         ui.button("Compare", icon="compare_arrows", on_click=action).props("color=teal")
+
+    _study_section()
+
+
+def _optional_path(value: object) -> Path | None:
+    text = str(value or "").strip()
+    return Path(text) if text else None
+
+
+def _study_section() -> None:
+    """Exposure studies on the Compare surface: validate, report, reproduce.
+
+    Every value shown comes from the operation's payload. The view selects and
+    displays; it never interprets, and it never turns a raw-only or reproduced
+    result into a stronger claim than the report carries.
+    """
+    with ui.card().classes("be-card w-full p-5"):
+        ui.label("Exposure study").classes("text-lg")
+        ui.label(
+            "Raw evidence reports raw counts only. A declared population needs proof-backed "
+            "inputs. Reproducing a lock reproduces its report; it does not endorse it.",
+        ).classes("be-muted")
+        study = ui.input("Study id or manifest path").classes("w-full")
+        with ui.row().classes("gap-3 w-full flex-wrap"):
+            canonical_evidence = ui.input("Canonical evidence JSONL").classes("grow")
+            candidate_evidence = ui.input("Candidate evidence JSONL").classes("grow")
+        with ui.row().classes("gap-3 w-full flex-wrap"):
+            canonical_proof = ui.input("Canonical proof directory").classes("grow")
+            candidate_proof = ui.input("Candidate proof directory").classes("grow")
+        with ui.row().classes("gap-3 w-full flex-wrap"):
+            lock = ui.input("Lock path (report writes it, reproduce reads it)").classes("grow")
+            selection = ui.input("Population selection record (optional)").classes("grow")
+        with ui.row().classes("gap-3 w-full flex-wrap"):
+            output = ui.input("Exclusive report output").classes("grow")
+            analysis = ui.select(["raw_only", "declared"], value="raw_only", label="Analysis")
+        table = ui.table(
+            columns=[
+                {"name": "field", "label": "Field", "field": "field", "align": "left"},
+                {"name": "value", "label": "Value", "field": "value", "align": "left"},
+            ],
+            rows=[],
+            row_key="field",
+        ).classes("w-full be-table")
+        _, result = _json_panel("Study result")
+
+        def show(
+            view: StudyValidationDTO | StudyReportDTO | StudyLockVerificationDTO,
+            rows: tuple[dict[str, str], ...],
+        ) -> None:
+            table.rows = [dict(row) for row in rows]
+            table.update()
+            _set_json(result, view)
+
+        def invoke(callback: Callable[[], object]) -> None:
+            try:
+                callback()
+            except (BenchEvalError, OSError, ValueError) as exc:
+                table.rows = []
+                table.update()
+                _notify_error(exc)
+
+        def validate_action() -> None:
+            view = OPS.study_validate(str(study.value))
+            show(
+                view,
+                (
+                    {"field": "study", "value": view.study_id},
+                    {"field": "digest", "value": view.study_sha256},
+                    {"field": "kind", "value": view.kind},
+                    {"field": "relation", "value": view.relation},
+                    {"field": "comparison mode", "value": view.comparison_mode},
+                ),
+            )
+
+        def report_action() -> None:
+            view = OPS.study_report(
+                str(study.value),
+                analysis="declared" if analysis.value == "declared" else "raw_only",
+                output=Path(str(output.value)),
+                canonical_evidence=_optional_path(canonical_evidence.value),
+                candidate_evidence=_optional_path(candidate_evidence.value),
+                canonical_proof=_optional_path(canonical_proof.value),
+                candidate_proof=_optional_path(candidate_proof.value),
+                lock_output=_optional_path(lock.value),
+                selection=_optional_path(selection.value),
+            )
+            show(view, view.table_rows())
+
+        def reproduce_action() -> None:
+            view = OPS.study_verify(
+                Path(str(lock.value)),
+                canonical_proof=Path(str(canonical_proof.value)),
+                candidate_proof=Path(str(candidate_proof.value)),
+                study=str(study.value) or None,
+                output=_optional_path(output.value),
+                selection=_optional_path(selection.value),
+            )
+            show(view, view.table_rows())
+
+        with ui.row().classes("gap-3 flex-wrap"):
+            ui.button("Validate study", icon="fact_check", on_click=lambda: invoke(validate_action))
+            ui.button("Build report", icon="summarize", on_click=lambda: invoke(report_action))
+            ui.button(
+                "Reproduce lock", icon="replay", on_click=lambda: invoke(reproduce_action)
+            ).props("color=teal")
 
 
 def reports_page() -> None:

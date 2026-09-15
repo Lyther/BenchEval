@@ -44,6 +44,7 @@ from bencheval.swebench_adapter import (
     build_swebench_eval_command,
     run_swebench_instance,
 )
+from tests.factories import write_swe_generation_log_for_plan
 
 _INSTANCE_ID = "django__django-11099"
 _TS = datetime(2026, 8, 27, tzinfo=UTC)
@@ -511,6 +512,13 @@ def test_swe_eval_rejects_hardlinked_eval_leaf(tmp_path: Path) -> None:
 
 
 def test_swe_generation_symlink_swap_is_rejected_before_eval(tmp_path: Path) -> None:
+    plan = plan_control_plane(
+        benchmark_id="swe-bench-verified",
+        slice_id="swe-bench-verified-diagnostic-1",
+        runtime_id="codex-cli",
+        model_id="kimi-k2.7-code",
+        diagnostic=True,
+    )
     artifacts = tmp_path / "artifacts"
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -523,6 +531,7 @@ def test_swe_generation_symlink_swap_is_rejected_before_eval(tmp_path: Path) -> 
         commands.append(argv)
         root = artifacts / _INSTANCE_ID
         root.mkdir(parents=True, exist_ok=True)
+        write_swe_generation_log_for_plan(root, plan)
         (root / "predictions.jsonl").write_text(
             json.dumps(
                 {
@@ -543,13 +552,7 @@ def test_swe_generation_symlink_swap_is_rejected_before_eval(tmp_path: Path) -> 
 
     with pytest.raises(AdapterFailureError, match=r"cannot be bound|eval input"):
         run_swebench_instance(
-            plan=plan_control_plane(
-                benchmark_id="swe-bench-verified",
-                slice_id="swe-bench-verified-diagnostic-1",
-                runtime_id="codex-cli",
-                model_id="kimi-k2.7-code",
-                diagnostic=True,
-            ),
+            plan=plan,
             instance_id=_INSTANCE_ID,
             artifacts_dir=artifacts,
             repo_root=tmp_path,
@@ -568,6 +571,13 @@ def test_swe_official_evaluator_keeps_the_run_owned_working_directory(
     repo_root.mkdir()
     artifacts = tmp_path / "external-artifacts"
     working_directories: list[Path] = []
+    plan = plan_control_plane(
+        benchmark_id="swe-bench-verified",
+        slice_id="swe-bench-verified-diagnostic-1",
+        runtime_id="codex-cli",
+        model_id="kimi-k2.7-code",
+        diagnostic=True,
+    )
 
     def runner(command, *, cwd, timeout_sec) -> SwebenchCliResult:
         del timeout_sec
@@ -576,6 +586,7 @@ def test_swe_official_evaluator_keeps_the_run_owned_working_directory(
         root = artifacts / _INSTANCE_ID
         root.mkdir(parents=True, exist_ok=True)
         if len(working_directories) == 1:
+            write_swe_generation_log_for_plan(root, plan)
             (root / "predictions.jsonl").write_text(
                 json.dumps(
                     {
@@ -599,13 +610,7 @@ def test_swe_official_evaluator_keeps_the_run_owned_working_directory(
         )
 
     run_swebench_instance(
-        plan=plan_control_plane(
-            benchmark_id="swe-bench-verified",
-            slice_id="swe-bench-verified-diagnostic-1",
-            runtime_id="codex-cli",
-            model_id="kimi-k2.7-code",
-            diagnostic=True,
-        ),
+        plan=plan,
         instance_id=_INSTANCE_ID,
         artifacts_dir=artifacts,
         repo_root=repo_root,

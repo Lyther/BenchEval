@@ -6,8 +6,9 @@ sole scorer.  The catalog remains non-executable and this contract cannot
 promote it.
 
 SUBSTITUTE_JUSTIFICATION
-- substitute: injected ``process_runner`` callables and planted
-  ``predictions.jsonl`` / ``report.json`` files
+- substitute: injected ``process_runner`` callables, planted
+  ``predictions.jsonl`` / ``report.json`` files, and real Inspect ``.eval``
+  generation logs written through ``inspect_ai.log.write_eval_log``
 - replaces: a charged Inspect/provider generation call and Docker-backed
   official SWE-bench evaluation
 - necessity: exact phase ordering, missing-prediction fail-closed, official
@@ -46,6 +47,7 @@ from bencheval.swebench_adapter import (
     build_swebench_run_command,
     run_swebench_instance,
 )
+from tests.factories import write_swe_generation_log_for_plan
 
 _INSTANCE_ID = "django__django-11099"
 
@@ -95,6 +97,7 @@ def test_run_instance_orders_generation_before_official_scoring(tmp_path: Path) 
         commands.append(argv)
         instance_root = artifacts / _INSTANCE_ID
         if len(commands) == 1:
+            write_swe_generation_log_for_plan(instance_root, plan)
             (instance_root / "predictions.jsonl").write_text(
                 json.dumps(
                     {
@@ -206,7 +209,10 @@ def test_missing_predictions_fail_closed_without_scoring_generate_report(
     assert all(command[:2] != ("swebench", "eval") for command in commands)
     assert outcome.primary_pass is False
     assert outcome.failure_class == "runtime_output_unparseable"
-    assert outcome.adapter_metadata["missing_artifact"] == "predictions.jsonl"
+    # Nothing attributes the instance to the planned model (no log was retained),
+    # so the gate stops before it even looks for a prediction.
+    assert outcome.adapter_metadata["missing_artifact"] == "generation log (.eval)"
+    assert _INSTANCE_ID in outcome.adapter_metadata["generation_identity_mismatch"]
 
 
 def test_run_instance_materializes_official_eval_report_from_logs(tmp_path: Path) -> None:
@@ -225,6 +231,7 @@ def test_run_instance_materializes_official_eval_report_from_logs(tmp_path: Path
         commands.append(argv)
         instance_root = artifacts / _INSTANCE_ID
         if len(commands) == 1:
+            write_swe_generation_log_for_plan(instance_root, plan)
             (instance_root / "predictions.jsonl").write_text(
                 json.dumps(
                     {

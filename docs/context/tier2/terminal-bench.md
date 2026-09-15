@@ -14,6 +14,13 @@ Imported complete proofs (independently verified after `bencheval proof import`)
 
 The first two are Harbor `tier1-one` / `fix-git` on `kimi-k2.7-code` via ByteLLM. Cleanup on those rows is `skipped`. The third row is cleanup-replay only and does not replace Tier-1.
 
+
+**Clean-host qualified-lane registration (CF3.1, 2026-09-09, host `n37-089-091`, fresh
+checkout and venv, plan doctor green before launch):** `run-20260909-054158-477883-0748b911` on slice `tier1-one` with
+`ollama-qwen3.5-397b-fc`, registered `passed`. This is the row's current Tier-1 anchor and supersedes the
+August citations above as *most recent* live evidence; it does not widen the population
+scope recorded in the table.
+
 | Item | Status | Evidence | Proof boundary | Remaining action | Portability |
 | --- | --- | --- | --- | --- | --- |
 | A. `execution_support=executable_adapter` | proven | `config/benchmarks.yaml` Terminal-Bench row; Tier-0 gate count=4 | Software catalog only | None | local-only |
@@ -35,5 +42,12 @@ The first two are Harbor `tier1-one` / `fix-git` on `kimi-k2.7-code` via ByteLLM
 | E. No smoke statistical claim | proven | One-instance `fix-git` is not treated as significance | — | None | local-only |
 | E. No calibration mix-in | not-applicable | Official Harbor `fix-git` only | — | None | not-applicable |
 
-**Tier-2 decision:** not claimed. Cleanup replay is now imported; this ledger
-makes no superiority claim and does not promote the row.
+**Tier-2 decision:** pending, not refused. This ledger makes no superiority claim. Every §A–§E item is `proven` or `not-applicable` at the
+boundary recorded above, and no contract criterion is unmet. What is missing is a decision about
+**which public claim this row should license** and the population that claim would require — not
+an engineering artifact, a repair, or a prerequisite this ledger can discharge on its own.
+
+Scope of the retained evidence: Harbor `tier1-one` / `fix-git`, one instance per row. The
+`claude-code` and `codex-cli` runtime rows above are live-proven for that instance; the separate
+**native-agent admission** covers exactly Terminus-2 2.0.0 × `ollama-qwen3.5-397b-fc` on `fix-git`
+and no other native-agent combination. The remaining four smoke instances are not live-proven.

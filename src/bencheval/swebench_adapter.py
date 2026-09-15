@@ -13,14 +13,20 @@ import tomllib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 
 from bencheval.access_evidence import EffectiveAccessEvidence
 from bencheval.backends import INSPECT_BACKEND
 from bencheval.domain import FailureLabel, RunPlan
 from bencheval.exceptions import AdapterFailureError, BenchEvalError
 from bencheval.ids import new_run_id
+from bencheval.model_binding import (
+    SUPPORTED_PROVIDER_KINDS,
+    ModelBinding,
+    require_snapshot_endpoint,
+)
 from bencheval.path_safety import validate_control_plane_instance_id
+from bencheval.provider_registry import resolve_openai_compatible_launch
 from bencheval.run_isolation import (
     AUTHORITATIVE_ARTIFACT_NAMES,
     dir_identity_error,
@@ -63,6 +69,80 @@ _SWE_CODEX_ONLY_MESSAGE = (
     "swe-bench-verified diagnostic is Codex-only for v1; "
     "claude-code is rejected until a pinned Inspect SWE + Claude lifecycle is proven"
 )
+# A generation log that names another model or endpoint is a serving-identity
+# drift, never a model verdict: the row stays ineligible for pass@k.
+_GENERATION_IDENTITY_FAILURE: FailureLabel = "runtime_config_drift"
+_BOUND_LOG_PREFIX = ".bound-"
+_GENERATION_LOG_ARTIFACT = "generation log (.eval)"
+_SETUP_FIELD = "setup"
+_SETUP_RECIPE = "swe-diagnostic-prepare/1"
+_SETUP_EXCLUDE = "/.codex/"
+_BASE_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+# Inspect runs a per-sample setup script as ``env <tempfile>`` after copying it
+# into the sandbox (inspect_ai 0.3.252, ``setup_sandbox_environment``).
+_SETUP_EXEC_RE = re.compile(r"^env /tmp/\S+$")
+# Preparation recipe executed by the sandbox before the agent. It refuses an
+# image whose checkout differs from the dataset base commit by anything but the
+# executable bit, aligns HEAD and the index with that base, and keeps the agent
+# runtime's own state out of the exported prediction. Any non-zero exit aborts
+# the sample before inference.
+_SETUP_TEMPLATE = """#!/usr/bin/env bash
+# BenchEval SWE-bench diagnostic preparation (recipe __BENCHEVAL_RECIPE__).
+set -euo pipefail
+base='__BENCHEVAL_BASE_COMMIT__'
+# Inspect executes this script with no arguments, so the checkout is the
+# image's /testbed. The optional argument exists so the identical bytes can be
+# exercised against a real repository outside a sandbox.
+cd "${1:-/testbed}"
+
+git cat-file -e "${base}^{commit}"
+
+# The official image's checkout may differ from the dataset base commit by the
+# executable bit alone. Changed contents, added or deleted paths, and file-type
+# changes are an incompatible image: refuse here, before any inference.
+drift="$(git diff --raw --no-renames --abbrev=40 "$base" HEAD | cut -f1 | awk '
+  { src = substr($1, 2); dst = $2; before = $3; after = $4; status = $5 }
+  status != "M" || before != after { bad += 1; next }
+  src !~ /^100(644|755)$/ || dst !~ /^100(644|755)$/ { bad += 1 }
+  END { print bad + 0 }
+')"
+if [ "$drift" != "0" ]; then
+  echo "image differs from the dataset base commit beyond the executable bit" >&2
+  echo "(entries: $drift)" >&2
+  exit 3
+fi
+
+# The agent runtime writes its own state under the repository root. Confirm the
+# benchmark base does not track that path before excluding it. Both checks below
+# capture output in a plain assignment first: a condition following `if` is
+# exempt from `set -e`, so a git failure there would read as "nothing found".
+tracked="$(git ls-tree "$base" -- __BENCHEVAL_EXCLUDE_PATH__)"
+if [ -n "$tracked" ]; then
+  echo "the benchmark base tracks __BENCHEVAL_EXCLUDE_PATH__:" >&2
+  echo "refusing to exclude tracked content" >&2
+  exit 3
+fi
+
+# Bounded diagnostic preparation policy: core.fileMode=false suppresses
+# executable-bit-only differences for this prepared checkout. It is not a claim
+# that file modes are irrelevant in general.
+git config core.fileMode false
+# HEAD and the index move to the dataset base; the working tree is untouched.
+git reset -q --mixed "$base"
+echo '__BENCHEVAL_EXCLUDE__' >> .git/info/exclude
+
+# An untouched prepared workspace must export nothing. Refusing here leaves the
+# checkout prepared rather than as found; the sandbox is torn down on a setup
+# failure, so no later step observes it.
+git add -A
+exported="$(git diff --cached "$base")"
+if [ -n "$exported" ]; then
+  echo "prepared workspace still exports a diff" >&2
+  exit 3
+fi
+git reset -q "$base"
+echo "bencheval-swe-prepared recipe=__BENCHEVAL_RECIPE__ base=$base"
+"""
 # inspect-evals 0.8.0 scorers still import MAP_REPO_VERSION_TO_SPECS from
 # swebench.harness.constants (removed in 5.0.1). Generation uses this pin in
 # an isolated env only; official scoring stays swebench==5.0.1.
@@ -147,6 +227,7 @@ class SwebenchMaterialization:
     official_dataset: str
     image_digest: str | None
     image_name_template: str
+    setup_sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,10 +260,98 @@ class SwebenchProcessRunner(Protocol):
     ) -> SwebenchCliResult: ...
 
 
-def _inspect_model_string(plan: RunPlan) -> str:
-    if plan.provider_id == "bytellm" or not plan.provider_id:
-        return f"openai/{plan.model_id}"
-    return f"{plan.provider_id}/{plan.model_id}"
+def _require_swe_snapshot(plan: RunPlan) -> ModelBinding:
+    """The confirmed model binding a SWE launch serves; a plan without one re-plans.
+
+    A retained plan from before the snapshot existed still deserializes, but
+    its identity is never reconstructed from the current registry at launch.
+    A snapshot that names another model or route than the plan is a
+    contradictory override and is refused the same way.
+    """
+    snapshot = plan.model_binding_snapshot
+    if snapshot is None:
+        raise BenchEvalError(
+            f"swe-bench-verified plan for model {plan.model_id!r} has no model binding "
+            "snapshot; re-plan it so the exact API model and route are confirmed before launch",
+        )
+    if snapshot.model_id != plan.model_id or snapshot.provider_id != plan.provider_id:
+        raise BenchEvalError(
+            f"swe-bench-verified plan model {plan.model_id!r} on {plan.provider_id!r} conflicts "
+            f"with its binding snapshot ({snapshot.model_id!r} on {snapshot.provider_id!r}); "
+            "re-plan",
+        )
+    if snapshot.provider_kind not in SUPPORTED_PROVIDER_KINDS:
+        raise BenchEvalError(
+            f"provider {snapshot.provider_id!r} kind {snapshot.provider_kind!r} has no "
+            "supported Inspect binding for the SWE diagnostic",
+        )
+    return snapshot
+
+
+def swebench_inspect_model(plan: RunPlan) -> str:
+    """Inspect model selector derived from the transport protocol and exact API name.
+
+    An OpenAI-compatible route is Inspect's ``openai/`` namespace with the
+    binding's ``api_model``; neither the route id nor the logical model id is
+    a selector. An environment override may only restate that selector.
+    """
+    snapshot = _require_swe_snapshot(plan)
+    expected = f"openai/{snapshot.api_model}"
+    override = os.environ.get("BENCHEVAL_INSPECT_MODEL")
+    if override is not None and override.strip() != expected:
+        raise BenchEvalError(
+            f"BENCHEVAL_INSPECT_MODEL must match the provider-resolved planned model {expected!r}",
+        )
+    return expected
+
+
+def _solver_and_pin(plan: RunPlan) -> tuple[str, str]:
+    """The pinned Inspect SWE solver for the plan's runtime (Codex-only in v1)."""
+    runtime_id = plan.runtime_id or ""
+    if runtime_id == "claude-code":
+        raise BenchEvalError(_SWE_CODEX_ONLY_MESSAGE)
+    solver = _INSPECT_SOLVER_BY_RUNTIME.get(runtime_id)
+    if solver is None:
+        raise BenchEvalError(
+            f"swebench adapter expects runtime_id in {tuple(_INSPECT_SOLVER_BY_RUNTIME)}, "
+            f"got {plan.runtime_id!r}",
+        )
+    try:
+        runtime = load_runtime_catalog().by_id(runtime_id)
+    except KeyError as e:
+        raise BenchEvalError(f"unknown runtime {plan.runtime_id!r}") from e
+    pin = runtime.versioning.agent_version_pin
+    if pin is None or not pin.strip():
+        raise BenchEvalError(f"runtime {plan.runtime_id!r} has no agent_version_pin")
+    return solver, pin.strip()
+
+
+def preflight_swebench_launch(plan: RunPlan, *, real_runner: bool) -> dict[str, str]:
+    """Resolve the launch identity the SWE executor would bind, without launching.
+
+    The Codex-only solver and its pin, the confirmed binding (present,
+    coherent with the plan, supported protocol), the selected route's
+    credential (real runner only) and the confirmed public endpoint. The plan
+    doctor and every executor entry point share it, so a missing credential,
+    endpoint drift, or contradictory override refuses before any output is
+    reserved or any charge is possible.
+    """
+    if plan.adapter_id != SWEBENCH_ADAPTER_ID:
+        raise BenchEvalError(f"swebench adapter cannot run adapter_id={plan.adapter_id!r}")
+    solver, pin = _solver_and_pin(plan)
+    snapshot = _require_swe_snapshot(plan)
+    inspect_model = swebench_inspect_model(plan)
+    launch = resolve_openai_compatible_launch(snapshot.provider_id, require_api_key=real_runner)
+    require_snapshot_endpoint(snapshot, base_url=launch.base_url)
+    return {
+        "inspect_model": inspect_model,
+        "api_model": snapshot.api_model,
+        "model_binding_sha256": snapshot.sha256,
+        "provider_id": snapshot.provider_id,
+        "base_url": launch.base_url,
+        "solver": solver,
+        "solver_version": pin,
+    }
 
 
 def build_swebench_run_command(
@@ -194,22 +363,8 @@ def build_swebench_run_command(
 ) -> tuple[str, ...]:
     """Inspect Evals generation command for the selected pinned runtime solver."""
     validate_control_plane_instance_id(instance_id)
-    runtime_id = plan.runtime_id or ""
-    if runtime_id == "claude-code":
-        raise BenchEvalError(_SWE_CODEX_ONLY_MESSAGE)
-    solver = _INSPECT_SOLVER_BY_RUNTIME.get(runtime_id)
-    if solver is None:
-        raise BenchEvalError(
-            f"swebench adapter expects runtime_id in {tuple(_INSPECT_SOLVER_BY_RUNTIME)}, "
-            f"got {plan.runtime_id!r}",
-        )
-    try:
-        runtime = load_runtime_catalog().by_id(plan.runtime_id or "")
-    except KeyError as e:
-        raise BenchEvalError(f"unknown runtime {plan.runtime_id!r}") from e
-    pin = runtime.versioning.agent_version_pin
-    if pin is None or not pin.strip():
-        raise BenchEvalError(f"runtime {plan.runtime_id!r} has no agent_version_pin")
+    solver, pin = _solver_and_pin(plan)
+    snapshot = _require_swe_snapshot(plan)
     template = image_name_template if image_name_template is not None else _IMAGE_NAME_TEMPLATE
     return (
         "inspect",
@@ -218,11 +373,15 @@ def build_swebench_run_command(
         "--sample-id",
         instance_id,
         "--model",
-        _inspect_model_string(plan),
+        swebench_inspect_model(plan),
+        # The confirmed public endpoint travels with the generation so the
+        # retained log records the endpoint the bridge was configured with.
+        "--model-base-url",
+        snapshot.base_url,
         "--solver",
         solver,
         "-S",
-        f"version={pin.strip()}",
+        f"version={pin}",
         "-T",
         f"dataset={artifacts_dir / _INSPECT_DATASET_NAME}",
         "-T",
@@ -249,12 +408,46 @@ def _canonical_json_list(value: object) -> str:
     return json.dumps(parsed, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
 
 
+def swebench_diagnostic_setup_script(base_commit: str) -> str:
+    """The per-sample preparation script for ``base_commit``.
+
+    The commit comes from the verified official row and is validated as a full
+    object name before it is interpolated, so the emitted script is fully
+    determined by the dataset row and the pinned recipe.
+    """
+    if not _BASE_COMMIT_RE.fullmatch(base_commit):
+        raise BenchEvalError(
+            f"official SWE row base_commit is not a full object name: {base_commit!r}",
+        )
+    return (
+        _SETUP_TEMPLATE.replace("__BENCHEVAL_BASE_COMMIT__", base_commit)
+        .replace("__BENCHEVAL_EXCLUDE_PATH__", _SETUP_EXCLUDE.strip("/"))
+        .replace("__BENCHEVAL_EXCLUDE__", _SETUP_EXCLUDE)
+        .replace("__BENCHEVAL_RECIPE__", _SETUP_RECIPE)
+    )
+
+
+def _setup_digest(script: str) -> str:
+    return f"sha256:{hashlib.sha256(script.encode('utf-8')).hexdigest()}"
+
+
 def _inspect_compat_row(row: Mapping[str, object]) -> dict[str, object]:
     converted = dict(row)
     for field in _JSON_LIST_FIELDS:
         if field not in converted:
             raise BenchEvalError(f"official SWE row missing {field}")
         converted[field] = _canonical_json_list(converted[field])
+    # The generation row carries the preparation script the sandbox runs before
+    # the agent. The official row never does: it stays the dataset's own record.
+    if _SETUP_FIELD in converted:
+        raise BenchEvalError(
+            f"official SWE row already carries a {_SETUP_FIELD!r} field; "
+            "the diagnostic preparation would overwrite dataset content",
+        )
+    base_commit = converted.get("base_commit")
+    if not isinstance(base_commit, str):
+        raise BenchEvalError("official SWE row missing base_commit")
+    converted[_SETUP_FIELD] = swebench_diagnostic_setup_script(base_commit)
     return converted
 
 
@@ -500,7 +693,10 @@ def materialize_swebench_diagnostic_inputs(
         )
     )
     try:
-        _write_jsonl_subdir(dir_fd, _INSPECT_DATASET_NAME, _inspect_compat_row(row))
+        inspect_row = _inspect_compat_row(row)
+        setup_script = str(inspect_row[_SETUP_FIELD])
+        setup_sha256 = _setup_digest(setup_script)
+        _write_jsonl_subdir(dir_fd, _INSPECT_DATASET_NAME, inspect_row)
         _write_jsonl_subdir(dir_fd, _OFFICIAL_DATASET_NAME, _official_row(row))
         digest: str | None = None
         template = _IMAGE_NAME_TEMPLATE
@@ -516,6 +712,16 @@ def materialize_swebench_diagnostic_inputs(
             "fail_to_pass_encoding": "canonical-json-string",
             "image_digest": f"sha256:{digest}" if digest is not None else None,
             "image_name_template": template,
+            "setup_recipe": _SETUP_RECIPE,
+            "setup_sha256": setup_sha256,
+            "setup_base_commit": row["base_commit"],
+            "setup_script": setup_script,
+            "setup_exclude": _SETUP_EXCLUDE,
+            "setup_mode_policy": (
+                "core.fileMode=false suppresses executable-bit-only differences in the "
+                "prepared diagnostic checkout; this is a bounded preparation policy for "
+                "this lane, not a claim that file modes are generally equivalent"
+            ),
         }
         write_text_at_exclusive(
             dir_fd,
@@ -532,6 +738,7 @@ def materialize_swebench_diagnostic_inputs(
         official_dataset=str(instance_dir / _OFFICIAL_DATASET_NAME),
         image_digest=f"sha256:{digest}" if digest is not None else None,
         image_name_template=template,
+        setup_sha256=setup_sha256,
     )
 
 
@@ -886,7 +1093,9 @@ def _swe_identity_artifact_relpaths(
     manifest = _owned_regular_file_path(instance_fd, _TRANSFORM_MANIFEST_NAME, instance_dir)
     if manifest is not None:
         found.append(_rel_path(manifest, repo_root))
-    eval_names = [name for name in _owned_eval_log_names(instance_fd) if name.startswith(".bound-")]
+    eval_names = [
+        name for name in _owned_eval_log_names(instance_fd) if name.startswith(_BOUND_LOG_PREFIX)
+    ]
     if not eval_names:
         eval_names = list(_owned_eval_log_names(instance_fd))
     for name in eval_names:
@@ -937,7 +1146,7 @@ def _prediction_row_from_inspect_log(
         return None
     try:
         log = read_eval_log(str(log_path))
-    except (OSError, UnicodeDecodeError, ValueError, TypeError):
+    except (OSError, UnicodeDecodeError, ValueError, TypeError, LookupError):
         return None
     samples = getattr(log, "samples", None)
     if not isinstance(samples, list):
@@ -995,13 +1204,15 @@ def _inspect_runtime_version_from_owned_logs(
         from inspect_ai.log import read_eval_log
     except ImportError:
         return None
-    names = [name for name in _owned_eval_log_names(instance_fd) if name.startswith(".bound-")]
+    names = [
+        name for name in _owned_eval_log_names(instance_fd) if name.startswith(_BOUND_LOG_PREFIX)
+    ]
     if not names:
         names = list(_owned_eval_log_names(instance_fd))
     for name in names:
         try:
             log = read_eval_log(str(instance_dir / name))
-        except (OSError, UnicodeDecodeError, ValueError, TypeError):
+        except (OSError, UnicodeDecodeError, ValueError, TypeError, LookupError):
             continue
         version = _inspect_log_solver_version(log)
         if version is not None:
@@ -1024,14 +1235,257 @@ def _stamp_swe_runtime_metadata(
     outcome: SwebenchInstanceOutcome,
     *,
     plan: RunPlan,
+    snapshot: ModelBinding,
+    inspect_model: str,
 ) -> SwebenchInstanceOutcome:
-    extras: dict[str, str] = {}
+    extras: dict[str, str] = {
+        "model_binding_sha256": snapshot.sha256,
+        "api_model": snapshot.api_model,
+        "inspect_model": inspect_model,
+    }
     pin = _configured_solver_pin(plan)
     if pin:
         extras["configured_solver_version"] = pin
-    if not extras:
-        return outcome
     return replace(outcome, adapter_metadata={**outcome.adapter_metadata, **extras})
+
+
+@dataclass(frozen=True, slots=True)
+class _GenerationIdentity:
+    """What the retained generation logs say served the sample.
+
+    ``confirmed`` means at least one readable log positively attributes the
+    requested instance to the planned model: its ``eval.model`` is the planned
+    selector, its endpoint (when recorded) is the confirmed one, and the
+    instance sample holds a model event naming that selector, and (when the run
+    materialized a preparation script) the sample retains exactly that script
+    and ran it before the first model call. ``contradicted`` means a log names
+    another model or endpoint, or contradicts the prepared setup. ``missing``
+    means no readable log attributes the instance at all (absent, unreadable,
+    or eventless).
+    """
+
+    kind: Literal["confirmed", "contradicted", "missing"]
+    observed_models: tuple[str, ...]
+    mismatch: str | None
+
+
+def _clear_stale_generation_logs(instance_fd: int) -> None:
+    """Remove generation logs and bound twins left in a reused instance directory.
+
+    Like the stale official report, prediction, and workspace diff cleared at
+    preparation, a log from another run could otherwise stand in for the
+    current generation's evidence.
+    """
+    for name in _owned_eval_log_names(instance_fd):
+        _clear_owned_name(instance_fd, name)
+
+
+def _refuse_stale_bound_logs(instance_fd: int) -> None:
+    """A bound twin present after the pre-generation clearing was not produced
+    by this generation and is refused rather than copied or read."""
+    stale = sorted(
+        name for name in _owned_eval_log_names(instance_fd) if name.startswith(_BOUND_LOG_PREFIX)
+    )
+    if stale:
+        raise AdapterFailureError(
+            f"bound generation log already present before binding: {', '.join(stale)}",
+            failure_label="evidence_corrupt",
+        )
+
+
+def _bind_owned_eval_logs(instance_fd: int) -> tuple[str, ...]:
+    """Copy each generation log once to an owned ``.bound-`` twin; return the twins."""
+    _refuse_stale_bound_logs(instance_fd)
+    bound: list[str] = []
+    for name in _owned_eval_log_names(instance_fd):
+        source_fd = open_untrusted_regular_leaf(name, dir_fd=instance_fd)
+        try:
+            data = _read_fd_bytes(source_fd)
+        finally:
+            os.close(source_fd)
+        bound_name = f"{_BOUND_LOG_PREFIX}{name}"
+        write_bytes_at_exclusive(instance_fd, bound_name, data)
+        bound.append(bound_name)
+    return tuple(bound)
+
+
+def _prepared_setup_metadata(instance_fd: int) -> dict[str, str]:
+    """What the retained transformation manifest says was prepared for this run.
+
+    Absent keys mean the run materialized no preparation script (an injected
+    runner, or a historical instance directory), and no setup is required of
+    the generation log.
+    """
+    _, manifest = read_json_at_nofollow(instance_fd, _TRANSFORM_MANIFEST_NAME)
+    if not isinstance(manifest, Mapping):
+        return {}
+    digest = manifest.get("setup_sha256")
+    recipe = manifest.get("setup_recipe")
+    if not isinstance(digest, str) or not digest or not isinstance(recipe, str) or not recipe:
+        return {}
+    return {"setup_sha256": digest, "setup_recipe": recipe}
+
+
+def _setup_identity_violation(
+    log: object,
+    *,
+    instance_id: str,
+    expected_sha256: str,
+    log_name: str,
+) -> str | None:
+    """Why the retained sample contradicts the prepared setup, if it does.
+
+    Inspect writes the per-sample setup script into the sandbox and runs it as
+    ``env <tempfile>`` while initializing the sample, before the solver, and a
+    non-zero exit aborts the sample there. A retained sample must therefore hold
+    the exact prepared script and a successful execution of it that precedes
+    every model call.
+    """
+    for sample in getattr(log, "samples", None) or []:
+        if str(getattr(sample, "id", "")) != instance_id:
+            continue
+        setup = getattr(sample, "setup", None)
+        if not isinstance(setup, str) or not setup:
+            return f"generation log {log_name} ran the instance without the prepared setup script"
+        observed = _setup_digest(setup)
+        if observed != expected_sha256:
+            return (
+                f"generation log {log_name} ran setup {observed}, "
+                f"not the materialized {expected_sha256}"
+            )
+        first_model: int | None = None
+        setup_exec: int | None = None
+        for index, event in enumerate(getattr(sample, "events", None) or []):
+            kind = getattr(event, "event", None)
+            if kind == "model" and first_model is None:
+                first_model = index
+            elif (
+                kind == "sandbox"
+                and setup_exec is None
+                and getattr(event, "action", None) == "exec"
+                and getattr(event, "result", None) == 0
+            ):
+                command = getattr(event, "cmd", None)
+                if isinstance(command, str) and _SETUP_EXEC_RE.fullmatch(command):
+                    setup_exec = index
+        if setup_exec is None:
+            return (
+                f"generation log {log_name} retains no successful setup execution "
+                f"for {instance_id!r}"
+            )
+        if first_model is not None and setup_exec > first_model:
+            return (
+                f"generation log {log_name} executed the prepared setup after the first model call"
+            )
+    return None
+
+
+def _sample_model_names(log: object, *, instance_id: str) -> set[str]:
+    found: set[str] = set()
+    for sample in getattr(log, "samples", None) or []:
+        if str(getattr(sample, "id", "")) != instance_id:
+            continue
+        for event in getattr(sample, "events", None) or []:
+            if getattr(event, "event", None) != "model":
+                continue
+            model = getattr(event, "model", None)
+            if isinstance(model, str) and model:
+                found.add(model)
+    return found
+
+
+def _generation_log_identity(
+    instance_dir: Path,
+    bound_logs: Sequence[str],
+    *,
+    instance_id: str,
+    expected_model: str,
+    expected_base_url: str,
+    expected_setup_sha256: str | None = None,
+) -> _GenerationIdentity:
+    """Require positive generation identity for the requested instance.
+
+    The Inspect log's ``eval.model`` is the selector the bridge served, the
+    instance sample's ``ModelEvent`` rows name the model that answered, and
+    ``eval.model_base_url`` (when recorded) is the endpoint. Any of them naming
+    something other than the confirmed binding contradicts the plan. When the
+    run materialized a preparation script, the sample must also retain that
+    exact script and a successful run of it before the first model call. Absent,
+    unreadable, or eventless logs attribute nothing, so no prediction (derived
+    or already present) may reach the official evaluator on their strength.
+    """
+    try:
+        from inspect_ai.log import read_eval_log
+    except ImportError:
+        return _GenerationIdentity(
+            "missing", (), "inspect_ai is not importable, so generation logs cannot be read"
+        )
+    observed: list[str] = []
+    unreadable: list[str] = []
+    confirmed = False
+    for name in bound_logs:
+        try:
+            log = read_eval_log(str(instance_dir / name))
+        except (OSError, UnicodeDecodeError, ValueError, TypeError, LookupError):
+            unreadable.append(name)
+            continue
+        eval_obj = getattr(log, "eval", None)
+        eval_model = getattr(eval_obj, "model", None)
+        if isinstance(eval_model, str) and eval_model:
+            if eval_model not in observed:
+                observed.append(eval_model)
+            if eval_model != expected_model:
+                return _GenerationIdentity(
+                    "contradicted",
+                    tuple(observed),
+                    f"generation log {name} ran model {eval_model!r}, "
+                    f"not the planned {expected_model!r}",
+                )
+        base_url = getattr(eval_obj, "model_base_url", None)
+        if isinstance(base_url, str) and base_url and base_url != expected_base_url:
+            return _GenerationIdentity(
+                "contradicted",
+                tuple(observed),
+                f"generation log {name} recorded endpoint {base_url!r}, "
+                f"not the confirmed {expected_base_url!r}",
+            )
+        sample_models = _sample_model_names(log, instance_id=instance_id)
+        for model in sorted(sample_models):
+            if model not in observed:
+                observed.append(model)
+            if model != expected_model:
+                return _GenerationIdentity(
+                    "contradicted",
+                    tuple(observed),
+                    f"generation log {name} holds a model event for {model!r}, "
+                    f"not the planned {expected_model!r}",
+                )
+        if expected_setup_sha256 is not None:
+            violation = _setup_identity_violation(
+                log,
+                instance_id=instance_id,
+                expected_sha256=expected_setup_sha256,
+                log_name=name,
+            )
+            if violation is not None:
+                return _GenerationIdentity("contradicted", tuple(observed), violation)
+        if eval_model == expected_model and expected_model in sample_models:
+            confirmed = True
+    if confirmed:
+        return _GenerationIdentity("confirmed", tuple(observed), None)
+    detail = (
+        "no generation log was retained"
+        if not bound_logs
+        else "no readable generation log holds a model event for the instance"
+    )
+    if unreadable:
+        detail += f"; unreadable: {', '.join(unreadable)}"
+    return _GenerationIdentity(
+        "missing",
+        tuple(observed),
+        f"generation identity for {instance_id!r} is not attributable to "
+        f"{expected_model!r}: {detail}",
+    )
 
 
 def _owned_eval_log_names(instance_fd: int) -> tuple[str, ...]:
@@ -1058,19 +1512,13 @@ def _ensure_official_predictions(
     instance_fd: int,
     instance_id: str,
     model_name_or_path: str,
+    bound_logs: Sequence[str],
 ) -> str | None:
     existing = _owned_regular_file_path(instance_fd, _PREDICTIONS_NAME, instance_dir)
     if existing is not None:
         return existing
     rows: list[dict[str, str]] = []
-    for name in _owned_eval_log_names(instance_fd):
-        source_fd = open_untrusted_regular_leaf(name, dir_fd=instance_fd)
-        try:
-            bound = _read_fd_bytes(source_fd)
-        finally:
-            os.close(source_fd)
-        bound_name = f".bound-{name}"
-        write_bytes_at_exclusive(instance_fd, bound_name, bound)
+    for bound_name in bound_logs:
         row = _prediction_row_from_inspect_log(
             instance_dir / bound_name,
             instance_id=instance_id,
@@ -1346,7 +1794,7 @@ def _materialize_official_instance_report(
         )
 
 
-def _missing_predictions_outcome(
+def _generation_failure_outcome(
     *,
     instance_id: str,
     cli: SwebenchCliResult,
@@ -1354,7 +1802,10 @@ def _missing_predictions_outcome(
     repo_root: Path,
     harness_version: str | None,
     instance_fd: int,
+    failure_class: FailureLabel,
+    extra_metadata: Mapping[str, str],
 ) -> SwebenchInstanceOutcome:
+    """A generation phase that yields nothing the official evaluator may score."""
     stdout_abs, stderr_abs = _write_owned_logs(
         instance_dir=instance_dir,
         instance_fd=instance_fd,
@@ -1365,7 +1816,7 @@ def _missing_predictions_outcome(
         "harness_kind": "swebench-native",
         "swebench_command": " ".join(cli.command),
         "interpretation_label": "diagnostic_only",
-        "missing_artifact": _PREDICTIONS_NAME,
+        **extra_metadata,
         **_swe_identity_metadata(),
     }
     metadata["harness_version"] = harness_version or _OFFICIAL_EVALUATOR_PACKAGE
@@ -1376,7 +1827,7 @@ def _missing_predictions_outcome(
         cost_usd=0.0,
         latency_sec=cli.latency_sec,
         native_score={"returncode": cli.returncode, "backend": INSPECT_BACKEND},
-        failure_class="runtime_output_unparseable",
+        failure_class=failure_class,
         stdout_path=_rel_path(stdout_abs, repo_root),
         stderr_path=_rel_path(stderr_abs, repo_root),
         verifier_log_path=None,
@@ -1535,6 +1986,8 @@ def _run_generation_then_eval(
     harness_version: str | None,
     run_id: str,
     materialize_inputs: bool,
+    snapshot: ModelBinding,
+    inspect_model: str,
 ) -> SwebenchInstanceOutcome:
     template = _IMAGE_NAME_TEMPLATE
     if materialize_inputs:
@@ -1571,36 +2024,69 @@ def _run_generation_then_eval(
             latency_sec=elapsed,
             adapter_metadata={"swebench_command": " ".join(generate)},
         )
+    # A retained generation log must positively attribute the instance to the
+    # confirmed model and endpoint before any prediction, derived or already
+    # present, is relabelled or scored. A contradicting log is serving-identity
+    # drift; a missing or unreadable one is unattributable generation output.
+    bound_logs = _bind_owned_eval_logs(instance_fd)
+    # The preparation the run materialized travels in the retained manifest, so
+    # the generation log is checked against the artifact the proof keeps.
+    prepared = _prepared_setup_metadata(instance_fd)
+    identity = _generation_log_identity(
+        instance_dir,
+        bound_logs,
+        instance_id=instance_id,
+        expected_model=inspect_model,
+        expected_base_url=snapshot.base_url,
+        expected_setup_sha256=prepared.get("setup_sha256"),
+    )
+    observed: dict[str, str] = dict(prepared)
+    if identity.observed_models:
+        observed["generation_model_observed"] = ",".join(identity.observed_models)
+    if identity.kind != "confirmed":
+        contradicted = identity.kind == "contradicted"
+        reason = identity.mismatch or f"generation identity for {instance_id!r} is not confirmed"
+        return _generation_failure_outcome(
+            instance_id=instance_id,
+            cli=generation,
+            instance_dir=instance_dir,
+            repo_root=repo_root,
+            harness_version=harness_version,
+            instance_fd=instance_fd,
+            failure_class=(
+                _GENERATION_IDENTITY_FAILURE if contradicted else "runtime_output_unparseable"
+            ),
+            extra_metadata={
+                "generation_model_expected": inspect_model,
+                "generation_identity_mismatch": reason,
+                **({} if contradicted else {"missing_artifact": _GENERATION_LOG_ARTIFACT}),
+                **observed,
+            },
+        )
     predictions = _ensure_official_predictions(
         instance_dir=instance_dir,
         instance_fd=instance_fd,
         instance_id=instance_id,
         model_name_or_path=plan.model_id,
+        bound_logs=bound_logs,
     )
     prediction = _read_standard_prediction(
         instance_fd=instance_fd,
         instance_id=instance_id,
     )
-    if predictions is None or prediction is None:
-        return _missing_predictions_outcome(
+    model_name = prediction.get("model_name_or_path") if prediction is not None else None
+    if predictions is None or not isinstance(model_name, str) or not model_name:
+        return _generation_failure_outcome(
             instance_id=instance_id,
             cli=generation,
             instance_dir=instance_dir,
             repo_root=repo_root,
             harness_version=harness_version,
             instance_fd=instance_fd,
+            failure_class="runtime_output_unparseable",
+            extra_metadata={"missing_artifact": _PREDICTIONS_NAME, **observed},
         )
-    model_name = prediction.get("model_name_or_path")
-    if not isinstance(model_name, str) or not model_name:
-        return _missing_predictions_outcome(
-            instance_id=instance_id,
-            cli=generation,
-            instance_dir=instance_dir,
-            repo_root=repo_root,
-            harness_version=harness_version,
-            instance_fd=instance_fd,
-        )
-    return _evaluate_official_predictions(
+    outcome = _evaluate_official_predictions(
         instance_id=instance_id,
         instance_dir=instance_dir,
         instance_fd=instance_fd,
@@ -1613,6 +2099,9 @@ def _run_generation_then_eval(
         generation=generation,
         predictions=predictions,
     )
+    if not observed:
+        return outcome
+    return replace(outcome, adapter_metadata={**outcome.adapter_metadata, **observed})
 
 
 def _evaluate_official_predictions(
@@ -1714,6 +2203,10 @@ def run_swebench_instance(
             "swebench default process runner is disabled until the diagnostic "
             "can be charged with a materialized dataset; inject a process_runner",
         )
+    # The confirmed binding is required before any instance artifact exists;
+    # a snapshotless or contradictory plan re-plans instead of launching.
+    snapshot = _require_swe_snapshot(plan)
+    inspect_model = swebench_inspect_model(plan)
     validate_control_plane_instance_id(instance_id)
     instance_dir = prepare_instance_artifacts_dir(
         artifacts_dir / instance_id,
@@ -1722,6 +2215,7 @@ def run_swebench_instance(
     )
     instance_fd = open_owned_dir_fd(instance_dir, role=_INSTANCE_DIR_ROLE)
     try:
+        _clear_stale_generation_logs(instance_fd)
         wall = (
             timeout_sec if timeout_sec is not None else max(1, plan.max_wall_clock_sec_per_instance)
         )
@@ -1737,8 +2231,12 @@ def run_swebench_instance(
                 harness_version=harness_version,
                 run_id=_validate_swe_run_id(run_id) if run_id is not None else new_run_id(),
                 materialize_inputs=materialize_inputs,
+                snapshot=snapshot,
+                inspect_model=inspect_model,
             ),
             plan=plan,
+            snapshot=snapshot,
+            inspect_model=inspect_model,
         )
     finally:
         os.close(instance_fd)
@@ -1755,7 +2253,10 @@ __all__ = [
     "default_swebench_process_runner",
     "materialize_swebench_diagnostic_inputs",
     "parse_swebench_instance_outcome",
+    "preflight_swebench_launch",
     "resolve_swebench_subprocess",
     "run_swebench_instance",
+    "swebench_diagnostic_setup_script",
+    "swebench_inspect_model",
     "swebench_project_root",
 ]
