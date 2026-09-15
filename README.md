@@ -6,7 +6,7 @@ Evidence-based evaluation control plane. Product spine:
 benchmark  →  (runtime | agent)?  →  model via provider  →  evidence
 ```
 
-Tier-0 executable software entries: **4** (`terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4`). The catalog has **9** rows: `bfcl-v4-live` and `swe-bench-verified` are explicit diagnostic-only identities, while `swe-bench-pro`, `cybergym`, and `exploitgym` remain pending. Diagnostic evidence never inherits admission or registers `passed`. Runtimes are `claude-code` / `codex-cli`, each launched from its closed `launch.harbor` binding; `terminus-2` is the one admitted `kind: harbor` native agent (admitted 2026-09-09 for exactly Terminus-2 2.0.0 × `ollama-qwen3.5-397b-fc` on Terminal-Bench `fix-git`; other combinations are not live-proven), `momo` is a discoverable scaffold; providers are `bytellm` / `ollama-cloud` (both `openai_compatible`; a model row's `api_model` and `backend_bindings.bfcl` make a new model on either route configuration work, see architecture §23). Runtime XOR admitted agent; omit both for model-only benchmarks. Bare `run <benchmark>` uses each executable row’s default smoke slice. Current proof details belong in [`docs/roadmap.md`](docs/roadmap.md); operator commands live in [`docs/ops/benchmarks/`](docs/ops/benchmarks/README.md).
+Tier-0 executable software entries: **4** (`terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4`). The catalog has **10** rows: `bfcl-v4-live`, `bfcl-v4-tool-order-v1`, and `swe-bench-verified` are explicit diagnostic-only identities, while `swe-bench-pro`, `cybergym`, and `exploitgym` remain pending. Diagnostic evidence never inherits admission or registers `passed`. Runtimes are `claude-code` / `codex-cli`, each launched from its closed `launch.harbor` binding; `terminus-2` is the one admitted `kind: harbor` native agent (admitted 2026-09-09 for exactly Terminus-2 2.0.0 × `ollama-qwen3.5-397b-fc` on Terminal-Bench `fix-git`; other combinations are not live-proven), `momo` is a discoverable scaffold; providers are `bytellm` / `ollama-cloud` (both `openai_compatible`; a model row's `api_model` and `backend_bindings.bfcl` make a new model on either route configuration work, see architecture §23). Runtime XOR admitted agent; omit both for model-only benchmarks. Bare `run <benchmark>` uses each executable row’s default smoke slice. Current proof details belong in [`docs/roadmap.md`](docs/roadmap.md); operator commands live in [`docs/ops/benchmarks/`](docs/ops/benchmarks/README.md).
 
 Current concept HLD: [`docs/context/concept-zero.md`](docs/context/concept-zero.md). Historical v0.3 ledger: [`docs/context/concept-hld.md`](docs/context/concept-hld.md). Architecture: [`docs/architecture.md`](docs/architecture.md). Diagrams: [`docs/diagrams/`](docs/diagrams/README.md).
 
@@ -48,7 +48,7 @@ Unknown benchmark/runtime/agent/provider ids fail before subprocess. Datasets/im
 
 ## Layout
 
-- `config/benchmarks.yaml` — product catalog (**9** rows; **4** Tier-0 executables)
+- `config/benchmarks.yaml` — product catalog (**10** rows; **4** Tier-0 executables)
 - `config/studies/` — closed benchmark-exposure study intent; no executable callbacks
 - `config/runtimes/` · `config/agents/` · `config/providers/` · `config/slices/` · `config/models.yaml`
 - Wheel install is self-contained: public config ships as `bencheval/_bundled/config/`; `BENCHEVAL_HOME` is an optional override

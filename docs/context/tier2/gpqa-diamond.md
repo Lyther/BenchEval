@@ -14,6 +14,13 @@ Imported complete proofs (independently verified after `bencheval proof import`)
 
 All are `kimi-k2.7-code` / ByteLLM / `adapter_smoke`. The refresh is the AR-16 scored-byte retention proof. The third row is cleanup-replay only.
 
+
+**Clean-host qualified-lane registration (CF3.1, 2026-09-09, host `n37-089-091`, fresh
+checkout and venv, plan doctor green before launch):** `run-20260909-054344-074803-4eb3204f` on slice `smoke` with
+`kimi-k2.7-code`, registered `passed`. This is the row's current Tier-1 anchor and supersedes the
+August citations above as *most recent* live evidence; it does not widen the population
+scope recorded in the table.
+
 | Item | Status | Evidence | Proof boundary | Remaining action | Portability |
 | --- | --- | --- | --- | --- | --- |
 | A. `execution_support=executable_adapter` | proven | `config/benchmarks.yaml` GPQA row; Tier-0 gate count=4 | Software catalog only | None | local-only |
@@ -35,5 +42,11 @@ All are `kimi-k2.7-code` / ByteLLM / `adapter_smoke`. The refresh is the AR-16 s
 | E. No smoke statistical claim | proven | Two-sample smoke is not treated as significance | — | None | local-only |
 | E. No calibration mix-in | not-applicable | Official GPQA Diamond smoke items only | — | None | not-applicable |
 
-**Tier-2 decision:** not claimed. Cleanup replay is now imported; this ledger
-still does not promote the row.
+**Tier-2 decision:** pending, not refused. Every §A–§E item is `proven` or `not-applicable` at the
+boundary recorded above, and no contract criterion is unmet. What is missing is a decision about
+**which public claim this row should license** and the population that claim would require — not
+an engineering artifact, a repair, or a prerequisite this ledger can discharge on its own.
+
+Scope of the retained evidence: every live run is the `smoke` slice — 2 unique questions ×
+4 epochs — and none covers the Diamond set. A public Diamond comparison would need such a
+population; the adapter's admission does not.
