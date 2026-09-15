@@ -14,6 +14,9 @@ from bencheval.application.dto import (
     RunDetailDTO,
     RunExecutionDTO,
     RunSummaryDTO,
+    StudyLockVerificationDTO,
+    StudyReportDTO,
+    StudyValidationDTO,
 )
 from bencheval.application.operations import OperatorOperations, proof_inventory_counts
 
@@ -32,5 +35,8 @@ __all__ = [
     "RunDetailDTO",
     "RunExecutionDTO",
     "RunSummaryDTO",
+    "StudyLockVerificationDTO",
+    "StudyReportDTO",
+    "StudyValidationDTO",
     "proof_inventory_counts",
 ]

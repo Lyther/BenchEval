@@ -53,6 +53,7 @@ from bencheval.identity_strings import bfcl_benchmark_identity, catalog_benchmar
 from bencheval.live_run_manifest import LiveRunRecord, append_live_run
 from bencheval.proof_bundle import export_private_proof, load_verified_proof_inputs
 from bencheval.stats import exact_binomial_two_sided, newcombe_diff, wilson
+from tests.factories import make_exposure_evidence_row
 
 _TS = datetime(2026, 9, 5, 12, 0, tzinfo=UTC)
 _LIVE_STUDY = "bfcl-v4-live-vs-non-live"
@@ -77,40 +78,15 @@ def _row(
     run_id: str = "run-exposure",
     **overrides: object,
 ) -> EvidenceRecord:
-    fields: dict[str, object] = {
-        "run_id": run_id,
-        "task_id": instance_id,
-        "model_id": _MODEL,
-        "execution_profile": "E0",
-        "backend": "inspect",
-        "primary_pass": primary_pass,
-        "partial_score": 1.0 if primary_pass else 0.0,
-        "cost_usd": 0.0,
-        "latency_sec": 1.0,
-        "failure_labels": [] if primary_pass else ["model_wrong_solution"],
-        "artifact_paths": ["raw/score.json"],
-        "verifier_log_path": "raw/score.json",
-        "adapter_metadata": {"producer_content_sha256": _PRODUCER},
-        "created_at": _TS,
-        "benchmark_id": benchmark_id,
-        "benchmark_version": _benchmark_version(benchmark_id),
-        "slice_id": slice_id,
-        "adapter_id": "bfcl",
-        "harness_kind": "bfcl-native",
-        "harness_version": "bfcl-eval==2026.3.23",
-        "provider_id": "bytellm",
-        "provider_config_hash": "sha256:" + "1" * 64,
-        "instance_id": instance_id,
-        "interpretation_label": "diagnostic",
-        "verifier_integrity_label": "native",
-        "failure_class": None if primary_pass else "model_wrong_solution",
-        "access_control_source": "not_applicable",
-        "egress_control": "not_applicable",
-        "repository_history": "not_applicable",
-        "retrieval_audit": "not_run",
-    }
-    fields.update(overrides)
-    return EvidenceRecord.model_validate(fields)
+    """One study-population row; the shared factory owns the shape."""
+    return make_exposure_evidence_row(
+        benchmark_id=benchmark_id,
+        slice_id=slice_id,
+        instance_id=instance_id,
+        primary_pass=primary_pass,
+        run_id=run_id,
+        **overrides,
+    )
 
 
 def _rows(

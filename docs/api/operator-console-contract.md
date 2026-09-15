@@ -169,6 +169,37 @@ Report/export results contain output role, local path, size, digest, visibility,
 validity, and bounded details. They do not embed Parquet/DuckDB or
 private bundle bytes in application state.
 
+### Exposure study DTOs
+
+`StudyValidationDTO` carries the study id, digest, kind, relation, comparison
+mode, and the validator's own payload. `StudyReportDTO` carries analysis mode,
+population scale and binding, relation, comparison mode, report digest, optional
+lock digest and paths, permitted interpretation, non-claims, caveats, paired
+outcomes when the study is paired, and the report payload itself. Every number
+in those fields is read out of that payload: the projection never recomputes a
+rate, an interval, a population decision, or an interpretation, and the console
+never renders a headline the report does not carry.
+
+`table_rows()` returns plain `field`/`value` pairs so the same result is
+reachable as a keyboard-navigable table without any chart or hover affordance.
+
+`StudyLockVerificationDTO` is a reproduction result, not a fresh endorsement. It
+carries the verifier's payload plus, when the operator asked for the reproduced
+report to be written, that report's own analysis mode, non-claims, and caveats.
+A reproduction can never present a stronger claim than the locked report: the
+digests must match before anything is shown, and a raw-only or smoke population
+stays raw-only or smoke in the view. The displayed report is bound to the digest
+the verifier proved — the written bytes are read once and refused as a typed
+operator error unless their SHA-256 equals `report_sha256` — so a report
+replaced on the output path after the verifier finished can never be displayed
+beside an authentic digest. Its rows keep the lock's own identity under
+`locked study`, leaving the rebuilt report's `study` row its own table key. When
+no reproduced report was written, the view
+says that the digests matched and that a JSON reproduction output is needed to
+see the locked report's scores, caveats, and non-claims, so a short table is
+explained rather than mistaken for an empty result. A report field the domain
+stops emitting fails as a typed operator error, never as a blank cell.
+
 ### Proof and readiness DTOs
 
 `ProofViewDTO` exposes proof ID, run ID, local path, classification and reason,
@@ -201,6 +232,9 @@ the UI never upgrades a tier by inference.
 | `evidence.qualify` | run/evidence/selectors → qualification view | `live_proof`/provenance gates | Read-only |
 | `evidence.register` | run ID, target status, optional axes/locators/notes/host → run detail | live-run transition/identity/qualification | Locked append; never blind retry |
 | `analysis.compare` | baseline/current/mode → comparison view | canonical compare modules | Read-only; repeatable |
+| `study.validate` | study id or manifest path → `StudyValidationDTO` | `exposure_report.validate_exposure_study` | Read-only; repeatable |
+| `study.report` | study + exactly one input pair (canonical/candidate evidence, or canonical/candidate proof) + analysis + exclusive output, and a lock output for the proof-backed pair → `StudyReportDTO` | `exposure_report` build/write paths | Exclusive destination; declared analysis refused on raw evidence |
+| `study.reproduce` | lock + both proofs + optional study/selection/output → `StudyLockVerificationDTO` | `exposure_report.verify_exposure_study_lock` | Read-only unless an exclusive reproduced report is requested |
 | `report.generate` | evidence/output → artifact result | report module + exclusive path | No overwrite/retry after ambiguity |
 | `warehouse.export` | evidence/format/output → artifact result | export module | Exclusive destination |
 | `bundle.export` | evidence/raw/visibility/optional comparison/output → artifact result | run bundle/redaction | Exclusive, no partial output |

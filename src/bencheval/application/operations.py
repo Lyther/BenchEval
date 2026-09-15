@@ -9,7 +9,7 @@ import os
 import socket
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import ValidationError
 
@@ -31,6 +31,9 @@ from bencheval.application.dto import (
     RunDetailDTO,
     RunExecutionDTO,
     RunSummaryDTO,
+    StudyLockVerificationDTO,
+    StudyReportDTO,
+    StudyValidationDTO,
 )
 from bencheval.benchmark_plan import draft_native_agent, plan_control_plane
 from bencheval.benchmark_registry import (
@@ -77,6 +80,7 @@ from bencheval.proof_bundle import (
 from bencheval.provider_registry import load_provider_catalog
 from bencheval.report import generate_evidence_report_with_runtime_panel
 from bencheval.run_bundle import RedactionMode, export_run_bundle
+from bencheval.run_isolation import open_untrusted_regular_leaf
 from bencheval.runtime_compare import (
     compare_runtime_evidence,
     is_dual_axis_comparison_drift,
@@ -87,7 +91,12 @@ from bencheval.runtime_compare import (
 from bencheval.runtime_registry import load_runtime_catalog
 from bencheval.swebench_adapter import SWEBENCH_ADAPTER_ID, default_swebench_process_runner
 
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from bencheval.exposure_selection import ExposureSelection
+
 CompareFormat = Literal["markdown", "json"]
+ExposureFormat = Literal["markdown", "json"]
+ExposureAnalysis = Literal["raw_only", "declared"]
 
 
 def proof_inventory_counts(proofs: tuple[ProofViewDTO, ...]) -> tuple[int, int]:
@@ -161,6 +170,88 @@ def _write_exclusive(path: Path, text: str) -> None:
         handle.write(text)
         handle.flush()
         os.fsync(handle.fileno())
+
+
+def _optional_str(value: object) -> str | None:
+    return str(value) if isinstance(value, str) and value else None
+
+
+def _load_exposure_selection(path: Path | None) -> ExposureSelection | None:
+    """Load a retained population selection record, when the operator supplied one."""
+    from bencheval.exposure_selection import load_exposure_selection
+
+    return load_exposure_selection(path) if path is not None else None
+
+
+def _verified_report(output: Path, *, expected_sha256: str) -> dict[str, object]:
+    """Read a reproduction back under the digest the domain verifier proved.
+
+    The verifier hashes the report it assembled, not the file that survives on
+    disk. Reading the path again without that binding would let anything written
+    between the two reads be displayed beside an authentic digest and ``ok:
+    true``, which would turn a replacement into an apparent reproduction. One
+    read, one digest comparison, and the same bytes are parsed.
+
+    The read uses the repository's untrusted-leaf reader because the path is
+    only ours until the exclusive create publishes it: a FIFO renamed over it
+    would otherwise block the operator's request before any digest could be
+    checked, and a symlink or a shared inode would be read through.
+    """
+    try:
+        descriptor = open_untrusted_regular_leaf(str(output))
+    except OSError as exc:
+        raise BenchEvalError(f"cannot read the reproduced report {output}: {exc}") from exc
+    try:
+        with os.fdopen(descriptor, "rb") as handle:
+            raw = handle.read()
+    except OSError as exc:
+        raise BenchEvalError(f"cannot read the reproduced report {output}: {exc}") from exc
+    actual = f"sha256:{hashlib.sha256(raw).hexdigest()}"
+    if actual != expected_sha256:
+        raise BenchEvalError(
+            f"reproduced report {output} does not match the verified report: "
+            f"expected {expected_sha256}, read {actual}",
+        )
+    try:
+        loaded = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as exc:
+        raise BenchEvalError(f"cannot read the reproduced report {output}: {exc}") from exc
+    if not isinstance(loaded, dict):
+        raise BenchEvalError(f"reproduced report {output} is not a report object")
+    return loaded
+
+
+def _study_report_dto(
+    payload: dict[str, object],
+    *,
+    report_sha256: str,
+    lock_sha256: str | None,
+    report_path: Path | None,
+    lock_path: Path | None,
+) -> StudyReportDTO:
+    binding = payload.get("population_binding")
+    forbidden = payload.get("forbidden_claims")
+    caveats = payload.get("caveats")
+    pairs = payload.get("pairs")
+    return StudyReportDTO(
+        study_id=str(payload["study_id"]),
+        analysis_mode=str(payload["analysis_mode"]),
+        population_scale=str(payload["population_scale"]),
+        population_binding=(
+            tuple(str(item) for item in binding) if isinstance(binding, list) else None
+        ),
+        relation=str(payload["relation"]),
+        comparison_mode=str(payload["comparison_mode"]),
+        report_sha256=report_sha256,
+        lock_sha256=lock_sha256,
+        report_path=str(report_path.resolve()) if report_path is not None else None,
+        lock_path=str(lock_path.resolve()) if lock_path is not None else None,
+        permitted_interpretation=str(payload.get("permitted_interpretation", "")),
+        non_claims=tuple(str(c) for c in forbidden) if isinstance(forbidden, list) else (),
+        caveats=tuple(str(c) for c in caveats) if isinstance(caveats, list) else (),
+        pairs=pairs if isinstance(pairs, dict) else None,
+        payload=payload,
+    )
 
 
 def _symlink_component(path: Path) -> Path | None:
@@ -759,6 +850,165 @@ class OperatorOperations:
                 "valid": valid,
                 "detail": details or (() if valid else ("comparison is invalid",)),
             },
+        )
+
+    # --- exposure studies ---------------------------------------------------------
+    #
+    # These operations project ``exposure_report``. They resolve inputs, enforce
+    # the same exclusive-output and symlink rules as the other artifact writers,
+    # and hand back the domain payload unchanged. No rate, interval, population
+    # decision, or interpretation is recomputed here.
+
+    def study_validate(self, study: str) -> StudyValidationDTO:
+        from bencheval.exposure_report import resolve_study_reference, validate_exposure_study
+
+        payload = validate_exposure_study(resolve_study_reference(study))
+        return StudyValidationDTO(
+            study_id=str(payload["study_id"]),
+            study_sha256=str(payload["study_sha256"]),
+            kind=str(payload["kind"]),
+            relation=str(payload["relation"]),
+            comparison_mode=str(payload["comparison_mode"]),
+            payload=payload,
+        )
+
+    def study_report(
+        self,
+        study: str,
+        *,
+        analysis: ExposureAnalysis,
+        output: Path,
+        fmt: ExposureFormat = "json",
+        canonical_evidence: Path | None = None,
+        candidate_evidence: Path | None = None,
+        canonical_proof: Path | None = None,
+        candidate_proof: Path | None = None,
+        lock_output: Path | None = None,
+        selection: Path | None = None,
+    ) -> StudyReportDTO:
+        from bencheval.exposure_report import (
+            build_exposure_report,
+            resolve_study_reference,
+            write_exposure_report,
+            write_proof_backed_exposure_report,
+        )
+        from bencheval.exposure_study import load_exposure_study
+
+        evidence_inputs = (canonical_evidence, candidate_evidence)
+        proof_inputs = (canonical_proof, candidate_proof)
+        use_evidence = all(value is not None for value in evidence_inputs)
+        use_proof = all(value is not None for value in proof_inputs)
+        if use_evidence == use_proof or (any(evidence_inputs) and any(proof_inputs)):
+            raise BenchEvalError(
+                "study report needs exactly one input pair: canonical/candidate evidence "
+                "or canonical/candidate proof",
+            )
+        for path in (output, lock_output):
+            if path is None:
+                continue
+            symlink = _symlink_component(path)
+            if symlink is not None:
+                raise BenchEvalError(f"study output contains a symlink component: {symlink}")
+        loaded = load_exposure_study(resolve_study_reference(study))
+        chosen = _load_exposure_selection(selection)
+        if canonical_proof is not None and candidate_proof is not None:
+            if lock_output is None:
+                raise BenchEvalError(
+                    "a proof-backed study report requires both output paths: the report and "
+                    "its exposure-study lock",
+                )
+            built = write_proof_backed_exposure_report(
+                loaded,
+                canonical_proof=canonical_proof,
+                candidate_proof=candidate_proof,
+                analysis=analysis,
+                output=output,
+                lock_output=lock_output,
+                fmt=fmt,
+                selection=chosen,
+            )
+            return _study_report_dto(
+                built.report.payload,
+                report_sha256=built.report_sha256,
+                lock_sha256=built.lock_sha256,
+                report_path=output,
+                lock_path=lock_output,
+            )
+        if lock_output is not None:
+            raise BenchEvalError("a study lock is written only for proof-backed inputs")
+        # The pair check above leaves exactly the evidence pair; read it directly
+        # so the types narrow without an assertion in a shipped path.
+        canonical_rows = read_evidence_jsonl(canonical_evidence) if canonical_evidence else []
+        candidate_rows = read_evidence_jsonl(candidate_evidence) if candidate_evidence else []
+        report = build_exposure_report(
+            loaded,
+            canonical=canonical_rows,
+            candidate=candidate_rows,
+            analysis=analysis,
+            selection=chosen,
+        )
+        write_exposure_report(report, output=output, fmt=fmt)
+        return _study_report_dto(
+            report.payload,
+            report_sha256=report.sha256,
+            lock_sha256=None,
+            report_path=output,
+            lock_path=None,
+        )
+
+    def study_verify(
+        self,
+        lock: Path,
+        *,
+        canonical_proof: Path,
+        candidate_proof: Path,
+        study: str | None = None,
+        output: Path | None = None,
+        fmt: ExposureFormat = "json",
+        selection: Path | None = None,
+    ) -> StudyLockVerificationDTO:
+        from bencheval.exposure_report import resolve_study_reference, verify_exposure_study_lock
+        from bencheval.exposure_study import load_exposure_study
+
+        if output is not None:
+            symlink = _symlink_component(output)
+            if symlink is not None:
+                raise BenchEvalError(f"study output contains a symlink component: {symlink}")
+        loaded = load_exposure_study(resolve_study_reference(study)) if study is not None else None
+        payload = verify_exposure_study_lock(
+            loaded,
+            lock_path=lock,
+            canonical_proof=canonical_proof,
+            candidate_proof=candidate_proof,
+            output=output,
+            fmt=fmt,
+            selection=_load_exposure_selection(selection),
+        )
+        # The verification result proves the reproduction; the reproduced report
+        # carries the claim. Read it back rather than restating it here, and bind
+        # the bytes read to the digest the verifier proved.
+        reproduced: dict[str, object] | None = None
+        if output is not None and fmt == "json":
+            reproduced = _verified_report(
+                output, expected_sha256=str(payload.get("report_sha256", ""))
+            )
+        forbidden = (reproduced or {}).get("forbidden_claims")
+        caveats = (reproduced or {}).get("caveats")
+        return StudyLockVerificationDTO(
+            ok=bool(payload.get("ok", False)),
+            study_id=str(payload.get("study_id", "")),
+            report_sha256=str(payload.get("report_sha256", "")),
+            lock_sha256=str(payload.get("lock_sha256", "")),
+            canonical_proof_id=_optional_str(payload.get("canonical_proof_id")),
+            candidate_proof_id=_optional_str(payload.get("candidate_proof_id")),
+            analysis_mode=(
+                None if reproduced is None else str(reproduced.get("analysis_mode", ""))
+            ),
+            non_claims=tuple(str(c) for c in forbidden) if isinstance(forbidden, list) else (),
+            caveats=tuple(str(c) for c in caveats) if isinstance(caveats, list) else (),
+            report_path=str(output.resolve()) if output is not None else None,
+            report_payload=reproduced,
+            payload=payload,
         )
 
     def warehouse(self, evidence_path: Path, output_dir: Path, *, fmt: str) -> ArtifactResultDTO:

@@ -26,6 +26,7 @@ from pathlib import Path
 
 import pytest
 
+from bencheval.application import OperatorOperations
 from bencheval.benchmark_registry import BfclPackageDataIdentity
 from bencheval.bfcl_study import materialize_tool_order_overlay, render_variant_manifest
 from bencheval.cli import main
@@ -189,6 +190,29 @@ def test_paired_declared_report_binds_the_retained_variant_and_reproduces(
     assert lock["variant_sha256"] == payload["variant"]["variant_sha256"]
     assert lock["variant"]["benchmark_version"] == version
     assert lock["selection_sha256"] == payload["population_selection"]["selection_sha256"]
+
+    # The same paired declared journey through the operator surface: the
+    # projection carries these flips and this test verbatim, and the console
+    # never recomputes either (roadmap X4.1).
+    selection_path = tmp_path / "selection.json"
+    selection_path.write_text(json.dumps(selection.model_dump(mode="json")), encoding="utf-8")
+    view = OperatorOperations().study_report(
+        _PAIR,
+        canonical_proof=canonical_proof,
+        candidate_proof=candidate_proof,
+        analysis="declared",
+        output=tmp_path / "console-report.json",
+        lock_output=tmp_path / "console-lock.json",
+        selection=selection_path,
+        fmt="json",
+    )
+    assert view.payload == payload
+    rows = {row["field"]: row["value"] for row in view.table_rows()}
+    assert rows["pairs"] == ", ".join(f"{k}={v}" for k, v in pairs.items())
+    assert f"{payload['paired_delta']:+.3f}" in rows["paired delta"]
+    assert str(payload["paired_test"]["discordant_pairs"]) in rows["paired delta"]
+    assert str(payload["paired_test"]["p_value"]) in rows["paired delta"]
+    assert payload["paired_test"]["method"] in rows["paired delta"]
 
     copied = tmp_path / "copied"
     shutil.copytree(canonical_proof, copied / "canonical")
