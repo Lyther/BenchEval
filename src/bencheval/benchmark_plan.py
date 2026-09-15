@@ -397,6 +397,14 @@ def plan_control_plane(
         actor_snapshot = actor_binding_for_agent(agent_profile)
     elif runtime is not None and harness_kind == "harbor":
         actor_snapshot = actor_binding_for_runtime(runtime)
+    elif runtime is not None and harness_kind == "swebench-native":
+        # The SWE diagnostic serves the model host-side through Inspect's
+        # Codex bridge: the runtime keeps its model-configuration axis, and the
+        # snapshot fixes the exact API model and route the bridge must serve
+        # (architecture §22.11; roadmap R5.1).
+        model_snapshot = resolve_model_binding(
+            model_key, resolved_provider, models=model_registry, providers=provider_catalog
+        )
     if adapter_id == "bfcl" and model_snapshot is not None:
         bfcl_binding = model_snapshot.bfcl
         if bfcl_binding is not None and bfcl_binding.mode == "configured" and not diagnostic:

@@ -5,8 +5,9 @@ small diagnostic slice, explicit generation inputs, strict prediction boundary,
 aggregate-report coherence, cumulative deadline, and diagnostic dispatch.
 
 SUBSTITUTE_JUSTIFICATION
-- substitute: injected ``SwebenchProcessRunner`` callables and planted official
-  prediction/report files in four orchestration tests
+- substitute: injected ``SwebenchProcessRunner`` callables, planted official
+  prediction/report files, and real Inspect ``.eval`` generation logs written
+  through ``inspect_ai.log.write_eval_log`` in the orchestration tests
 - replaces: charged Inspect/provider generation and Docker-backed SWE evaluation
 - necessity: malformed predictions, conflicting reports, and elapsed-budget
   exhaustion must be forced deterministically before any charged or container
@@ -51,6 +52,7 @@ from bencheval.swebench_adapter import (
     resolve_swebench_subprocess,
     run_swebench_instance,
 )
+from tests.factories import write_swe_generation_log_for_plan
 
 _INSTANCE_ID = "django__django-11099"
 _REVISION = "78f471bf655a3137b2e8a75af1501690ec009ec3"
@@ -154,6 +156,7 @@ def test_malformed_existing_predictions_never_reach_the_official_evaluator(
         commands.append(argv)
         root = artifacts / _INSTANCE_ID
         root.mkdir(parents=True, exist_ok=True)
+        write_swe_generation_log_for_plan(root, plan)
         (root / "predictions.jsonl").write_text("{}\n", encoding="utf-8")
         if len(commands) > 1:
             (root / "report.json").write_text(
@@ -162,8 +165,9 @@ def test_malformed_existing_predictions_never_reach_the_official_evaluator(
             )
         return SwebenchCliResult(0, "", "", 0.0, argv)
 
+    plan = _plan()
     outcome = run_swebench_instance(
-        plan=_plan(),
+        plan=plan,
         instance_id=_INSTANCE_ID,
         artifacts_dir=artifacts,
         repo_root=tmp_path,
@@ -188,6 +192,7 @@ def test_conflicting_schema_v2_summary_invalidates_a_true_instance_report(
         commands.append(argv)
         root = artifacts / _INSTANCE_ID
         if len(commands) == 1:
+            write_swe_generation_log_for_plan(root, plan)
             (root / "predictions.jsonl").write_text(_prediction(), encoding="utf-8")
             official = root / "official-dataset"
             official.mkdir()
@@ -218,8 +223,9 @@ def test_conflicting_schema_v2_summary_invalidates_a_true_instance_report(
             )
         return SwebenchCliResult(0, "", "", 0.0, argv)
 
+    plan = _plan()
     outcome = run_swebench_instance(
-        plan=_plan(),
+        plan=plan,
         instance_id=_INSTANCE_ID,
         artifacts_dir=artifacts,
         repo_root=tmp_path,
@@ -335,6 +341,7 @@ def test_executed_report_without_schema_v2_summary_is_unparseable(
         root = artifacts / _INSTANCE_ID
         root.mkdir(parents=True, exist_ok=True)
         if len(commands) == 1:
+            write_swe_generation_log_for_plan(root, plan)
             (root / "predictions.jsonl").write_text(_prediction(), encoding="utf-8")
             official = root / "official-dataset"
             official.mkdir()
@@ -346,8 +353,9 @@ def test_executed_report_without_schema_v2_summary_is_unparseable(
             )
         return SwebenchCliResult(0, "", "", 0.1, argv)
 
+    plan = _plan(slice_id="swe-bench-verified-diagnostic-1")
     outcome = run_swebench_instance(
-        plan=_plan(slice_id="swe-bench-verified-diagnostic-1"),
+        plan=plan,
         instance_id=_INSTANCE_ID,
         artifacts_dir=artifacts,
         repo_root=tmp_path,
@@ -366,6 +374,7 @@ def test_official_eval_error_still_retains_prediction_and_summary(
 ) -> None:
     artifacts = tmp_path / "artifacts"
     run_id = "swe-retain-pred"
+    plan = _plan(slice_id="swe-bench-verified-diagnostic-1")
     commands: list[tuple[str, ...]] = []
 
     def runner(command, *, cwd, timeout_sec) -> SwebenchCliResult:
@@ -374,6 +383,7 @@ def test_official_eval_error_still_retains_prediction_and_summary(
         root = artifacts / _INSTANCE_ID
         root.mkdir(parents=True, exist_ok=True)
         if len(commands) == 1:
+            write_swe_generation_log_for_plan(root, plan)
             (root / "predictions.jsonl").write_text(_prediction(), encoding="utf-8")
             official = root / "official-dataset"
             inspect = root / "inspect-dataset"
@@ -398,7 +408,7 @@ def test_official_eval_error_still_retains_prediction_and_summary(
         return SwebenchCliResult(0, "", "", 0.1, argv)
 
     execute_control_plane_run(
-        plan=_plan(slice_id="swe-bench-verified-diagnostic-1"),
+        plan=plan,
         output_path=tmp_path / "evidence.jsonl",
         artifacts_dir=artifacts,
         run_id=run_id,

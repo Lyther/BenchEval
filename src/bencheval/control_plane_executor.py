@@ -63,6 +63,7 @@ from bencheval.hle_adapter import (
 )
 from bencheval.ids import new_run_id
 from bencheval.lifecycle import cleanup_transient_artifacts
+from bencheval.model_binding import require_snapshot_endpoint
 from bencheval.paths import repo_root as _repo_root
 from bencheval.provider_registry import resolve_openai_compatible_launch
 from bencheval.run_isolation import (
@@ -79,6 +80,7 @@ from bencheval.swebench_adapter import (
     SwebenchInstanceOutcome,
     SwebenchProcessRunner,
     default_swebench_process_runner,
+    preflight_swebench_launch,
     run_swebench_instance,
 )
 from bencheval.terminal_bench_harbor import (
@@ -1657,8 +1659,15 @@ def _execute_swebench(
             "can be charged with a materialized dataset; inject a process_runner",
         )
     use_default_runner = swebench_process_runner is default_swebench_process_runner
+    # The confirmed binding, the Codex-only solver pin, the route credential,
+    # and the public endpoint are resolved before any output is reserved. The
+    # real runner gets the whole plan doctor (host prerequisites plus the same
+    # launch identity, reported together); an injected runner keeps the direct
+    # identity check without needing the credential.
     if use_default_runner:
+        require_doctor_ok(run_plan_doctor(plan))
         launch = resolve_openai_compatible_launch(plan.provider_id)
+        require_snapshot_endpoint(plan.model_binding_snapshot, base_url=launch.base_url)
 
         def swebench_process_runner(
             command: Sequence[str],
@@ -1672,6 +1681,8 @@ def _execute_swebench(
                 timeout_sec=timeout_sec,
                 env=launch.environment,
             )
+    else:
+        preflight_swebench_launch(plan, real_runner=False)
 
     root = _repo_root()
     rid = run_id or new_run_id()

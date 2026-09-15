@@ -2,10 +2,12 @@
 
 SUBSTITUTE_JUSTIFICATION
 - substitute: injected SWE process runners, monkeypatched
-  ``run_swebench_instance`` / ``subprocess.run``, and planted official-report
-  files (including hardlinks/symlinks)
+  ``run_swebench_instance`` / ``subprocess.run`` / ``doctor.docker_available``,
+  planted official-report files (including hardlinks/symlinks), and real
+  Inspect ``.eval`` generation logs written through ``inspect_ai.log.write_eval_log``
 - replaces: charged Inspect generation, Docker-backed official evaluation, a
-  live provider child process, and the local ``uv lock --check`` subprocess
+  live provider child process, the local ``uv lock --check`` subprocess, and
+  the plan doctor's Docker daemon probe on the real-runner path
 - necessity: hardlinked/symlink reports, ambient vs selected provider routes,
   and producer-identity stamping must be forced without a charged diagnostic
 - real-option: a live SWE diagnostic cannot safely guarantee an outside
@@ -37,10 +39,12 @@ from bencheval.swebench_adapter import (
     SwebenchCliResult,
     SwebenchInstanceOutcome,
     _inspect_log_solver_version,
+    build_swebench_run_command,
     default_swebench_process_runner,
     parse_swebench_instance_outcome,
     run_swebench_instance,
 )
+from tests.factories import write_swe_generation_log_for_plan
 
 _INSTANCE_ID = "django__django-11099"
 
@@ -83,6 +87,7 @@ def _schema_v2(run_id: str) -> str:
 
 
 def test_swe_nested_hardlinked_report_is_not_pass_authority(tmp_path: Path) -> None:
+    plan = _diagnostic_plan()
     artifacts = tmp_path / "artifacts"
     run_id = "swe-hardlink-report"
     outside = tmp_path / "outside-report.json"
@@ -99,6 +104,7 @@ def test_swe_nested_hardlinked_report_is_not_pass_authority(tmp_path: Path) -> N
         instance_root.mkdir(parents=True, exist_ok=True)
         argv = tuple(command)
         if argv[:2] == ("inspect", "eval"):
+            write_swe_generation_log_for_plan(instance_root, plan)
             (instance_root / "predictions.jsonl").write_text(_prediction(), encoding="utf-8")
             official = instance_root / "official-dataset"
             official.mkdir()
@@ -123,7 +129,7 @@ def test_swe_nested_hardlinked_report_is_not_pass_authority(tmp_path: Path) -> N
 
     with pytest.raises(AdapterFailureError, match="hardlink"):
         run_swebench_instance(
-            plan=_diagnostic_plan(),
+            plan=plan,
             instance_id=_INSTANCE_ID,
             artifacts_dir=artifacts,
             repo_root=tmp_path,
@@ -136,6 +142,7 @@ def test_swe_nested_hardlinked_report_is_not_pass_authority(tmp_path: Path) -> N
 
 
 def test_swe_nested_symlinked_report_is_not_pass_authority(tmp_path: Path) -> None:
+    plan = _diagnostic_plan()
     artifacts = tmp_path / "artifacts"
     run_id = "swe-symlink-report"
     outside = tmp_path / "outside-report.json"
@@ -152,6 +159,7 @@ def test_swe_nested_symlinked_report_is_not_pass_authority(tmp_path: Path) -> No
         instance_root.mkdir(parents=True, exist_ok=True)
         argv = tuple(command)
         if argv[:2] == ("inspect", "eval"):
+            write_swe_generation_log_for_plan(instance_root, plan)
             (instance_root / "predictions.jsonl").write_text(_prediction(), encoding="utf-8")
             official = instance_root / "official-dataset"
             official.mkdir()
@@ -175,7 +183,7 @@ def test_swe_nested_symlinked_report_is_not_pass_authority(tmp_path: Path) -> No
         return SwebenchCliResult(0, "ok", "", 0.1, argv)
 
     outcome = run_swebench_instance(
-        plan=_diagnostic_plan(),
+        plan=plan,
         instance_id=_INSTANCE_ID,
         artifacts_dir=artifacts,
         repo_root=tmp_path,
@@ -258,6 +266,11 @@ def test_swe_execute_binds_provider_route_not_ambient_openai(
     monkeypatch.setenv("BYTELLM_BASE_URL", "http://127.0.0.1:4400")
     monkeypatch.setenv("OPENAI_BASE_URL", "https://ambient.example/v1")
     monkeypatch.setenv("OPENAI_API_KEY", "ambient-key")
+    # The real-runner path now runs the plan doctor first; the Docker daemon
+    # is a host fact unrelated to the provider-route contract under test, and
+    # an ambient selector override would be refused by the binding gate.
+    monkeypatch.setattr("bencheval.doctor.docker_available", lambda: True)
+    monkeypatch.delenv("BENCHEVAL_INSPECT_MODEL", raising=False)
     captured: dict[str, str] = {}
     subprocess_calls: list[tuple[tuple[str, ...], Path]] = []
 
@@ -323,13 +336,25 @@ def test_swe_execute_binds_provider_route_not_ambient_openai(
     rows = read_evidence_jsonl(output)
     assert captured["OPENAI_BASE_URL"] == "http://127.0.0.1:4400/v1"
     assert captured["OPENAI_API_KEY"] == "review-provider-key"
-    assert len(subprocess_calls) == 3
-    lock_argv, lock_cwd = subprocess_calls[1]
-    assert lock_argv[:3] == ("uv", "lock", "--check")
-    assert "--offline" in lock_argv
-    assert lock_cwd == Path.cwd()
-    evaluator_argv, evaluator_cwd = subprocess_calls[2]
+    # Exact sequence: the plan doctor's evaluator-group lock check runs before
+    # any output is reserved (R5.1), then generation, then the evaluator's own
+    # lock check immediately before its launch.
+    assert len(subprocess_calls) == 4
+    for index in (0, 2):
+        lock_argv, lock_cwd = subprocess_calls[index]
+        assert lock_argv[:3] == ("uv", "lock", "--check")
+        assert "--offline" in lock_argv
+        assert lock_cwd == Path.cwd()
+    generation_argv, _ = subprocess_calls[1]
+    assert "inspect" in generation_argv and "--only-group" not in generation_argv
+    evaluator_argv, evaluator_cwd = subprocess_calls[3]
     assert evaluator_cwd == tmp_path / "artifacts" / _INSTANCE_ID
+    # The generation the adapter would build binds the same endpoint the
+    # child environment carries, never the ambient OPENAI_BASE_URL.
+    planned = build_swebench_run_command(
+        plan=_diagnostic_plan(), instance_id=_INSTANCE_ID, artifacts_dir=tmp_path / "artifacts"
+    )
+    assert planned[planned.index("--model-base-url") + 1] == captured["OPENAI_BASE_URL"]
     assert evaluator_argv[evaluator_argv.index("--project") + 1] == str(Path.cwd())
     assert "--locked" in evaluator_argv
     assert evaluator_argv[evaluator_argv.index("--only-group") + 1] == "swe"
