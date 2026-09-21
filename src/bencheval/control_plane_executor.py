@@ -20,6 +20,7 @@ from bencheval.agent_registry import AgentCatalog, AgentProfile, resolve_launcha
 from bencheval.backends import (
     HARBOR_BACKEND,
     INSPECT_BACKEND,
+    LOCAL_BACKEND,
     ExecutionBackend,
 )
 from bencheval.benchmark_registry import (
@@ -33,6 +34,16 @@ from bencheval.bfcl_native_adapter import (
     BfclProcessRunner,
     bfcl_pinned_harness_version,
     run_bfcl_instance,
+)
+from bencheval.cybermetric_adapter import (
+    CYBERMETRIC_ADAPTER_ID,
+    CybermetricInstanceOutcome,
+    CybermetricRequestRunner,
+    cybermetric_identity_for,
+    load_pinned_cybermetric_dataset,
+    require_planned_instances,
+    resolve_confirmed_launch,
+    run_cybermetric_slice,
 )
 from bencheval.doctor import require_doctor_ok, run_plan_doctor
 from bencheval.domain import (
@@ -535,6 +546,9 @@ def _backend_for_plan(plan: RunPlan) -> ExecutionBackend:
     # rows stamp INSPECT_BACKEND, so budget-skip and adapter-failure rows must
     # stamp the same backend (review F004: bfcl was omitted here and mixed
     # "harbor" failure rows into "inspect" runs).
+    if plan.adapter_id == CYBERMETRIC_ADAPTER_ID:
+        # The lane calls the provider from this process: no Inspect, no Harbor.
+        return LOCAL_BACKEND
     if plan.adapter_id in (
         GPQA_ADAPTER_ID,
         HLE_ADAPTER_ID,
@@ -1022,6 +1036,38 @@ def _evidence_from_swebench_outcome(
     )
 
 
+def _evidence_from_cybermetric_outcome(
+    *,
+    plan: RunPlan,
+    run_id: str,
+    outcome: CybermetricInstanceOutcome,
+    execution_profile: ExecutionProfile,
+    cleanup_result: CleanupResult | None = None,
+) -> EvidenceRecord:
+    # The verifier is a BenchEval reimplementation of the pinned evaluator's
+    # parse-and-compare rule: never a native scorer log, so never ``native``.
+    return _evidence_from_scored_instance(
+        plan=plan,
+        run_id=run_id,
+        instance_id=outcome.instance_id,
+        execution_profile=execution_profile,
+        backend=LOCAL_BACKEND,
+        primary_pass=outcome.primary_pass,
+        partial_score=1.0 if outcome.primary_pass else 0.0,
+        cost_usd=outcome.cost_usd,
+        latency_sec=outcome.latency_sec,
+        failure_class=outcome.failure_class,
+        native_score=dict(outcome.native_score),
+        adapter_metadata=dict(outcome.adapter_metadata),
+        paths=tuple(outcome.artifact_paths),
+        verifier_log_path=None,
+        counts_toward_pass_at_k=outcome.counts_toward_pass_at_k,
+        cleanup_result=cleanup_result,
+        access_evidence=outcome.access_evidence,
+        token_usage=dict(outcome.token_usage),
+    )
+
+
 # Adapters with a real executor dispatch in this module; ``--diagnostic`` may
 # relax the catalog ``executable`` gate only for these.
 _DIAGNOSTIC_CAPABLE_ADAPTER_IDS = frozenset(
@@ -1031,6 +1077,17 @@ _DIAGNOSTIC_CAPABLE_ADAPTER_IDS = frozenset(
         HLE_ADAPTER_ID,
         BFCL_ADAPTER_ID,
         SWEBENCH_ADAPTER_ID,
+        CYBERMETRIC_ADAPTER_ID,
+    },
+)
+# Adapters that call the provider directly; no agent can be dispatched there.
+_MODEL_ONLY_ADAPTER_IDS = frozenset(
+    {
+        GPQA_ADAPTER_ID,
+        HLE_ADAPTER_ID,
+        BFCL_ADAPTER_ID,
+        SWEBENCH_ADAPTER_ID,
+        CYBERMETRIC_ADAPTER_ID,
     },
 )
 
@@ -1116,20 +1173,18 @@ def execute_control_plane_run(
     bfcl_derived_source: DerivedSource | None = None,
     run_id: str | None = None,
     agent_catalog: AgentCatalog | None = None,
+    cybermetric_request_runner: CybermetricRequestRunner | None = None,
 ) -> ControlPlaneRunSummary:
     """Dispatch a ``RunPlan`` to the matching adapter and append evidence rows."""
-    native_agent = _launchable_native_agent(plan, agent_catalog)
-    _require_executable_benchmark(plan)
-    if plan.agent_id is not None and plan.adapter_id in (
-        GPQA_ADAPTER_ID,
-        HLE_ADAPTER_ID,
-        BFCL_ADAPTER_ID,
-        SWEBENCH_ADAPTER_ID,
-    ):
+    if plan.agent_id is not None and plan.adapter_id in _MODEL_ONLY_ADAPTER_IDS:
+        # The adapter property comes first: no agent binding, admitted or not,
+        # can make a model-only lane dispatch an agent.
         raise BenchEvalError(
             f"adapter {plan.adapter_id!r} is model-only; agent {plan.agent_id!r} "
             "cannot be dispatched there",
         )
+    native_agent = _launchable_native_agent(plan, agent_catalog)
+    _require_executable_benchmark(plan)
     if plan.adapter_id == GPQA_ADAPTER_ID:
         return _execute_gpqa(
             plan=plan,
@@ -1166,6 +1221,14 @@ def execute_control_plane_run(
             swebench_process_runner=swebench_process_runner,
             run_id=run_id,
         )
+    if plan.adapter_id == CYBERMETRIC_ADAPTER_ID:
+        return _execute_cybermetric(
+            plan=plan,
+            output_path=output_path,
+            artifacts_dir=artifacts_dir,
+            cybermetric_request_runner=cybermetric_request_runner,
+            run_id=run_id,
+        )
     if plan.agent_id is not None and native_agent is None:
         # Legacy admitted external-CLI scaffold: non-authoritative capture only.
         runner = agent_process_runner or momo_process_runner
@@ -1194,7 +1257,8 @@ def execute_control_plane_run(
     raise BenchEvalError(
         f"no executor for adapter_id={plan.adapter_id!r}; "
         f"supported: {TERMINAL_BENCH_ADAPTER_ID!r}, {GPQA_ADAPTER_ID!r}, "
-        f"{HLE_ADAPTER_ID!r}, {BFCL_ADAPTER_ID!r}, {SWEBENCH_ADAPTER_ID!r}",
+        f"{HLE_ADAPTER_ID!r}, {BFCL_ADAPTER_ID!r}, {SWEBENCH_ADAPTER_ID!r}, "
+        f"{CYBERMETRIC_ADAPTER_ID!r}",
     )
 
 
@@ -1514,6 +1578,106 @@ def _execute_hle(
         passed = 0
         for outcome in outcomes:
             record = _evidence_from_hle_outcome(
+                plan=plan,
+                run_id=rid,
+                outcome=outcome,
+                execution_profile=execution_profile,
+                cleanup_result=cleanup_result,
+            )
+            if record.primary_pass:
+                passed += 1
+            sink.append_jsonl(output_path, record)
+        total = len(outcomes)
+        return ControlPlaneRunSummary(
+            run_id=rid,
+            instance_count=total,
+            passed_count=passed,
+            failed_count=total - passed,
+            output_path=output_path.resolve(),
+        )
+    finally:
+        release_evidence_reservation(output_path)
+
+
+def _execute_cybermetric(
+    *,
+    plan: RunPlan,
+    output_path: Path,
+    artifacts_dir: Path | None,
+    cybermetric_request_runner: CybermetricRequestRunner | None,
+    run_id: str | None,
+) -> ControlPlaneRunSummary:
+    root = _repo_root()
+    rid = run_id or new_run_id()
+    if cybermetric_request_runner is None:
+        # A missing or drifted snapshot, or an absent credential, stops the run
+        # before any output is reserved.
+        require_doctor_ok(run_plan_doctor(plan))
+    # Bind before reserving anything (CF1; review SEC12-F002): the launch endpoint
+    # must be the confirmed one, the population must be the verified pinned
+    # snapshot, and every planned instance must be one of its records.
+    resolve_confirmed_launch(plan, require_api_key=cybermetric_request_runner is None)
+    dataset, attribution = load_pinned_cybermetric_dataset(
+        cybermetric_identity_for(plan.benchmark_id)
+    )
+    require_planned_instances(plan, dataset)
+    run_artifacts = _claim_control_plane_outputs(
+        output_path=output_path,
+        artifacts_dir=artifacts_dir,
+        rid=rid,
+        root=root,
+        plan=plan,
+    )
+    try:
+        sink = _evidence_sink(plan)
+        execution_profile = _execution_profile_for_plan(plan)
+        try:
+            outcomes = run_cybermetric_slice(
+                plan=plan,
+                artifacts_dir=run_artifacts,
+                dataset=dataset,
+                attribution=attribution,
+                request_runner=cybermetric_request_runner,
+                # Both walls are the plan's own fields (review SEC12-IMPL-F001): the
+                # per-instance wall is each question's absolute deadline over its
+                # attempts, the run-total wall the whole run's; neither is derived
+                # from the other.
+                timeout_sec=plan.max_wall_clock_sec_per_instance,
+                run_wall_sec=plan.max_wall_clock_sec,
+            )
+        except AdapterFailureError as e:
+            cleanup_result = _apply_cleanup(
+                plan=plan,
+                instance_artifacts=run_artifacts,
+                primary_pass=False,
+            )
+            for inst in plan.instances:
+                record = _record_instance_failure(
+                    plan=plan,
+                    run_id=rid,
+                    instance_id=inst.instance_id,
+                    execution_profile=execution_profile,
+                    error=e,
+                    artifacts_dir=run_artifacts,
+                    cleanup_result=cleanup_result,
+                )
+                sink.append_jsonl(output_path, record)
+            total = len(plan.instances)
+            return ControlPlaneRunSummary(
+                run_id=rid,
+                instance_count=total,
+                passed_count=0,
+                failed_count=total,
+                output_path=output_path.resolve(),
+            )
+        cleanup_result = _apply_cleanup(
+            plan=plan,
+            instance_artifacts=run_artifacts,
+            primary_pass=any(o.primary_pass for o in outcomes),
+        )
+        passed = 0
+        for outcome in outcomes:
+            record = _evidence_from_cybermetric_outcome(
                 plan=plan,
                 run_id=rid,
                 outcome=outcome,

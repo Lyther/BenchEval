@@ -48,7 +48,7 @@ benchmark/slice  →  (runtime | agent)?  →  model via provider  →  Evidence
 
 **Live-proof status:** `bfcl-v4`, `hle`, `gpqa-diamond`, and `terminal-bench` hold registered Tier-1 evidence. Terminal-Bench is one native `fix-git` attempt per admitted runtime (`claude-code` `run-20260825-173913-754489-4f43e296`, `codex-cli` `run-20260825-171829-685914-aa08dd1d`), both `model_wrong_solution` with official `reward == 0.0`, plus a valid shared-axis runtime compare (`comparison_valid`, `contaminated_or_legacy`). No benchmark is called Tier-2 until its benchmark-specific checklist is complete. `swe-bench-verified` remains non-executable: official generation and evaluation are one evidence-bound diagnostic lifecycle and never auto-promote the row.
 
-**Current capability, not a Cartesian product:** config contains 10 benchmark rows, 36 model metadata entries, two runtime profiles, and two provider profiles. `claude-code` and `codex-cli` have admitted runtime paths. Both providers are labelled admitted in YAML, but the current `ollama-cloud` kind is rejected by the OpenAI-compatible launch resolver; its direct API/handler probes are not full adapter acceptance. No external agent is admitted. `momo` remains a discoverable **scaffold only** and must fail before output reservation or launch. Supported combinations, prepared-host execution, config onboarding, and clean-host deployment must be claimed separately.
+**Current capability, not a Cartesian product:** config contains 11 benchmark rows (one of them, `cybermetric-500`, identity-pinned and diagnostic-only; its 2026-09-21 route qualification and two-model baseline are retained and admission is a separate decision), 38 model metadata entries, two runtime profiles, and two provider profiles. `claude-code` and `codex-cli` have admitted runtime paths. Both providers are labelled admitted in YAML, but the current `ollama-cloud` kind is rejected by the OpenAI-compatible launch resolver; its direct API/handler probes are not full adapter acceptance. No external agent is admitted. `momo` remains a discoverable **scaffold only** and must fail before output reservation or launch. Supported combinations, prepared-host execution, config onboarding, and clean-host deployment must be claimed separately.
 
 **Implemented operator surface:** `bencheval ui` starts one loopback-only Python process and opens an optional browser console. It covers catalog, Run Builder, doctor/preflight, one active run session, validated run/evidence history, report/compare/export, private proofs, and readiness. It does not expose a public HTTP API, remote bind, credential editor, database, durable queue, or UI-only product behavior.
 
@@ -160,7 +160,7 @@ Live product paths use upstream-owned harnesses: Harbor/Docker for Terminal-Benc
 
 | Profile | Name | Used for | Notes |
 |---------|------|----------|-------|
-| E0 | Model-only / API | Official model-only benchmark harness | GPQA / HLE / BFCL |
+| E0 | Model-only / API | Official model-only benchmark harness | GPQA / HLE / BFCL; CyberMetric-500 (in-process chat-completions on the confirmed route, `backend: local`, both wall envelopes enforced as absolute deadlines, diagnostic-only until admitted) |
 | E1 | Runtime sandbox | Coding / repo tests under admitted runtime | Runtime-owned |
 | E2 | Terminal / harness sandbox | Terminal, multi-step verifier-heavy | Harbor for TB; harness-owned |
 | E3 | Calibration external | Public micro-slices | Adapter-backed; never Core-weighted |
@@ -684,7 +684,7 @@ The next product implementation is §23 config-first recovery; the first §22 BF
 
 ### 20.0 Evidence and source reconciliation
 
-- `VERIFIED_EXISTING`: the core has 10 catalog rows, 4 executable benchmarks, 2 admitted runtimes, 2 provider profiles labelled admitted, no admitted agent, and canonical file/proof operations. Provider labels are not proof of adapter compatibility (§23); the optional `ui` extra does not enter core imports.
+- `VERIFIED_EXISTING`: the core has 11 catalog rows, 4 executable benchmarks, 2 admitted runtimes, 2 provider profiles labelled admitted, no admitted agent, and canonical file/proof operations. Provider labels are not proof of adapter compatibility (§23); the optional `ui` extra does not enter core imports.
 - `USER_DECISION`: the 2026-09-01 request adds a feature-complete front-end prototype and design. It supersedes only the old dashboard exclusion; hosted, multi-user, database, remote proof, deletion, dual-use execution, and hard-dollar-control exclusions remain.
 - `DEPRECATED`: the Dashboard/Post-MVP statement in historical `docs/context/concept-hld.md` is retained as history, not current intent. The live sources are concept-zero, this architecture, roadmap, and contracts.
 - `ADOPTED`: NiceGUI 3.x based on its official Python/backend-first browser model, local/native modes, async-task guidance, tables/downloads, real browser testing, MIT license, and active release/repository state verified on 2026-09-01.

@@ -196,9 +196,10 @@ def test_catalog_exposes_pinned_identities_for_gpqa_hle_bfcl() -> None:
 
 
 def test_identity_binding_does_not_change_catalog_admission() -> None:
-    """Identity binding is orthogonal to admission: 9 benchmarks, 4 executable."""
+    """Identity binding is orthogonal to admission: 11 benchmarks, 4 executable
+    (the identity-pinned cybermetric-500 row stays non-executable until admitted)."""
     catalog = load_benchmark_catalog()
-    assert len(catalog.benchmarks) == 10
+    assert len(catalog.benchmarks) == 11
     executable = sorted(b.id for b in catalog.benchmarks if b.executable)
     assert executable == ["bfcl-v4", "gpqa-diamond", "hle", "terminal-bench"]
 

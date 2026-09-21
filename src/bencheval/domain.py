@@ -87,6 +87,7 @@ HarnessKindLiteral = Literal[
     "inspect",
     "inspect-evals",
     "hle-native",
+    "cybermetric-native",
     "local-harness",
     "cybergym-native",
     "exploitgym-native",

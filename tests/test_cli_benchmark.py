@@ -21,6 +21,7 @@ _PRODUCT_IDS = {
     "bfcl-v4-live",
     "bfcl-v4-tool-order-v1",
     "cybergym",
+    "cybermetric-500",
     "exploitgym",
     "gpqa-diamond",
     "hle",
@@ -34,7 +35,7 @@ def test_benchmark_list_json_reports_product_catalog() -> None:
     result = _run("benchmark", "list", "--execution-support", "all", "--format", "json")
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert payload["count"] == 10
+    assert payload["count"] == 11
     ids = {benchmark["id"] for benchmark in payload["benchmarks"]}
     assert ids == _PRODUCT_IDS
 
