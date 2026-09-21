@@ -52,7 +52,9 @@ ComparisonValidity = Literal[
 ]
 
 _VALID_HARNESS_KINDS = frozenset(get_args(HarnessKindLiteral))
-_MODEL_ONLY_HARNESSES = frozenset({"bfcl-native", "inspect-evals", "hle-native"})
+_MODEL_ONLY_HARNESSES = frozenset(
+    {"bfcl-native", "inspect-evals", "hle-native", "cybermetric-native"}
+)
 
 _BACKEND_TO_HARNESS: dict[str, str] = {
     "harbor": "harbor",
@@ -69,6 +71,7 @@ _ADAPTER_TO_OFFICIAL_RUNNER: dict[str, str] = {
     "hle": "hle-native",
     "cybergym": "cybergym-native",
     "exploitgym": "exploitgym-native",
+    "cybermetric": "cybermetric-native",
 }
 
 # Provisional planning labels only — not immutable dataset/harness digests.
@@ -477,8 +480,9 @@ def plan_control_plane(
     support = execution_support_label(benchmark)
     if support != "executable_adapter":
         caveats.append(f"execution_support:{support}")
-    # Aggregate Inspect/HLE adapters report cost_usd=0; envelope max_cost is not a hard cap.
-    if adapter_id in {"gpqa", "hle", "bfcl"}:
+    # Aggregate Inspect/HLE adapters and the unmetered model-only lanes report
+    # cost_usd=0; envelope max_cost is not a hard cap.
+    if adapter_id in {"gpqa", "hle", "bfcl", "cybermetric"}:
         caveats.append("max_cost_usd_unenforced_estimate")
 
     validity = _comparison_validity(slice_manifest.slice.purpose)

@@ -352,9 +352,23 @@ def make_exposure_run_plan(rows: list[EvidenceRecord]) -> RunPlan:
 
 
 def export_exposure_proof(
-    root: Path, rows: list[EvidenceRecord], *, with_plan: bool = True
+    root: Path,
+    rows: list[EvidenceRecord],
+    *,
+    with_plan: bool = True,
+    extra_raw: dict[str, str] | None = None,
+    run_plan: RunPlan | None = None,
 ) -> Path:
-    """Export one real complete private proof over a disposable population."""
+    """Export one real complete private proof over a disposable population.
+
+    ``extra_raw`` writes further run-owned artifacts (a retained variant
+    manifest and its derived data files, say) that the rows reference, so the
+    exporter retains them under ``artifacts/raw/`` exactly as a real run would.
+
+    ``run_plan`` retains a caller-supplied plan verbatim instead of the
+    stand-in, so a test can exercise an unmodified ``plan_control_plane``
+    result rather than a plan whose slice and instances were overwritten.
+    """
     from bencheval.evidence import JsonlEvidenceSink
     from bencheval.live_run_manifest import LiveRunRecord, append_live_run
     from bencheval.proof_bundle import export_private_proof
@@ -363,10 +377,12 @@ def export_exposure_proof(
     raw = root / "raw"
     (raw / "raw").mkdir(parents=True)
     (raw / "raw" / "score.json").write_text('{"accuracy": 0.0}\n', encoding="utf-8")
+    for rel, text in (extra_raw or {}).items():
+        (raw / rel).parent.mkdir(parents=True, exist_ok=True)
+        (raw / rel).write_text(text, encoding="utf-8")
     if with_plan:
-        (raw / "run-plan.json").write_text(
-            make_exposure_run_plan(rows).model_dump_json() + "\n", encoding="utf-8"
-        )
+        plan = run_plan if run_plan is not None else make_exposure_run_plan(rows)
+        (raw / "run-plan.json").write_text(plan.model_dump_json() + "\n", encoding="utf-8")
     evidence = root / "evidence.jsonl"
     sink = JsonlEvidenceSink()
     for record in rows:

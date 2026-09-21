@@ -129,6 +129,20 @@ PREPARATION_RECIPES: Mapping[str, PreparationRecipe] = {
         ),
         docs="docs/ops/benchmarks/swe-bench-verified.md",
     ),
+    "cybermetric-native": PreparationRecipe(
+        harness_kind="cybermetric-native",
+        # The lane needs only the base lock: a stdlib transport, no eval extra.
+        install="uv sync",
+        context="checkout",
+        external=(
+            _PYTHON_PREREQ,
+            _PROVIDER_ENV_PREREQ,
+            "BENCHEVAL_CYBERMETRIC_CACHE pointing at a cache whose <revision>/ directory holds "
+            "the pinned tihanyin/CyberMetric CyberMetric-500-v1.json with its README.md and "
+            "LICENSE-2.0.txt (Apache-2.0), all verified by digest before any request",
+        ),
+        docs="docs/ops/benchmarks/cybermetric-500.md",
+    ),
 }
 
 # Failing checks whose remedy is the harness's preparation recipe.
@@ -150,6 +164,7 @@ _BACKEND_BY_HARNESS: Mapping[str, str] = {
     "bfcl-native": "bfcl-native",
     "hle-native": "hle-native",
     "swebench-native": "swebench-native",
+    "cybermetric-native": "cybermetric-native",
 }
 
 
@@ -723,6 +738,8 @@ def run_plan_doctor(plan: RunPlan) -> DoctorReport:
         checks = _bfcl_native_checks(plan.model_id)
     elif harness == "hle-native":
         checks = _hle_native_checks()
+    elif harness == "cybermetric-native":
+        checks = _cybermetric_native_checks(plan)
     else:
         checks = _swebench_native_checks()
         checks.append(_swebench_launch_identity_check(plan))
@@ -904,6 +921,34 @@ def _hle_native_checks() -> list[DoctorCheck]:
         ),
     )
     return checks
+
+
+def _cybermetric_native_checks(plan: RunPlan) -> list[DoctorCheck]:
+    """The pinned snapshot and its attribution files, verified by digest on this host.
+
+    Fails closed when the cache is unset, the revision directory or the file is
+    absent, or any byte drifts from the catalog row's pin.
+    """
+    from bencheval.cybermetric_adapter import (
+        cybermetric_identity_for,
+        load_pinned_cybermetric_dataset,
+    )
+
+    name = "cybermetric_dataset"
+    try:
+        identity = cybermetric_identity_for(plan.benchmark_id)
+        dataset, attribution = load_pinned_cybermetric_dataset(identity)
+    except BenchEvalError as e:
+        return [DoctorCheck(name, "fail", str(e))]
+    return [
+        DoctorCheck(
+            name,
+            "pass",
+            f"pinned {identity.repo}@{identity.revision[:16]} verified on this host: "
+            f"{len(dataset.questions)} questions ({dataset.sha256}); attribution verified: "
+            f"{', '.join(sorted(attribution))}",
+        )
+    ]
 
 
 def _swebench_native_checks() -> list[DoctorCheck]:

@@ -22,7 +22,7 @@ def test_benchmark_registry_exports_from_package() -> None:
 
 def test_default_benchmark_catalog_has_current_expected_count() -> None:
     catalog = load_benchmark_catalog()
-    assert len(catalog.benchmarks) == 10
+    assert len(catalog.benchmarks) == 11
 
 
 def test_product_catalog_ids() -> None:
@@ -39,6 +39,7 @@ def test_product_catalog_ids() -> None:
         "hle",
         "cybergym",
         "exploitgym",
+        "cybermetric-500",
     }
     for entry in catalog.benchmarks:
         if not entry.executable:

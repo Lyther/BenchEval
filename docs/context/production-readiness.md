@@ -11,8 +11,6 @@ Tier 1  Phase B — Live Evidence     ≥1 real instance end-to-end via the benc
 Tier 2  Production v1               adapter admitted + live proof + full checklist satisfied
 ```
 
----
-
 ## Tier 0 — Phase A: Software (no live dependencies)
 
 **Question answered:** *Does the control plane itself behave correctly, deterministically, and safely with zero network, zero credentials, and zero harness sandbox on the host?*
@@ -34,8 +32,6 @@ make check-production-v1        # → ./scripts/check-production-v1.sh
 7. **Negative-evidence gate:** `bencheval run no-such-benchmark/smoke-5 ...` must **fail** before subprocess dispatch with a benchmark-not-found error. Research candidates live in docs, not as undeclared YAML executables.
 
 **Passing Tier 0 means:** the configured local software gates passed. It does **not** prove every behavior is correct or that any benchmark result is real. Non-executable benchmarks stay `metadata_only` / `manifest_only`; reports produced without live deps must carry the `adapter_smoke` interpretation label, never `benchmark_native_claim` (architecture §13.1, §15 risk "Harbor unavailable / Docker absent").
-
----
 
 ## Tier 1 — Phase B: Live Evidence (credentials + native harness)
 
@@ -68,8 +64,6 @@ A "Peer TB `fix-git` pass" means: `fix-git` ran through `harbor run --dataset te
 ### Phase B comparison rule
 
 Only treat `bencheval compare` as a **runtime_comparison** when both evidence files share the same `model_id` (architecture §13.3). Harbor agents may bind models differently; if the model axis drifts, `compare` exits with a dual-axis error rather than emitting a misleading runtime-only delta.
-
----
 
 ## Tier 2 — Production v1: full checklist
 
@@ -111,29 +105,16 @@ A benchmark graduates to **Production v1** only when **all** of the following ho
 - [ ] No statistical-significance claim from smoke/lite slices alone (VETO, architecture §14).
 - [ ] No mixing of Calibration / Stretch / selftest tasks into weighted public-benchmark totals.
 
-
 ### Note on "Tier-2 not claimed" (2026-09-15)
 
-All four benchmark ledgers mark every §A–§E item `proven` or `not-applicable` and still record
-**Tier-2 not claimed**. That is a *pending decision*, not a proven unmet prerequisite, and the
-ledgers do not state a criterion because the contract does not currently impose one that these
-rows fail.
+All four benchmark ledgers mark every §A–§E item `proven` or `not-applicable` and still record **Tier-2 not claimed**. That is a *pending decision*, not a proven unmet prerequisite, and the ledgers do not state a criterion because the contract does not currently impose one that these rows fail.
 
 What the contract actually says:
 
-- §E forbids a **statistical-significance claim** from smoke or lite slices. It does not require a
-  non-smoke population for adapter admission.
+- §E forbids a **statistical-significance claim** from smoke or lite slices. It does not require a non-smoke population for adapter admission.
 - §D lets comparison validity be `not-applicable` when no superiority claim is made (roadmap R4).
-- Architecture §13 keeps **adapter admission** (§13.1) and **report validity** (§13.3) on separate
-  axes; satisfying one has never implied the other.
+- Architecture §13 keeps **adapter admission** (§13.1) and **report validity** (§13.3) on separate axes; satisfying one has never implied the other.
 
-So a row can hold every §A–§E item and still not be promoted, because promotion is a decision about
-**which public claim the row should license**, and that decision has not been made. Population
-sufficiency belongs to the *specific result or claim*, not to the adapter: a smoke-backed row may
-not carry a public comparison, while the same adapter is perfectly admitted for the diagnostic and
-regression work BenchEval actually does with it.
+So a row can hold every §A–§E item and still not be promoted, because promotion is a decision about **which public claim the row should license**, and that decision has not been made. Population sufficiency belongs to the *specific result or claim*, not to the adapter: a smoke-backed row may not carry a public comparison, while the same adapter is perfectly admitted for the diagnostic and regression work BenchEval actually does with it.
 
-**Proposed policy change, not adopted.** If Tier-2 should additionally require a retained non-smoke
-run on the admitted identity in the qualified lane, that is a change to this contract and needs an
-owner decision. It is recorded here as a proposal so the ledgers stop reading as though such a rule
-already existed; no ledger applies it today.
+**Proposed policy change, not adopted.** If Tier-2 should additionally require a retained non-smoke run on the admitted identity in the qualified lane, that is a change to this contract and needs an owner decision. It is recorded here as a proposal so the ledgers stop reading as though such a rule already existed; no ledger applies it today.

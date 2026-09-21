@@ -917,6 +917,41 @@ def _study_verify(args: argparse.Namespace) -> int:
     return 0
 
 
+def _study_protocol(args: argparse.Namespace) -> int:
+    from bencheval.exposure_protocol import write_protocol_record
+
+    record = write_protocol_record(
+        args.protocol,
+        blocking_seed=args.blocking_seed,
+        output=Path(args.output),
+    )
+    sys.stdout.write(
+        json.dumps(
+            {
+                "protocol_id": record["protocol_id"],
+                "manifest_sha256": record["manifest_sha256"],
+                "blocks": len(record["partition"]),  # type: ignore[arg-type]
+                "output": str(Path(args.output)),
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+    return 0
+
+
+def _study_protocol_verify(args: argparse.Namespace) -> int:
+    from bencheval.exposure_protocol import verify_protocol_lock
+
+    payload = verify_protocol_lock(
+        lock_path=Path(args.lock),
+        proofs_dir=Path(args.proofs),
+        output=Path(args.output) if args.output is not None else None,
+    )
+    sys.stdout.write(json.dumps(payload, indent=2) + "\n")
+    return 0
+
+
 def _optional_selection(args: argparse.Namespace) -> ExposureSelection | None:
     from bencheval.exposure_selection import load_exposure_selection
 
@@ -1234,6 +1269,25 @@ def _build_parser() -> argparse.ArgumentParser:
         "--output", default=None, help="exclusive path for the reproduced report"
     )
     study_verify.set_defaults(handler=_study_verify)
+    study_protocol = study_sub.add_parser(
+        "protocol",
+        help="Freeze a repeat protocol: block partition, balanced schedule, and record",
+    )
+    study_protocol.add_argument("protocol", help="defined repeat protocol id")
+    study_protocol.add_argument("--blocking-seed", required=True)
+    study_protocol.add_argument("--output", required=True, help="exclusive record path")
+    study_protocol.set_defaults(handler=_study_protocol)
+    study_protocol_verify = study_sub.add_parser(
+        "protocol-verify",
+        help="Reproduce a locked protocol report from one copied proof per run",
+    )
+    study_protocol_verify.add_argument("--lock", required=True)
+    study_protocol_verify.add_argument("--proofs", required=True, help="directory of run proofs")
+    study_protocol_verify.add_argument(
+        "--output", default=None, help="exclusive reproduced-report path"
+    )
+    study_protocol_verify.set_defaults(handler=_study_protocol_verify)
+
     study_select = study_sub.add_parser(
         "select",
         help="Materialize the study's sha256_rank_v1 population into exact-id slices",

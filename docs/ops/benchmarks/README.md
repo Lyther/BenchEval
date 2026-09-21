@@ -13,6 +13,7 @@ Operator notes for product catalog rows. BenchEval ships control-plane glue and,
 | `swe-bench-pro` | **pending** | needs real official task selector from Harbor dataset |
 | `exploitgym` | **pending** | needs real official task id/source from host harness |
 | `cybergym` | **not executable** | catalog/`adapter_pending` until full official server+submit lifecycle |
+| `cybermetric-500` | **diagnostic only** (SEC1.2/SEC1.3; qualified and baselined 2026-09-21, admission is a separate decision) | model-only; direct chat-completions on the confirmed route; pinned Apache-2.0 snapshot under `BENCHEVAL_CYBERMETRIC_CACHE` |
 
 Bare `bencheval run <benchmark>` resolves each executable row’s `default_slice` (smoke). Explicit `<benchmark>/<slice>` still works. Pending rows intentionally have no default slice and should fail before execution.
 

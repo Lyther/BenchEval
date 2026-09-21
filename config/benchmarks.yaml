@@ -338,3 +338,37 @@ benchmarks:
       official task id/source from the host harness without placeholder ids.
     adapter_id: exploitgym
     executable: false
+  - id: cybermetric-500
+    name: CyberMetric-500
+    aliases:
+      - CyberMetric
+    category: cybersecurity
+    tier: calibration
+    adapter_status: manifest_available
+    recommended_backend: external
+    recommended_profile: E3
+    task_count: 500
+    public_indexed: true
+    contamination_risk: high
+    single_mode_required: false
+    source_url: https://huggingface.co/datasets/tihanyin/CyberMetric
+    notes: >
+      Model-only cybersecurity knowledge MCQ lane (roadmap SEC1.2). The population
+      of record is the first author's Apache-2.0 Hugging Face snapshot pinned below
+      (byte-identical to upstream GitHub 62cc8a9); the protocol is the pinned
+      upstream evaluator's prompt, parser and first-parseable-of-five attempt rule
+      (cybermetric-evaluator-v1), with transport failures classified
+      remote_infra_failure and never silently retried. Not admitted: executable
+      stays false until the live route qualification (SEC1.3), so every run needs
+      --diagnostic and never registers passed. Host asset: the pinned snapshot with
+      its README.md and LICENSE-2.0.txt under BENCHEVAL_CYBERMETRIC_CACHE/<revision>/,
+      verified by digest before any request. See docs/ops/benchmarks/cybermetric-500.md.
+    adapter_id: cybermetric
+    executable: false
+    default_slice: cybermetric-500-v1
+    identity:
+      kind: hf-dataset-snapshot
+      repo: tihanyin/CyberMetric
+      revision: 32759c2fa90274706219e1cf946cadff93da52e3
+      files:
+        CyberMetric-500-v1.json: sha256:036747c989da9f38f39a6b33fa2d5ab14147c928df0274217bbecab20be88faa

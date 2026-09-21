@@ -252,6 +252,14 @@ def load_exposure_study(path_or_id: Path | str) -> ExposureStudyManifest:
         raise BenchEvalError(f"{path.name}: {e}") from e
 
 
+def parse_exposure_study(raw: object, *, source: str) -> ExposureStudyManifest:
+    """Validate an already-decoded study definition, as retained inside a lock."""
+    try:
+        return ExposureStudyManifest.model_validate(raw)
+    except ValidationError as e:
+        raise BenchEvalError(f"{source}: invalid exposure study: {e}") from e
+
+
 def exposure_study_sha256(study: ExposureStudyManifest) -> str:
     canonical = json.dumps(
         study.model_dump(mode="json"),

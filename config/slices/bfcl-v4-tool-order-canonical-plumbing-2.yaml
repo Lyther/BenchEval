@@ -1,18 +1,18 @@
-schema_version: '0.1'
+schema_version: "0.1"
 slice:
   id: tool-order-canonical-plumbing-2
   benchmark_id: bfcl-v4
   purpose: adapter_smoke
   selection_policy: fixed_instance_ids
   instances:
-  - multiple_19
-  - parallel_multiple_125
+    - multiple_19
+    - parallel_multiple_125
   valid_for:
-  - adapter_smoke
-  - rough_regression
+    - adapter_smoke
+    - rough_regression
   invalid_for:
-  - benchmark_native_claim
-  - model_comparison
+    - benchmark_native_claim
+    - model_comparison
 budget:
   max_instances: 2
   max_wall_clock_sec_per_instance: 300
