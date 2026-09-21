@@ -33,3 +33,22 @@ indent_style = tab
 
 [COMMIT_EDITMSG]
 max_line_length = 72
+
+# Retained fixture bytes are identity: proof digests, pinned attribution cards and recorded
+# harness output are verified byte-for-byte by contracts. No editor may trim, re-terminate,
+# re-encode or re-indent them (review SEC12-IMPL-F002).
+[tests/fixtures/**]
+trim_trailing_whitespace = false
+insert_final_newline = false
+end_of_line = unset
+charset = unset
+indent_style = unset
+indent_size = unset
+
+[tests/regressions/data/**]
+trim_trailing_whitespace = false
+insert_final_newline = false
+end_of_line = unset
+charset = unset
+indent_style = unset
+indent_size = unset

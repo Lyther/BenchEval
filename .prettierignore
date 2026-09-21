@@ -1,0 +1,5 @@
+# Retained fixture bytes are identity: proof digests, pinned attribution cards and recorded
+# harness output are verified byte-for-byte by contracts. No formatter may rewrite them
+# (review SEC12-IMPL-F002).
+tests/fixtures/
+tests/regressions/data/
