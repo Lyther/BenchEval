@@ -344,9 +344,20 @@ def derived_ref_for(benchmark_id: str) -> BfclDerivedDataRef | None:
 
 
 def resolve_derived_source(
-    benchmark_id: str, *, package_root: Path | None = None
+    benchmark_id: str, *, package_root: Path | None = None, study_id: str | None = None
 ) -> DerivedSource | None:
-    """Bind a derived benchmark to its source pins, study, and selection; None if not derived."""
+    """Bind a derived benchmark to its source pins, study, and selection; None if not derived.
+
+    ``study_id`` binds the same derived data to another representation-pair
+    study over this derived benchmark -- the repeat protocol's separately
+    versioned population is the only such caller today. The override is checked
+    exactly as the catalog's own study is: it must declare this derived
+    benchmark's source, transform, balance algorithm and categories, and its
+    selection must replay and bind the catalog pins. The transform is seeded
+    from the study's population seed, so an override that keeps the treatment
+    bytes fixed must keep that seed; only the mapped population differs. The
+    catalog ref remains the default and the historical study is untouched.
+    """
     from bencheval.exposure_selection import (
         load_exposure_selection,
         verify_selection_against_catalog,
@@ -370,7 +381,7 @@ def resolve_derived_source(
         raise BenchEvalError(
             f"{benchmark_id}: source {ref.source_benchmark_id!r} has no package-data identity"
         )
-    study = load_exposure_study(ref.study_id)
+    study = load_exposure_study(study_id if study_id is not None else ref.study_id)
     _require_study_matches_ref(study, ref, benchmark_id=benchmark_id)
     selection = load_exposure_selection(default_studies_dir() / f"{study.id}.selection.json")
     verify_selection_for_study(study, selection)

@@ -1434,6 +1434,16 @@ def resolve_study_reference(value: str) -> Path | str:
     return value
 
 
+# Reused by ``exposure_protocol.py`` so the repeat path applies exactly these
+# population, eligibility, identity, constant-axis and variant rules rather than
+# a second copy of them. Same implementation, one owner, no fork.
+assert_bound_population = _assert_bound_population
+assert_constant_axes = _assert_constant_axes
+assert_variant = _assert_variant
+bind_side_rows = _bind_side
+load_proof_side = _load_proof_side
+proof_variant = _proof_variant
+
 __all__ = [
     "EXPOSURE_LOCK_SCHEMA",
     "REPORT_CONTRACT_VERSION",
@@ -1441,7 +1451,13 @@ __all__ = [
     "ExposureReport",
     "ProofBackedReport",
     "ReportFormat",
+    "assert_bound_population",
+    "assert_constant_axes",
+    "assert_variant",
+    "bind_side_rows",
     "build_exposure_report",
+    "load_proof_side",
+    "proof_variant",
     "render_exposure",
     "render_exposure_markdown",
     "resolve_study_reference",
