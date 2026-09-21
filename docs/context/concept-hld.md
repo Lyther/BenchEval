@@ -8,8 +8,6 @@
 
 > **Current product contract (2026-07):** Prefer [`docs/architecture.md`](../architecture.md), [`docs/api/internal-contracts.md`](../api/internal-contracts.md), and the root [`README.md`](../../README.md). Live spine is `benchmark → (runtime | agent)? → model via provider → evidence`. Tier-0 executables: `terminal-bench`, `gpqa-diamond`, `hle`, `bfcl-v4` (BFCL admitted 2026-08-24 on the diagnostic-labeled dev-box lifecycle demonstration `run-20260824-040631-228703-4756f857` plus the registered `passed` run `run-20260824-045622-854659-a46ae44d`); `swe-bench-verified` is demoted until official evaluation is wired; `swe-bench-pro`, `cybergym`, and `exploitgym` remain pending. CLI is `bencheval run <benchmark>/<slice> --model <id> [--runtime|--agent] [--provider] [--dry-run|-y]`. Commands documented below such as `plan`, `run --config`, `run --benchmark/--slice`, `task`, and `replay` are **historical** and must not be used as operator instructions.
 
----
-
 ## 0. Executive Summary
 
 BenchEval should not be a benchmark-authoring project. The product requirement is not “create Core-8/Core-16 tasks.” The product requirement is to answer:
@@ -38,8 +36,6 @@ The MVP should deliver:
 
 The first engineering target is not Core-16. It is one end-to-end public adapter path with runtime dimension captured correctly.
 
----
-
 ## 1. Product Definition
 
 BenchEval is an evaluation control plane for running existing benchmarks against selected models and selected runtimes/scaffolds under a reproducible, cost-bounded, evidence-preserving workflow.
@@ -65,8 +61,6 @@ BenchEval must answer these questions directly:
 Do not invent tasks when an existing benchmark and harness already exist. Build adapters, not benchmark clones.
 
 The only acceptable custom “task” layer in MVP is an internal self-test pack proving that BenchEval’s adapter, evidence, and reporting paths work. It must not be marketed or treated as the main evaluation signal.
-
----
 
 ## 2. Facts, Assumptions, Inferences, Recommendations
 
@@ -139,8 +133,6 @@ Make slice manifests the default execution mode. Full-suite runs should require 
 
 Preserve native benchmark metrics. Normalize only cross-cutting operational metadata: cost, latency, runtime version, model version, token usage, artifacts, failure class, harness version, and cleanup result.
 
----
-
 ## 3. Goals and Non-Goals
 
 ### 3.1 Goals
@@ -168,8 +160,6 @@ Preserve native benchmark metrics. Normalize only cross-cutting operational meta
 | Offensive cyber capability evaluation as a core product | Safety, legal, and operational boundaries are too risky. Use defensive/sandboxed subsets only. |
 | Live internet tasks in MVP | Nondeterminism, provider drift, and reproducibility problems. |
 | GUI/desktop agents in MVP | VM, rendering, accessibility, and timing flakiness should be post-MVP. |
-
----
 
 ## 4. Current Codebase Alignment Assessment
 
@@ -216,8 +206,6 @@ Runtime registry first-class
 Core suite only as internal self-test/private regression
 ```
 
----
-
 ## 5. Benchmark Strategy
 
 BenchEval should classify benchmarks by execution role, not by marketing importance. At this v0.3 snapshot, live product YAML had **8** catalog rows and **4** Tier-0 executables (`swe-bench-verified` demoted; `cybergym` pending its full official lifecycle). For current catalog state, use `config/benchmarks.yaml` and `docs/roadmap.md`; the broader research catalog is docs-only (`docs/context/external-benchmark-catalog.md`). Earlier drafts of this HLD assumed a large metadata catalog (~81 ids) for adapter planning — that count is not the product registry.
@@ -258,8 +246,6 @@ The first adapters should maximize signal per engineering hour. Adapter status i
 | Stretch | CyberGym-E2E | pending release (paper 2026) | End-to-end vulnerability lifecycle; wait for public task set before adapter work. | n/a until release. |
 
 SWE-bench Verified should not be used as a frontier promotion benchmark. It can still be used as an adapter smoke test because its ecosystem is widely supported and its task IDs are familiar, but reports must label it as contaminated/legacy for frontier capability inference.
-
----
 
 ## 6. Runtime Model
 
@@ -347,8 +333,6 @@ Equivalent profiles are required for admitted peers (`codex-cli` today) and futu
 
 These must be distinct from `model_wrong_solution` and `harness_failure`.
 
----
-
 ## 7. Architecture
 
 ### 7.1 System Diagram
@@ -415,8 +399,6 @@ Copy public benchmark instances into custom Core tasks and treat them as BenchEv
 ```
 
 That creates maintenance debt and obscures native benchmark semantics.
-
----
 
 ## 8. CLI Surface
 
@@ -516,8 +498,6 @@ Comparison rules:
 - Different benchmark: no single merged score; report side-by-side only.
 - Different runtime under same benchmark/slice: valid runtime comparison if model binding is clear.
 - Different model under same runtime/benchmark/slice: valid model comparison if runtime config is unchanged.
-
----
 
 ## 9. Data Contracts
 
@@ -653,8 +633,6 @@ integrity:
   contamination_label: "public_possible"
 ```
 
----
-
 ## 10. Scoring and Reporting Policy
 
 ### 10.1 Preserve Native Metrics
@@ -708,8 +686,6 @@ Every report must label the run:
 | `model_comparison` | Same benchmark/slice/runtime, model differs. |
 | `contaminated_or_legacy` | Public benchmark likely affected by contamination or saturation. |
 | `defensive_security_only` | Security benchmark was transformed or selected for defensive evaluation only. |
-
----
 
 ## 11. Migration Plan from Current Codebase
 
@@ -777,8 +753,6 @@ BFCL V4 or LiveCodeBench smoke
 × output: cheap model-only comparison report
 ```
 
----
-
 ## 12. Risk Register
 
 | Risk | Severity | Mitigation |
@@ -797,8 +771,6 @@ BFCL V4 or LiveCodeBench smoke
 | Cyber benchmark scope creep | High | Defensive-only subsets, sandbox-only, no live targets, explicit safety review. |
 | GUI benchmark flakiness | Medium | Post-MVP only; require VM snapshot/replay gates. |
 | Adapter maintenance burden | Medium | Native wrappers only; no task reimplementation unless necessary. |
-
----
 
 ## 13. Verification Gates
 
@@ -845,8 +817,6 @@ A report cannot claim model or runtime superiority unless:
 - Failed/invalid attempts are reported, not silently dropped.
 - Caveat labels are shown in the summary.
 
----
-
 ## 14. Roadmap
 
 | Phase | Scope | Exit criteria |
@@ -860,8 +830,6 @@ A report cannot claim model or runtime superiority unless:
 | P6 | Analytics store | DuckDB/Parquet views for cost, latency, pass/fail, runtime failure, and historical regression. |
 | P7 | Defensive security adapter | CyberSecEval defensive smoke only, with explicit safety boundary. |
 | P8 | GUI/computer-use adapter | OSWorld or related GUI suite after VM/replay stability. |
-
----
 
 ## 15. Final Decision
 
@@ -890,8 +858,6 @@ The engineering order should change immediately:
 
 This puts BenchEval on the same page as the stated requirement: choose benchmark, choose model, choose runtime, run a bounded slice, and produce evidence.
 
----
-
 ## References
 
 [R1] Inspect AI documentation: <https://inspect.aisi.org.uk/>
@@ -916,8 +882,6 @@ This puts BenchEval on the same page as the stated requirement: choose benchmark
 [R20] CyberGym-E2E (end-to-end vulnerability lifecycle, paper 2026, release pending): <https://www.cybergym.io/> → CyberGym-E2E section
 [R21] BountyBench (Zhang et al., arXiv 2505.15216, Stanford CRFM): <https://arxiv.org/abs/2505.15216> and <https://bountybench.github.io/>
 [R22] DeepSWE naming note: "DeepSWE-32B" is an RL-trained agent/model (All Hands) on SWE-bench-style tasks, not a verified standalone public benchmark task set; canonical task source not verified as of 2026-06-17.
-
----
 
 ## 16. Changelog
 

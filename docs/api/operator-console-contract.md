@@ -4,26 +4,14 @@ Status: **IMPLEMENTED v1 contract; hardening/acceptance limits below**
 
 Last updated: 2026-09-01
 
-Implementation boundary: `src/bencheval/application/` and
-`src/bencheval/ui/`, launched through `bencheval ui`. The full page/action
-surface is present. Deterministic operation/security tests and a real local
-Chromium navigation/plan journey pass; cross-browser accessibility automation,
-large-history measurement, and a charged run launched from the console remain
-hardening evidence, not implied by this status.
+Implementation boundary: `src/bencheval/application/` and `src/bencheval/ui/`, launched through `bencheval ui`. The full page/action surface is present. Deterministic operation/security tests and a real local Chromium navigation/plan journey pass; cross-browser accessibility automation, large-history measurement, and a charged run launched from the console remain hardening evidence, not implied by this status.
 
-Source concept: [`../context/concept-zero.md`](../context/concept-zero.md)
-Source architecture: [`../architecture.md`](../architecture.md), especially §20,
-Data and State, and Interfaces and Contracts
-Visual coverage: [`../prototypes/frontend-v1.md`](../prototypes/frontend-v1.md)
+Source concept: [`../context/concept-zero.md`](../context/concept-zero.md) Source architecture: [`../architecture.md`](../architecture.md), especially §20, Data and State, and Interfaces and Contracts Visual coverage: [`../prototypes/frontend-v1.md`](../prototypes/frontend-v1.md)
 
 ## Applicability
 
-- **Domain/data track: REQUIRED.** BenchEval owns typed configuration, frozen run
-  plans, append-only lifecycle and evidence, derived reports/exports, artifacts,
-  and immutable private-proof state. The console adds no authoritative store.
-- **Interface track: REQUIRED.** The console is a new caller of typed in-process
-  operations and a new local CLI entry point. NiceGUI's browser transport is
-  private and is not a supported HTTP/WebSocket API.
+- **Domain/data track: REQUIRED.** BenchEval owns typed configuration, frozen run plans, append-only lifecycle and evidence, derived reports/exports, artifacts, and immutable private-proof state. The console adds no authoritative store.
+- **Interface track: REQUIRED.** The console is a new caller of typed in-process operations and a new local CLI entry point. NiceGUI's browser transport is private and is not a supported HTTP/WebSocket API.
 
 ## Boundary
 
@@ -33,9 +21,7 @@ CLI handlers ─┐
 UI handlers  ─┘
 ```
 
-The application layer composes existing modules; it does not become a second
-planner, executor, qualifier, comparison engine, redactor, or proof verifier.
-Pages and components receive only view DTOs and action descriptors.
+The application layer composes existing modules; it does not become a second planner, executor, qualifier, comparison engine, redactor, or proof verifier. Pages and components receive only view DTOs and action descriptors.
 
 Explicitly outside the contract:
 
@@ -60,14 +46,11 @@ Explicitly outside the contract:
 | Readiness | Catalog/software gates, registered live proof, benchmark-specific ledger docs | Tier-0, Tier-1, Tier-2 are independent; no tier inferred from UI or tests | Public/project state plus private proof references |
 | Run session | implemented `ui.session.RunSessionController` in memory | At most one active mutation; one run ID; explicit cancel; no automatic retry/resume | Ephemeral; never serialized or treated as lifecycle truth |
 
-Existing files and models remain canonical. No schema or migration is introduced
-by this design. A future database requires a superseding architecture decision.
+Existing files and models remain canonical. No schema or migration is introduced by this design. A future database requires a superseding architecture decision.
 
 ## View DTO contract
 
-All DTOs are frozen Pydantic models with `extra="forbid"`. Request DTOs accept
-only JSON-compatible scalar/list/map data needed for the operation. View DTOs
-are deliberate projections and carry `contract_version: Literal["ui_v1"]`.
+All DTOs are frozen Pydantic models with `extra="forbid"`. Request DTOs accept only JSON-compatible scalar/list/map data needed for the operation. View DTOs are deliberate projections and carry `contract_version: Literal["ui_v1"]`.
 
 ```python
 class OperationErrorDTO:
@@ -90,132 +73,49 @@ class CatalogPageDTO:
     source_revision: str         # source fingerprint, not a filesystem inode/path
 ```
 
-Operations raise `BenchEvalError` at the in-process boundary. UI handlers map
-that error to a redacted notification; there is no serialized generic
-`OperationResult` wrapper or public transport error schema in v1.
+Operations raise `BenchEvalError` at the in-process boundary. UI handlers map that error to a redacted notification; there is no serialized generic `OperationResult` wrapper or public transport error schema in v1.
 
 ### Catalog DTOs
 
-`CatalogItemDTO(kind="benchmark")` exposes ID/name, execution support,
-category/tier/adapter state, default slice, and whether the row is runnable. It
-never exposes executable command templates or config file
-paths. Model/runtime/agent/provider DTOs expose public capability/admission and
-credential environment-variable names only; provider launch URLs, credentials,
-proxy credentials, and environment values never cross.
+`CatalogItemDTO(kind="benchmark")` exposes ID/name, execution support, category/tier/adapter state, default slice, and whether the row is runnable. It never exposes executable command templates or config file paths. Model/runtime/agent/provider DTOs expose public capability/admission and credential environment-variable names only; provider launch URLs, credentials, proxy credentials, and environment values never cross.
 
 ### Plan and preflight DTOs
 
-`PlanRequestDTO` contains target benchmark/slice, model, optional runtime XOR
-agent, optional provider, diagnostic flag, and operator-selected output paths.
-It maps to the existing planner and returns:
+`PlanRequestDTO` contains target benchmark/slice, model, optional runtime XOR agent, optional provider, diagnostic flag, and operator-selected output paths. It maps to the existing planner and returns:
 
-- `PlanPreviewDTO`: benchmark/adapter/harness/runtime/agent/provider/model axes,
-  benchmark identity, planned instance count, execution support, cost/wall
-  envelopes, network policy, diagnostic state, caveats, and a stable fingerprint
-  over canonical plan bytes plus normalized operator-selected evidence/artifact
-  paths. The nested request retains the original path selections;
-- `DoctorViewDTO`: selected backend/native harness, overall state, and ordered
-  `DoctorCheckDTO{name,status,message}` values; from `run.preflight` it also
-  carries the resolved `selection` (benchmark/slice/harness/runtime/agent/
-  provider/model/judge axes and binding digests), the harness `recipe`
-  (install command, its execution context, external prerequisites), and the
-  `host` roots (config source, results root, whether preparation can run
-  here);
-- actions for Dry run and Start. Start requires the same plan fingerprint and
-  expires if config/source revision changes.
+- `PlanPreviewDTO`: benchmark/adapter/harness/runtime/agent/provider/model axes, benchmark identity, planned instance count, execution support, cost/wall envelopes, network policy, diagnostic state, caveats, and a stable fingerprint over canonical plan bytes plus normalized operator-selected evidence/artifact paths. The nested request retains the original path selections;
+- `DoctorViewDTO`: selected backend/native harness, overall state, and ordered `DoctorCheckDTO{name,status,message}` values; from `run.preflight` it also carries the resolved `selection` (benchmark/slice/harness/runtime/agent/provider/model/judge axes and binding digests), the harness `recipe` (install command, its execution context, external prerequisites), and the `host` roots (config source, results root, whether preparation can run here);
+- actions for Dry run and Start. Start requires the same plan fingerprint and expires if config/source revision changes.
 
-The UI cannot post a serialized `RunPlan` as authority. The operation replans
-from request axes, rebinds the output selections, and compares the fingerprint
-before charge. The plan page's preflight is `run.preflight`: it resolves the
-request exactly as `run.plan` (same admission, model-only, provider, and
-diagnostic refusals) and runs the plan doctor for the resolved harness —
-Harbor (CLI, Docker, actor binding, launch identity), Inspect (`inspect_ai`,
-`inspect_evals`, Docker by profile), BFCL (pinned package/data, registration),
-HLE (pinned checkout, dataset token, candidate and judge credentials), each
-plus the provider credential check — the same function every real run
-executes before it reserves outputs.
+The UI cannot post a serialized `RunPlan` as authority. The operation replans from request axes, rebinds the output selections, and compares the fingerprint before charge. The plan page's preflight is `run.preflight`: it resolves the request exactly as `run.plan` (same admission, model-only, provider, and diagnostic refusals) and runs the plan doctor for the resolved harness — Harbor (CLI, Docker, actor binding, launch identity), Inspect (`inspect_ai`, `inspect_evals`, Docker by profile), BFCL (pinned package/data, registration), HLE (pinned checkout, dataset token, candidate and judge credentials), each plus the provider credential check — the same function every real run executes before it reserves outputs.
 
-When output selections are omitted, the default evidence/artifact paths are
-rooted under the process working directory and receive the same lexical
-symlink-component check as explicit paths. An operator whose checkout path
-itself traverses a user-controlled symlink must launch the console from the
-canonical non-symlinked checkout path.
+When output selections are omitted, the default evidence/artifact paths are rooted under the process working directory and receive the same lexical symlink-component check as explicit paths. An operator whose checkout path itself traverses a user-controlled symlink must launch the console from the canonical non-symlinked checkout path.
 
 ### Run, evidence, and artifact DTOs
 
-`RunSummaryDTO` exposes lifecycle registration, identity axes, evidence/report/
-bundle locators, event count, host, and the last event time. `RunDetailDTO` adds
-the validated raw-history projection, bounded `EvidenceSummaryDTO` rows,
-the total evidence count and explicit truncation state, qualification reasons,
-and legal actions. Task outcome, failure class, attempt validity,
-interpretation, cost, cost basis, and artifact locators live on those evidence
-summaries rather than on the lifecycle summary.
+`RunSummaryDTO` exposes lifecycle registration, identity axes, evidence/report/bundle locators, event count, host, and the last event time. `RunDetailDTO` adds the validated raw-history projection, bounded `EvidenceSummaryDTO` rows, the total evidence count and explicit truncation state, qualification reasons, and legal actions. Task outcome, failure class, attempt validity, interpretation, cost, cost basis, and artifact locators live on those evidence summaries rather than on the lifecycle summary.
 
-`EvidenceSummaryDTO.artifacts` contains bounded local artifact locators, while
-`ArtifactResultDTO` contains role, path, size, digest, visibility, validity, and
-bounded details for a newly generated artifact. The local private console may
-show operator-owned absolute paths so the operator can locate evidence; public
-reports and bundles remain subject to the existing sanitizer. No DTO contains
-arbitrary HTML, credential values, or artifact bytes.
+`EvidenceSummaryDTO.artifacts` contains bounded local artifact locators, while `ArtifactResultDTO` contains role, path, size, digest, visibility, validity, and bounded details for a newly generated artifact. The local private console may show operator-owned absolute paths so the operator can locate evidence; public reports and bundles remain subject to the existing sanitizer. No DTO contains arbitrary HTML, credential values, or artifact bytes.
 
 ### Comparison/report/export DTOs
 
-Comparison operations return `ArtifactResultDTO`: canonical comparison modules
-render the Markdown/JSON artifact, while `valid` and `detail` expose whether a
-headline is allowed and why an invalid comparison was rejected. The UI does not
-recalculate comparison metrics.
+Comparison operations return `ArtifactResultDTO`: canonical comparison modules render the Markdown/JSON artifact, while `valid` and `detail` expose whether a headline is allowed and why an invalid comparison was rejected. The UI does not recalculate comparison metrics.
 
-Report/export results contain output role, local path, size, digest, visibility,
-validity, and bounded details. They do not embed Parquet/DuckDB or
-private bundle bytes in application state.
+Report/export results contain output role, local path, size, digest, visibility, validity, and bounded details. They do not embed Parquet/DuckDB or private bundle bytes in application state.
 
 ### Exposure study DTOs
 
-`StudyValidationDTO` carries the study id, digest, kind, relation, comparison
-mode, and the validator's own payload. `StudyReportDTO` carries analysis mode,
-population scale and binding, relation, comparison mode, report digest, optional
-lock digest and paths, permitted interpretation, non-claims, caveats, paired
-outcomes when the study is paired, and the report payload itself. Every number
-in those fields is read out of that payload: the projection never recomputes a
-rate, an interval, a population decision, or an interpretation, and the console
-never renders a headline the report does not carry.
+`StudyValidationDTO` carries the study id, digest, kind, relation, comparison mode, and the validator's own payload. `StudyReportDTO` carries analysis mode, population scale and binding, relation, comparison mode, report digest, optional lock digest and paths, permitted interpretation, non-claims, caveats, paired outcomes when the study is paired, and the report payload itself. Every number in those fields is read out of that payload: the projection never recomputes a rate, an interval, a population decision, or an interpretation, and the console never renders a headline the report does not carry.
 
-`table_rows()` returns plain `field`/`value` pairs so the same result is
-reachable as a keyboard-navigable table without any chart or hover affordance.
+`table_rows()` returns plain `field`/`value` pairs so the same result is reachable as a keyboard-navigable table without any chart or hover affordance.
 
-`StudyLockVerificationDTO` is a reproduction result, not a fresh endorsement. It
-carries the verifier's payload plus, when the operator asked for the reproduced
-report to be written, that report's own analysis mode, non-claims, and caveats.
-A reproduction can never present a stronger claim than the locked report: the
-digests must match before anything is shown, and a raw-only or smoke population
-stays raw-only or smoke in the view. The displayed report is bound to the digest
-the verifier proved — the written bytes are read once and refused as a typed
-operator error unless their SHA-256 equals `report_sha256` — so a report
-replaced on the output path after the verifier finished can never be displayed
-beside an authentic digest. Its rows keep the lock's own identity under
-`locked study`, leaving the rebuilt report's `study` row its own table key. When
-no reproduced report was written, the view
-says that the digests matched and that a JSON reproduction output is needed to
-see the locked report's scores, caveats, and non-claims, so a short table is
-explained rather than mistaken for an empty result. A report field the domain
-stops emitting fails as a typed operator error, never as a blank cell.
+`StudyLockVerificationDTO` is a reproduction result, not a fresh endorsement. It carries the verifier's payload plus, when the operator asked for the reproduced report to be written, that report's own analysis mode, non-claims, and caveats. A reproduction can never present a stronger claim than the locked report: the digests must match before anything is shown, and a raw-only or smoke population stays raw-only or smoke in the view. The displayed report is bound to the digest the verifier proved — the written bytes are read once and refused as a typed operator error unless their SHA-256 equals `report_sha256` — so a report replaced on the output path after the verifier finished can never be displayed beside an authentic digest. Its rows keep the lock's own identity under `locked study`, leaving the rebuilt report's `study` row its own table key. When no reproduced report was written, the view says that the digests matched and that a JSON reproduction output is needed to see the locked report's scores, caveats, and non-claims, so a short table is explained rather than mistaken for an empty result. A report field the domain stops emitting fails as a typed operator error, never as a blank cell.
 
 ### Proof and readiness DTOs
 
-`ProofViewDTO` exposes proof ID, run ID, local path, classification and reason,
-verification result, and optional benchmark ID. “Verified” means inventory/
-content integrity, not creator authenticity or signature. There is no delete
-action ID. An indexed object that fails verification is returned as
-`classification="corrupt"`, `verified=false`, with the proof ID, local path,
-and bounded verifier reason so healthy sibling proofs remain usable. Corruption
-of the shared proof index remains a page-level typed error because row identity
-cannot then be trusted.
+`ProofViewDTO` exposes proof ID, run ID, local path, classification and reason, verification result, and optional benchmark ID. “Verified” means inventory/content integrity, not creator authenticity or signature. There is no delete action ID. An indexed object that fails verification is returned as `classification="corrupt"`, `verified=false`, with the proof ID, local path, and bounded verifier reason so healthy sibling proofs remain usable. Corruption of the shared proof index remains a page-level typed error because row identity cannot then be trusted.
 
-Each `ReadinessItemDTO` exposes benchmark software state, registered Tier-1
-state, Tier-2 claim state, ledger link, and blockers. A verified proof without a
-qualified registered `passed` event is explicitly `proof-present-not-tier1`.
-Missing or unparseable ledger material yields unknown/blocked;
-the UI never upgrades a tier by inference.
+Each `ReadinessItemDTO` exposes benchmark software state, registered Tier-1 state, Tier-2 claim state, ledger link, and blockers. A verified proof without a qualified registered `passed` event is explicitly `proof-present-not-tier1`. Missing or unparseable ledger material yields unknown/blocked; the UI never upgrades a tier by inference.
 
 ## Operation contracts
 
@@ -262,21 +162,14 @@ operation_failed         bounded unexpected failure; trace remains server-side
 refresh_required         cursor/fingerprint source revision changed
 ```
 
-`retryable=true` is limited to read probes, refresh-required reads, or operations
-whose domain contract explicitly permits retry. State-changing UI never retries
-automatically. `human_action_required` follows the existing narrow HITL policy.
+`retryable=true` is limited to read probes, refresh-required reads, or operations whose domain contract explicitly permits retry. State-changing UI never retries automatically. `human_action_required` follows the existing narrow HITL policy.
 
 ## Pagination, ordering, and live updates
 
-- Catalogs order by stable ID; runs/evidence/proofs default newest-first with ID
-  tie-break. The selected order is included in cursor semantics.
-- Cursor is opaque, versioned, and bound to a source fingerprint and position.
-  A changed source returns `refresh_required`, preventing skips/duplicates.
-- Limits are 1–200; default 50. Artifact preview defaults 128 KiB and has a hard
-  design cap of 1 MiB pending the U3 measurement gate.
-- Live RunSession events are bounded, monotonic sequence records for
-  presentation only. Lost UI events trigger refresh from durable state; they do
-  not mutate evidence or manifest history.
+- Catalogs order by stable ID; runs/evidence/proofs default newest-first with ID tie-break. The selected order is included in cursor semantics.
+- Cursor is opaque, versioned, and bound to a source fingerprint and position. A changed source returns `refresh_required`, preventing skips/duplicates.
+- Limits are 1–200; default 50. Artifact preview defaults 128 KiB and has a hard design cap of 1 MiB pending the U3 measurement gate.
+- Live RunSession events are bounded, monotonic sequence records for presentation only. Lost UI events trigger refresh from durable state; they do not mutate evidence or manifest history.
 
 ## Validation and entity-to-DTO mapping
 
@@ -294,25 +187,14 @@ automatically. `human_action_required` follows the existing narrow HITL policy.
 
 ## Local browser capability contract
 
-- Listener is `127.0.0.1` only. `Host` and `Origin` must match the effective
-  loopback origin; no wildcard CORS, proxy trust, iframe, or remote bind.
-- Startup creates a random per-process capability. The opened local URL exchanges
-  it once for a strict HttpOnly session cookie and removes it from visible
-  history. The token is never logged or persisted.
-- Every event still validates its request DTO and domain invariants. Possession
-  of the local capability is not permission to bypass non-executable, transition,
-  qualification, path, diagnostic, or proof rules.
-- This is process-local capability protection, not user authentication. Any
-  remote or multi-user requirement invalidates this contract.
+- Listener is `127.0.0.1` only. `Host` and `Origin` must match the effective loopback origin; no wildcard CORS, proxy trust, iframe, or remote bind.
+- Startup creates a random per-process capability. The opened local URL exchanges it once for a strict HttpOnly session cookie and removes it from visible history. The token is never logged or persisted.
+- Every event still validates its request DTO and domain invariants. Possession of the local capability is not permission to bypass non-executable, transition, qualification, path, diagnostic, or proof rules.
+- This is process-local capability protection, not user authentication. Any remote or multi-user requirement invalidates this contract.
 
 ## Compatibility and change policy
 
-- CLI grammar, persisted JSONL/YAML, proof formats, and exported domain DTOs keep
-  their existing compatibility policies and remain independent of UI releases.
-- Application operation names and `ui_v1` DTOs are internal until the first
-  shipped console release. After that, changes are additive within v1; removals
-  or semantic changes require a versioned DTO/operation and migration period.
-- NiceGUI routes/events/transport are not supported contracts. A replacement UI
-  may reuse the application operations without compatibility with browser frames.
-- Every UI mutation must have a CLI or application-operation equivalent. A UI-
-  exclusive feature requires concept and contract review before implementation.
+- CLI grammar, persisted JSONL/YAML, proof formats, and exported domain DTOs keep their existing compatibility policies and remain independent of UI releases.
+- Application operation names and `ui_v1` DTOs are internal until the first shipped console release. After that, changes are additive within v1; removals or semantic changes require a versioned DTO/operation and migration period.
+- NiceGUI routes/events/transport are not supported contracts. A replacement UI may reuse the application operations without compatibility with browser frames.
+- Every UI mutation must have a CLI or application-operation equivalent. A UI-exclusive feature requires concept and contract review before implementation.

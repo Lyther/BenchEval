@@ -1,10 +1,6 @@
 # Internal API contracts
 
-BenchEval has **no public HTTP surface**. Current boundaries are Python modules,
-Pydantic DTOs, and the CLI. The implemented local operator console uses a private
-NiceGUI browser transport over typed in-process application operations; it does
-not create a supported HTTP/WebSocket API. Canonical design:
-[`operator-console-contract.md`](operator-console-contract.md).
+BenchEval has **no public HTTP surface**. Current boundaries are Python modules, Pydantic DTOs, and the CLI. The implemented local operator console uses a private NiceGUI browser transport over typed in-process application operations; it does not create a supported HTTP/WebSocket API. Canonical design: [`operator-console-contract.md`](operator-console-contract.md).
 
 Product spine: `benchmark → (runtime | agent)? → model via provider → evidence`.
 
@@ -58,10 +54,4 @@ Wheel installs ship `bencheval/_bundled/config/`. `BENCHEVAL_HOME` overrides for
 
 ## Proposed application/UI boundary
 
-`application/` will expose transport-neutral operation functions and frozen
-secret-free view DTOs shared by CLI and the optional UI. The dependency direction
-is `ui -> application -> existing domain modules`; core/domain modules never
-import NiceGUI. Browser routes/events are private implementation details. YAML,
-JSONL, artifacts, reports, and `private_proof_v1` remain authoritative; UI
-session state is disposable and owns no scoring, readiness, lifecycle, or proof
-truth.
+`application/` will expose transport-neutral operation functions and frozen secret-free view DTOs shared by CLI and the optional UI. The dependency direction is `ui -> application -> existing domain modules`; core/domain modules never import NiceGUI. Browser routes/events are private implementation details. YAML, JSONL, artifacts, reports, and `private_proof_v1` remain authoritative; UI session state is disposable and owns no scoring, readiness, lifecycle, or proof truth.

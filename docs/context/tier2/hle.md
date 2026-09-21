@@ -1,36 +1,14 @@
 # HLE Tier-2 ledger
 
-This ledger does **not** promote HLE to Tier-2. It maps readiness §A–§E against
-retained source-host evidence plus imported `private_proof_v1` objects. Status
-values are `proven`, `partial`, `missing`, or `not-applicable`.
+This ledger does **not** promote HLE to Tier-2. It maps readiness §A–§E against retained source-host evidence plus imported `private_proof_v1` objects. Status values are `proven`, `partial`, `missing`, or `not-applicable`.
 
-Registered native run: `run-20260824-092017-110245-dbbdf99e` (dev-box-cpu, official
-CAIS judge, 0/2 `model_wrong_solution` for `gpt-5.4-2026-03-05`). Isolated-cache
-proof: `hle-isolated-cache-live-20260825T072129Z`. Both predate the new-format
-run plan and stay `legacy_unverifiable` / `run_plan_missing_legacy`.
+Registered native run: `run-20260824-092017-110245-dbbdf99e` (dev-box-cpu, official CAIS judge, 0/2 `model_wrong_solution` for `gpt-5.4-2026-03-05`). Isolated-cache proof: `hle-isolated-cache-live-20260825T072129Z`. Both predate the new-format run plan and stay `legacy_unverifiable` / `run_plan_missing_legacy`.
 
-Earlier same-day refresh `run-20260826-090309-188566-06a37606` /
-`sha256:b3260e8b17d46ec4da9a848270df2aa69bcf0d59ef94f8cedd81b6dc48601b77`
-is structurally imported but predates ambient-cache removal, so it cannot bind
-consumed dataset bytes to the verified parquet.
+Earlier same-day refresh `run-20260826-090309-188566-06a37606` / `sha256:b3260e8b17d46ec4da9a848270df2aa69bcf0d59ef94f8cedd81b6dc48601b77` is structurally imported but predates ambient-cache removal, so it cannot bind consumed dataset bytes to the verified parquet.
 
-Post-fix identity-bound proof (independently verified after `bencheval proof
-import`): `run-20260826-135512-189732-203685b9` /
-`sha256:4be3b7cdfb9f06b5eef96929dface503ea68cdbd5b3652126fdaf939e9f4b62b`
-(`gpt-5.4-2026-03-05`, official CAIS judge 0/2 `model_wrong_solution`,
-`known_post_artifact_small_slice_calibration_failure` after artifacts,
-`cleanup_result=success`, `run-plan.json` present, `benchmark_version=
-hle@5a81a4c7271a2a2a+data-6d0ee0602e8aea6b`, registered `passed`). Ambient-copy
-fallback is absent; pre-warm fail-closes unless `load_dataset` materializes the
-pinned revision into a fresh run-owned cache. Remote producer git identity is
-`unknown` because that checkout has no `.git`.
+Post-fix identity-bound proof (independently verified after `bencheval proof import`): `run-20260826-135512-189732-203685b9` / `sha256:4be3b7cdfb9f06b5eef96929dface503ea68cdbd5b3652126fdaf939e9f4b62b` (`gpt-5.4-2026-03-05`, official CAIS judge 0/2 `model_wrong_solution`, `known_post_artifact_small_slice_calibration_failure` after artifacts, `cleanup_result=success`, `run-plan.json` present, `benchmark_version= hle@5a81a4c7271a2a2a+data-6d0ee0602e8aea6b`, registered `passed`). Ambient-copy fallback is absent; pre-warm fail-closes unless `load_dataset` materializes the pinned revision into a fresh run-owned cache. Remote producer git identity is `unknown` because that checkout has no `.git`.
 
-
-**Clean-host qualified-lane registration (CF3.1, 2026-09-09, host `n37-089-091`, fresh
-checkout and venv, plan doctor green before launch):** `run-20260909-073706-188201-02ec6d7d` on slice `smoke` with
-`gpt-5.2-2025-12-11`, registered `passed`. This is the row's current Tier-1 anchor and supersedes the
-August citations above as *most recent* live evidence; it does not widen the population
-scope recorded in the table.
+**Clean-host qualified-lane registration (CF3.1, 2026-09-09, host `n37-089-091`, fresh checkout and venv, plan doctor green before launch):** `run-20260909-073706-188201-02ec6d7d` on slice `smoke` with `gpt-5.2-2025-12-11`, registered `passed`. This is the row's current Tier-1 anchor and supersedes the August citations above as *most recent* live evidence; it does not widen the population scope recorded in the table.
 
 | Item | Status | Evidence | Proof boundary | Remaining action | Portability |
 | --- | --- | --- | --- | --- | --- |
@@ -53,11 +31,6 @@ scope recorded in the table.
 | E. No smoke statistical claim | proven | Two-sample smoke is not treated as significance | — | None | local-only |
 | E. No calibration mix-in | not-applicable | HLE smoke is official CAIS items only | — | None | not-applicable |
 
-**Tier-2 decision:** pending, not refused. The post-fix proof replaces `b3260e8b…` as the current
-identity-bound smoke. Every §A–§E item is `proven` or `not-applicable` at the
-boundary recorded above, and no contract criterion is unmet. What is missing is a decision about
-**which public claim this row should license** and the population that claim would require — not
-an engineering artifact, a repair, or a prerequisite this ledger can discharge on its own.
+**Tier-2 decision:** pending, not refused. The post-fix proof replaces `b3260e8b…` as the current identity-bound smoke. Every §A–§E item is `proven` or `not-applicable` at the boundary recorded above, and no contract criterion is unmet. What is missing is a decision about **which public claim this row should license** and the population that claim would require — not an engineering artifact, a repair, or a prerequisite this ledger can discharge on its own.
 
-Scope of the retained evidence: every live run is the 2-item `smoke` slice, official 0/2, and a
-same-day `kimi-k2.7-code` attempt timed out in the pinned script and is retained unregistered.
+Scope of the retained evidence: every live run is the 2-item `smoke` slice, official 0/2, and a same-day `kimi-k2.7-code` attempt timed out in the pinned script and is retained unregistered.
